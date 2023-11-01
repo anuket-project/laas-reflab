@@ -1,0 +1,35 @@
+[package]
+name = "models"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+serde = "*" # serde_derive misbehaves when reexported
+serde_with = "*"
+strum_macros = "0.24"
+sha2 = "0.10"
+base16ct = { version = "0.2", features = ["alloc"] }
+inventory = "0.3.6"
+eui48 = { version = "1.1.0", features = ["serde_json", "serde"] }
+lazy_static = "*"
+
+[dependencies.llid]
+path = "../llid/"
+
+[dependencies.common]
+path = "../common/"
+
+[dependencies.dal]
+path = "../dal/"
+
+#[dependencies.sqlx]
+#version = "0.6"
+#default-features = false
+#features = ["macros", "postgres", "chrono", "migrate", "uuid", "json", "runtime-tokio-rustls"]
+
+
+[dependencies.tokio-postgres]
+version = "0.7.8"
+features = ["with-serde_json-1", "with-uuid-1", "with-chrono-0_4", "with-eui48-1"]

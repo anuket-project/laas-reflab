@@ -1,0 +1,59 @@
+<html>
+
+<body>
+    <div id="message_content_wrapper" style="color:#343a40; margin: auto; background-color: #f8f9fa; position: center;">
+        <div style="text-align: center;">
+
+            <h1 style="font-family: 'Open Sans', 'Trebuchet MS', Verdana, Arial; font-size: 30px;">Your VPN Account has
+                been created.</h1>
+            <p style="font-family: Verdana, Arial;">Please see the following information needed to access the lab.</p>
+            <br>
+            <table style="margin-left: auto; margin-right: auto; border: 1px solid #8facc8; border-collapse: collapse;">
+                <tr style="border-bottom: 1px solid #8facc8; background-color: #8facc8;">
+                    <td style="color:#343a40; padding: 5px; font-family: Verdana, Arial; text-align: center; text-align: center; font-size: larger;"
+                        colspan="2">Account Information:</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #8facc8; background-color: #d7e2f0;">
+                    <td style="padding: 5px;">Username:</td>
+                    <td style="padding: 5px;">{{username}}</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #8facc8; background-color: #ffffff;">
+                    <td style="padding: 5px;">Temporary Password:</td>
+                    <td style="padding: 5px;">{{password}}</td>
+                </tr>
+            </table>
+        </div>
+        <h2>Accessing the lab</h2>
+        <ul style="font-family: Verdana, Arial;">
+            <li>
+                To access any booked resources, please connect to the VPN using the OpenVPN client with the provided
+                credentials and configuration file.
+            </li>
+            <li>
+                To setup the VPN client, you can download the OpenVPN client from: <a
+                    href="https://openvpn.net/vpn-client/">https://openvpn.net/vpn-client/</a>.
+            </li>
+            <li>
+                To update your password, please connect to the following site, after connecting to the VPN: <a
+                    href="https://os-passwd.iol.unh.edu">https://os-passwd.iol.unh.edu</a>.
+            </li>
+        </ul>
+            <h3>Please note:</h3>
+            <ol style="font-family: Verdana, Arial;">
+                <li>
+                    You must have an active booking to connect to the VPN.
+                </li>
+                <li>
+                    The VPN and server / VMs share a common identity management system, changing your login password
+                    will change the password needed for the VPN on the next re-connection.
+
+                </li>
+                <li>
+                    Our OpenVPN does not require a client / user certificate, but the OpenVPN client
+                    may prompt for this during setup, you can ignore the prompt.
+                </li>
+            </ol>
+    </div>
+</body>
+
+</html>

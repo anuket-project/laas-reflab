@@ -1,0 +1,390 @@
+#! Copyright (c) 2023 University of New Hampshire
+#! SPDX-License-Identifier: MIT
+
+paths:
+
+  /template:
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                owner:
+                  type: string # Username of owner
+                name:
+                  type: string # Template name
+                public:
+                  type: boolean # Public
+                content:
+                  type: string # A json blob containing a wip template which is serialized upon committing
+        response:
+          '200':
+            description: Success
+            content:
+              application/json:
+                schema:
+                  type: string # Returns template blob id
+          '400':
+            description: Bad request
+
+  /template/blob/{template_id}:
+    put:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: string # A json blob containing a wip template which is serialized upon committing
+      response:
+        '200':
+          description: Success
+        '400':
+          description: Bad request
+
+  /template/{template_id}/commit:
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: string # A json blob containing template data to check/save against db and serialize
+        response:
+          '200':
+            description: Success
+          '400':
+            description: Bad request
+
+  /template/blob/{template_id}/:
+    delete:
+      response:
+        '200':
+          description: Success
+        '400':
+          description: Bad request
+
+  /template/{template_id}/:
+    delete:
+      response:
+        '200':
+          description: Success
+        '400':
+          description: Bad request
+
+  /template/list:
+    get:
+      response:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object # Returns hashmap of template name and owner
+        '400':
+          description: Bad request
+
+  /template/blob/{template_id}:
+    get:
+      response
+        '200':
+          description: Success
+            content:
+              application/json:
+                schema:
+                  type: string # Template blob from db
+
+  /template/blob/{template_id}:
+    put:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: string # A json blob containing a wip template which is serialized upon committing
+      response:
+        '200':
+          description: Success
+        '400':
+          description: Bad request
+
+  /flavor:
+    get:
+      response:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object # Hashmap of flavor name and server count
+        '400':
+          description: Bad request
+
+  /flavor/{flavor_name}/images:
+    get:
+      response:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array # Vec of Image names for a flavor
+        '400':
+          description: Bad request
+
+  /flavor/all:
+    get:
+      response:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array # Vec of flavor name
+        '400':
+          description: Bad request
+
+  /booking:
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                owner:
+                  type: string # Username of owner
+                public:
+                  type: boolean # Public
+                content:
+                  type: string # A json blob containing a wip booking which is serialized upon committing
+      response:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: integer # Returns booking blob id
+        '400':
+          description: Bad request
+
+  /booking/{booking_id}/create:
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                owner:
+                  type: String # bookingblob owner
+                name:
+                  type: String # bookingblob name
+      response:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: integer # Returns booking id
+        '400':
+          description: Bad request
+
+  /booking/{booking_id}/end:
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                owner:
+                  type: String # bookingblob owner
+                name:
+                  type: String # bookingblob name
+      response:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: integer # Returns booking id
+        '400':
+          description: Bad request
+
+  /booking/{booking_id}/add/users: // can have users before starting
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: array # Vec of usernames
+              items:
+                type: string
+      response:
+        '200':
+          description: Success
+        '400':
+          description: Bad request
+
+  /booking/blob/{booking_id}/:
+    delete:
+      response:
+        '200':
+          description: Success
+        '400':
+          description: Bad request
+
+  /booking/{booking_id}/reimage:
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: string # Server name
+        response:
+          '200':
+            description: Success
+            content:
+              application/json:
+                schema:
+                  type: string # Returns new instance id
+          '400':
+            description: Bad request
+
+  /booking/{booking_id}/add/instance:
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                image:
+                  type: string # Image name
+                flavor:
+                  type: string # Flavor name
+
+        response:
+          '200':
+            description: Success
+            content:
+              application/json:
+                schema:
+                  type: string # Template name host was added to
+          '400':
+            description: Bad request
+
+  /booking/{booking_id}/status:
+    get:
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object # Hashmap of host name and status (not started, in progress, failed, or succeeded)
+        '400':
+          description: Bad request
+
+  /user/{username}/key/add:
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string # Key name
+                key_type:
+                  type: String # Key type
+                key:
+                  type: string # Key
+        response:
+          '200':
+            description: Success
+          '400':
+            description: Bad request
+
+  /status/all:
+    get:
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object # Hashmap of booking id and status
+        '400':
+          description: Bad request
+
+  /user/add:
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string # user name
+                company:
+                  type: String # company name
+                key:
+                  type: object # Key
+                  properties:
+                    name:
+                      type: string # Key name
+                    key_type:
+                      type: String # Key type
+                    key:
+                      type: string # Key
+        response:
+          '200':
+            description: Success
+          '400':
+            description: Bad request
+
+  /user/key/add:
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string # Key name
+                user:
+                  type: String # username
+                company:
+                  type: String # Key type
+                key:
+                  type: String # Key
+        response:
+          '200':
+            description: Success
+          '400':
+            description: Bad request
+
+  /iface:
+    get:
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array # array of iface profiles
+                  items:
+                  type: string
+        '400':
+          description: Bad request
+
+  /iface/{iface_id}:
+    put:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: op

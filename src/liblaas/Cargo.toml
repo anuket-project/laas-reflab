@@ -1,0 +1,33 @@
+[package]
+name = "liblaas"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = "*" # serde_derive misbehaves when reexported
+serde_with = "*"
+
+axum-macros = "*" # also misbehaves
+axum-extra = "*" # avoid misbehavior
+axum = { version = "*", features = ["http2", "macros"] } # avoid misbehavior
+
+[dependencies.common]
+path = "../common/"
+
+[dependencies.tascii]
+path = "../tascii/"
+
+[dependencies.models]
+path = "../models/"
+
+[dependencies.workflows]
+path = "../workflows/"
+
+[dependencies.llid]
+path = "../llid/"
+
+[dependencies.users]
+path = "../users/"
+
+[dependencies.notifications]
+path = "../notifications/"

@@ -1,0 +1,65 @@
+<html>
+    <body>
+        <div id="message_content_wrapper" style="text-align: center; color:#343a40; margin: auto; background-color: #f8f9fa; position: center;">
+            {% if owner %}
+            <h2 style="font-family: 'Open Sans', 'Trebuchet MS', Verdana, Arial; font-size: 30px;">Your Booking Is About to Expire.</h2>
+            <div style="display: table; margin: auto; font-family: Verdana, Arial; text-align: justify; text-align-last: left;">
+                <p style="font-family: Verdana, Arial;">Your booking will expire within 48 hours ({{booking.end}}).</p>
+            </div>
+            {% else %}
+            <h2 style="font-family: 'Open Sans', 'Trebuchet MS', Verdana, Arial; font-size: 30px;">A Booking That You Collaborate on Is About to Expire.</h2>
+            <div style="display: table; margin: auto; font-family: Verdana, Arial; text-align: justify; text-align-last: left;">
+                <p style="font-family: Verdana, Arial;">The booking owned by {{booking.owner}} that you work on is about to expire.</p>
+            </div>
+            {% endif %}
+            <p style="font-family: Verdana, Arial;">Please take the time to backup all data or extend the booking if needed.</p>
+            <br>
+            <table style="margin-left: auto; margin-right: auto; border: 1px solid #8facc8; border-collapse: collapse;">
+                <tr style="border-bottom: 1px solid #8facc8; background-color: #8facc8;">
+                    <td style="color:#343a40; padding: 5px; font-family: Verdana, Arial; text-align: center; text-align: center; font-size: larger;" colspan="2">Booking Information:</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #8facc8; background-color: #d7e2f0;">
+                    <td style="padding: 5px;">Owner:</td>
+                    <td style="padding: 5px;">{{booking.owner}}</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #8facc8; background-color: #ffffff;">
+                    <td style="padding: 5px;">id:</td>
+                    <td style="padding: 5px;">{{booking.id}}</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #8facc8; background-color: #d7e2f0;">
+                    <td style="padding: 5px;">lab:</td>
+                    <td style="padding: 5px;">{{booking.lab}}</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #8facc8; background-color: #ffffff;">
+                    <td style="padding: 5px;">resource:</td>
+                    <td style="padding: 5px;">{{booking.template}}</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #8facc8; background-color: #d7e2f0;">
+                    <td style="padding: 5px;">start:</td>
+                    <td style="padding: 5px;">{{booking.start}}</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #8facc8; background-color: #ffffff;">
+                    <td style="padding: 5px;">end:</td>
+                    <td style="padding: 5px;">{{booking.end}}</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #8facc8; background-color: #d7e2f0;">
+                    <td style="padding: 5px;">purpose:</td>
+                    <td style="padding: 5px;">{{booking.purpose}}</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #8facc8; background-color: #ffffff;">
+                    <td colspan="2"  style="padding: 5px;">collaborator{{ booking.collaborators | length | pluralize }}:</td>
+                </tr>
+                {% for user in booking.collaborators %}
+                <tr style="border-bottom: 1px solid #8facc8; background-color: #d7e2f0;">
+                    <td colspan="2"  style="padding: 5px;">{{user}}</td>
+                </tr>
+                {% else %}
+                <tr style="border-bottom: 1px solid #8facc8; background-color: #d7e2f0;">
+                    <td colspan="2"  style="padding: 5px;">No collaborators</td>
+                </tr>
+                {% endfor %}
+            </table>
+            <a href="{{dashboard_url}}booking/detail/{{booking.id}}"><button style="background-color:#8facc8; color: #343a40; border: 0px; border-radius: 3mm; padding: 10px; text-align: center; margin: 15px; text-decoration: none; font-family: Verdana, Arial; font-size: 16;">You can find more detailed information here</button></a>
+        </div>
+    </body>
+</html>

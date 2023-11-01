@@ -1,0 +1,25 @@
+{{user_name|default:"Developer"}},
+
+{% if owner %}
+The booking you requested from the {{booking.lab.project}} Lab  has ended.
+{% else %}
+The booking you collaborated on at the {{booking.lab.project}} Lab has ended.
+{% endif %}
+
+booking information:
+    start: {{booking.start}}
+    end: {{booking.end}}
+    machines:
+        {% for host in hosts %}
+        - {{host}}
+        {% endfor %}
+    purpose: {{booking.purpose}}
+
+You may visit the following link for more information:
+{{booking_url}}
+
+Feel free to create another booking with us!
+
+Thank you for contributing to the {{booking.lab.project}} platform!
+
+    - The Lab-as-a-Service team

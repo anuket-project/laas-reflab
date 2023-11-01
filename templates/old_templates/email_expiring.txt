@@ -1,0 +1,25 @@
+{{user_name|default:"Developer"}},
+
+{% if owner %}
+The booking you requested from the {{booking.lab.project}} lab is about to expire.
+{% else %}
+The booking you collaborate on at the {{booking.lab.project}} lab is about to expire.
+{% endif %}
+
+booking information:
+    start: {{booking.start}}
+    end: {{booking.end}}
+    machines:
+        {% for host in hosts %}
+        - {{host}}
+        {% endfor %}
+    purpose: {{booking.purpose}}
+
+You may visit the following link for more information:
+{{booking_url}}
+
+Please take the time to backup all data or extend the booking if needed.
+
+Thank you for contributing to the {{booking.lab.project}} platform!
+
+    - The Lab-as-a-Service team

@@ -1,0 +1,56 @@
+cargo-features = ["profile-rustflags"]
+
+[package]
+name = "tascii"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+#[lib]
+#name = "liblaas"
+#crate-type = ["cdylib"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+dashmap = { version = "5.4.0", features = ["rayon", "serde"] }
+lazy_static = "1.4.0"
+write-to-file = "1.0.2"
+
+tracing = "0.1"
+
+serde = { version = "1.0", features = ["derive", "rc"] }
+serde_json = { version = "1.0" }
+
+crossbeam-channel = "0.5.6"
+rand = "0.8.5"
+rayon = "1.5.3"
+timer = "0.2.0"
+execute = "0.2.11"
+derive_more = "0.99.17"
+itertools = "0.10.5"
+
+tokio = { version = "1", features = ["full", "rt", "rt-multi-thread"] } # async stuff
+futures = "0.3.28"
+futures-util = "*"
+anyhow = "*"
+
+inventory = "0.3.6"
+parking_lot = { version = "0.12.1", features = ["send_guard"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+linux-futex = "0.1.2"
+
+[profile.test]
+panic = 'abort'
+rustflags = ["-Cpanic=abort", "-Zpanic_abort_tests"]
+
+[dependencies.llid]
+path = "../llid/"
+
+[dependencies.pyo3]
+version = "0.18.1"
+features = ["auto-initialize"]
+
+[dependencies.dal]
+path = "../dal/"

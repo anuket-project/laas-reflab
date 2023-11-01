@@ -1,0 +1,16 @@
+*target/
+.vscode
+.obsidian
+.idea
+s1.vim
+.env
+/data
+primary-targets.json
+*.crt
+config_data/*
+tracing.log
+cli/src/import_data/*.json
+cli/src/import_data/*.tar.gz
+liblaasdb
+discard/*
+__pycache__/*

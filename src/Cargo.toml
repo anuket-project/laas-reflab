@@ -1,0 +1,56 @@
+[package]
+name = "laas-reflab"
+version = "0.1.0"
+edition = "2021"
+
+[profile.dev]
+incremental = true
+#incremental = false
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+tracing-subscriber = "0.3"
+backtrace-on-stack-overflow = "*"
+clap = "*"
+
+[dependencies.common]
+path = "common/"
+
+[dependencies.liblaas]
+path = "liblaas/"
+
+[dependencies.workflows]
+path = "workflows/"
+
+[dependencies.tascii]
+path = "tascii/"
+
+[dependencies.models]
+path = "models/"
+
+[dependencies.client]
+path = "client/"
+
+[dependencies.users]
+path = "users/"
+
+[dependencies.config]
+path = "config/"
+
+[dependencies.notifications]
+path = "notifications/"
+
+[workspace]
+members = [
+    "liblaas",
+    "users",
+    "common",
+    "models",
+    "tascii",
+    "workflows",
+    "config",
+    "notifications",
+    "dal",
+]
+

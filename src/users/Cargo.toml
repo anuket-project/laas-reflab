@@ -1,0 +1,19 @@
+[package]
+name = "users"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+serde = "*" # serde_derive misbehaves when reexported
+serde_with = "*"
+
+axum-macros = "*" # also misbehaves
+axum-extra = "*" # avoid misbehavior
+schemars = { version = "*", features = ["uuid1"] }
+axum = { version = "*", features = ["http2", "macros"] } # avoid misbehavior
+tokio = { version = "*", features = ["full"] } # async stuff
+
+[dependencies.common]
+path = "../common/"

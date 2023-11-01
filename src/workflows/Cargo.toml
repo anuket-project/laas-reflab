@@ -1,0 +1,50 @@
+[package]
+name = "workflows"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+
+serde = { version = "1.0", features = ["derive", "rc"] }
+serde_json = { version = "1.0" }
+
+maplit = "1.0.2"
+serde-xml-rs = "0.6.0"
+
+base64 = "0.21.0"
+inventory = "0.3.6"
+tar = "*"
+url = "*"
+
+[dependencies.ureq]
+version = "2.6"
+features = ["json"]
+
+
+[dependencies.common]
+path = "../common/"
+
+[dependencies.pyo3]
+version = "0.18.1"
+features = ["auto-initialize"]
+
+
+[dependencies.tascii]
+path = "../tascii/"
+
+[dependencies.models]
+path = "../models/"
+
+[dependencies.notifications]
+path = "../notifications/"
+
+[dependencies.llid]
+path = "../llid/"
+
+[dependencies.users]
+path = "../users"
+
+[dependencies.config]
+path = "../config"
