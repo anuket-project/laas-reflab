@@ -35,7 +35,7 @@ use std::{
 pub mod prelude {
     pub use crate::task_trait::{AsyncRunnable, Runnable, TaskIdentifier};
 
-    pub use crate::workflows::{Context, TaskError};
+    pub use crate::workflows::{Context, TaskError, ToTaskError};
 
     pub use crate::runtime::Runtime;
 
