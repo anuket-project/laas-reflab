@@ -67,6 +67,16 @@ impl From<anyhow::Error> for TaskError {
     }
 }
 
+pub trait ToTaskError<T> {
+    fn as_taskerr(self) -> Result<T, TaskError>;
+}
+
+impl<T, E: Into<TaskError>> ToTaskError<T> for Result<T, E> {
+    fn as_taskerr(self) -> Result<T, TaskError> {
+        self.map_err(|e| e.into())
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct InternalError {
     internal: Option<&'static str>,
