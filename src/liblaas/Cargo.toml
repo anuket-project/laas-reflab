@@ -9,7 +9,7 @@ serde_with = "*"
 
 axum-macros = "*" # also misbehaves
 axum-extra = "*" # avoid misbehavior
-axum = { version = "*", features = ["http2", "macros"] } # avoid misbehavior
+axum = { version = "0.6.1", features = ["http2", "macros"] } # avoid misbehavior
 
 [dependencies.common]
 path = "../common/"

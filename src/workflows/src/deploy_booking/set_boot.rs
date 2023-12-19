@@ -242,9 +242,6 @@ async fn run_ilo_command(
     let fqdn = host_url;
     let user = host.ipmi_user.clone();
     let password = host.ipmi_pass.clone();
-    tracing::error!("The fqdn is {fqdn}");
-    tracing::error!("The user is {user}");
-    tracing::error!("The pass is {password}");
 
     let mode = match command {
         ILOCommand::SetPersistentBoot(_) => "write",

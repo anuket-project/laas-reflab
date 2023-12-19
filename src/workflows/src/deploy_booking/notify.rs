@@ -37,7 +37,12 @@ impl AsyncRunnable for Notify {
         };
         let info = BookingInfo {
             owner: agg.metadata.owner.clone().unwrap_or("None".to_owned()),
-            collaborators: agg.users.clone(),
+            collaborators: agg
+                .users
+                .iter()
+                .cloned()
+                .filter(|username| *username != agg.metadata.owner.as_deref().unwrap_or_default())
+                .collect(),
             lab: agg.metadata.lab.clone().unwrap_or("None".to_owned()),
             id: agg.metadata.booking_id.clone().unwrap_or("None".to_owned()),
             template: agg

@@ -785,20 +785,6 @@ async fn render_nmcli_commands(
 
     let created_default_interface = AtomicBool::new(false);
 
-    let routes_for = |_iface: &str| {
-        // if default interface wasn't already created
-        if !created_default_interface.swap(true, std::sync::atomic::Ordering::SeqCst) {
-            vec![
-                // default routes
-                (IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0),
-                (IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0)), 0),
-            ]
-        } else {
-            // otherwise, give no routes
-            vec![]
-        }
-    };
-
     // take care of hostname setting so `sudo` doesn't take forever:
     let hostname = &conf.hostname;
     let host_ident = host.server_name.clone();
@@ -806,7 +792,6 @@ async fn render_nmcli_commands(
     let public_config = |cfg: Option<IPNetwork>, interface: &str| {
         let cfg = cfg.unwrap_or(IPNetwork { v4: None, v6: None });
         let v4 = if let Some(v) = cfg.v4 {
-            let routes = routes_for(interface);
 
             let IPInfo {
                 subnet: _,
@@ -821,29 +806,7 @@ async fn render_nmcli_commands(
                     warn!("not applying gateway without having a static ip");
                 };
 
-                if !routes.is_empty() {
-                    // only have the interface with actual routes
-                    // be the "one true" interface that people try to ssh to
-                    //
-                    // do this by having it be the only one to send
-                    // any dhcp request
-                    root = format!("{root} ipv4.method auto ipv4.dhcp-hostname {host_ident}");
-                } else {
-                    // routes is empty, so don't try to assign a default gw
-                    // also don't try to dhcp on here since it would cause...issues
-                    root = format!("{root} ipv4.method disabled ipv4.never-default yes ipv4.ignore-auto-routes yes");
-                }
-
-                let v4_routes = routes
-                    .into_iter()
-                    .filter(|(net, _mask)| net.is_ipv4())
-                    .map(|(net, mask)| {
-                        let n = net.to_string();
-                        format!("{n}/{mask}")
-                    })
-                    .join(" ");
-
-                root = format!("{root} ipv4.routes '{v4_routes}'");
+                root = format!("{root} ipv4.method auto ipv4.dhcp-hostname {host_ident}");
 
                 root
             } else {
@@ -876,7 +839,7 @@ async fn render_nmcli_commands(
         let vlan_id = vlan.vlan_id;
 
         let iface_nmid = format!("tagged-{network_name}-{root_dev_short}.{vlan_id}");
-        let mut iface_name = format!("{network_name:.6}{vif_id}v{vlan_id}");
+        let mut iface_name = format!("{network_name:.3}{vif_id}v{vlan_id}");
         // making a vlan v-if
         iface_name.truncate(15);
 
