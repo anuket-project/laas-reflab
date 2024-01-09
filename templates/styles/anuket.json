@@ -1,0 +1,12 @@
+{
+  "messageContentWrapperStyle": "text-align: center; color:#1f1646; margin: auto; position: center;",
+  "headerStyle": "font-family: 'Open Sans'; font-size: 32px; font-weight: bold;",
+  "paragraphStyle": "display: table; margin: auto; font-family: Verdana, Arial; text-align: justify; text-align-last: left;",
+  "tableWrapperStyle": "width: 100%; text-align: center;",
+  "tableStyle": "margin: 16px auto; width: 50%; border-collapse: collapse; box-shadow: 0 0 20px rgba(0, 0, 0, 0.15); border-radius: 5px;",
+  "tableHeaderStyle": "background-color: #001e61; color: #f4f4f4; font-size: 18px; font-weight: bold;",
+  "tableHeaderCellStyle": "padding: 15px; font-family: 'Open Sans';",
+  "tableRowStyle": "background-color: #e4e4e4;",
+  "tableCellStyle": "padding: 15px; border: 0px; text-align: left;",
+  "buttonStyle": "background-color: #F5B335; color: #001e61; border: 0; border-radius: 5px; padding: 16px 24px; margin-top: 24px; text-align: center; text-decoration: none; font-family: 'Open Sans'; font-size: 20px; font-weight: bold; cursor: pointer; box-shadow: 0 0 20px rgba(0, 0, 0, 0.15);"
+}

@@ -6,8 +6,7 @@ use common::prelude::{
     config::*,
     reqwest::RequestBuilder,
     serde_json::{self, json},
-    tracing,
-    *,
+    tracing, *,
 };
 use lettre::{
     message::{header::ContentType, Attachment, Mailbox, MultiPart, SinglePart},
@@ -18,7 +17,7 @@ use std::{fs, path::PathBuf};
 use users::*;
 
 pub async fn send(env: &Env, notification: Notification) -> Result<(), anyhow::Error> {
-    tracing::trace!("Sending notification {notification:?} by email");
+    tracing::info!("Sending notification {notification:?} by email");
     let mut ipa = ipa::IPA::init().await.unwrap();
     tracing::info!("connected to IPA");
     let email_config = config::settings().notifications.clone();
@@ -28,12 +27,15 @@ pub async fn send(env: &Env, notification: Notification) -> Result<(), anyhow::E
         .unwrap();
     let email = user.mail;
     let addr: Address = email.parse().expect("Couldn't parse addr");
-    let from_addr: Email = email_config.send_from_email.expect("Expected a from email address!");
+    let from_addr: Email = email_config
+        .send_from_email
+        .expect("Expected a from email address!");
     let email = match &notification.attachment {
         Some(attachment) => Message::builder()
             .from(Mailbox::new(
                 Some(from_addr.username.clone()),
-                Address::new(from_addr.username.clone(), from_addr.domain.clone()).expect("Expected to create address"),
+                Address::new(from_addr.username.clone(), from_addr.domain.clone())
+                    .expect("Expected to create address"),
             ))
             .to(Mailbox::new(None, addr))
             .subject(notification.title.clone())
@@ -54,7 +56,8 @@ pub async fn send(env: &Env, notification: Notification) -> Result<(), anyhow::E
         None => Message::builder()
             .from(Mailbox::new(
                 Some(from_addr.username.clone()),
-                Address::new(from_addr.username.clone(), from_addr.domain.clone()).expect("Expected to create address"),
+                Address::new(from_addr.username.clone(), from_addr.domain.clone())
+                    .expect("Expected to create address"),
             ))
             .to(Mailbox::new(None, addr))
             .subject(notification.title.clone())
@@ -111,12 +114,17 @@ pub async fn send_to_admins_gchat(error: String) {
 
 pub async fn send_to_admins_email(error: String) {
     let email_config = config::settings().notifications.clone();
-    let from_addr = email_config.admin_send_from_email.expect("Expected an admin from email address!");
-    let to_addr = email_config.admin_send_to_email.expect("Expected an admin to email address!");
+    let from_addr = email_config
+        .admin_send_from_email
+        .expect("Expected an admin from email address!");
+    let to_addr = email_config
+        .admin_send_to_email
+        .expect("Expected an admin to email address!");
     let email = Message::builder()
         .from(Mailbox::new(
             Some(from_addr.username.clone()),
-            Address::new(from_addr.username.clone(), from_addr.domain.clone()).expect("Expected to create address"),
+            Address::new(from_addr.username.clone(), from_addr.domain.clone())
+                .expect("Expected to create address"),
         ))
         .to(Mailbox::new(
             None,

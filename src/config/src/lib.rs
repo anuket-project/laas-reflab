@@ -41,7 +41,9 @@ impl std::default::Default for LoggingLevel {
 
 impl<'de> Deserialize<'de> for LoggingLevel {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where D: serde::Deserializer<'de> {
+    where
+        D: serde::Deserializer<'de>,
+    {
         let v = String::deserialize(deserializer)?;
 
         Ok(match v.as_str() {
@@ -151,6 +153,7 @@ pub struct IPAConfig {
 pub struct ProjectConfig {
     pub vpn: VPNConfig,
     pub notifications: HashMap<RenderTarget, HashMap<Situation, String>>,
+    pub styles_path: String,
     pub dashboard_url: String,
     pub search_domains: Vec<String>,
     pub nameservers: Vec<String>,
@@ -168,7 +171,9 @@ pub enum RenderTarget {
 
 impl<'de> Deserialize<'de> for RenderTarget {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where D: serde::Deserializer<'de> {
+    where
+        D: serde::Deserializer<'de>,
+    {
         let v = String::deserialize(deserializer)?;
 
         Ok(match v.as_str() {
@@ -193,7 +198,9 @@ pub enum Situation {
 
 impl<'de> Deserialize<'de> for Situation {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where D: serde::Deserializer<'de> {
+    where
+        D: serde::Deserializer<'de>,
+    {
         let v = String::deserialize(deserializer)?;
 
         Ok(match v.as_str() {
@@ -218,7 +225,9 @@ pub struct HostPortPair {
 
 impl<'de> Deserialize<'de> for HostPortPair {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where D: serde::Deserializer<'de> {
+    where
+        D: serde::Deserializer<'de>,
+    {
         let base = String::deserialize(deserializer)?;
 
         let (host, port) = base

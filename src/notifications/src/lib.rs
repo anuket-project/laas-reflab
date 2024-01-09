@@ -8,13 +8,16 @@ use models::dashboard::AggregateConfiguration;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
-    path::PathBuf,
+    fmt,
+    fs::File,
+    io::{prelude::*, BufReader},
+    path::{Path, PathBuf},
 };
 use tera::Tera;
 pub mod email;
 
 use common::prelude::{anyhow, chrono, futures, itertools::Itertools, serde_json::json, tracing};
-use config::{RenderTarget, Situation};
+use config::{settings, RenderTarget, Situation};
 
 pub type Username = String;
 
@@ -73,10 +76,19 @@ pub struct BookingInfo {
     pub dashboard_url: String,
     pub configuration: AggregateConfiguration,
 }
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct IPAInfo {
     pub username: String,
     pub password: String,
+}
+
+pub fn read_styles(path: &str) -> Result<String, anyhow::Error> {
+    let file = File::open(path)?;
+    let mut buf_reader = BufReader::new(file);
+    let mut contents = String::new();
+    buf_reader.read_to_string(&mut contents)?;
+    Ok(contents)
 }
 
 pub async fn send_booking_notification(
@@ -105,6 +117,44 @@ pub async fn send_booking_notification(
             None => "None".to_owned(),
         };
 
+        let styles = read_styles(
+            settings()
+                .projects
+                .get(env.project.clone().as_str())
+                .unwrap()
+                .styles_path
+                .as_str(),
+        )
+        .expect("Failed to read styles");
+
+        let styles_json: serde_json::Value =
+            serde_json::from_str(&styles).expect("Failed to parse JSON");
+
+        let mut context = tera::Context::new();
+        // insert styles into the context
+        context.insert("styles", &styles_json);
+
+        // add the rest of the context
+        context.insert(
+            "booking",
+            &json!({
+                "id": info.id,
+                "lab": info.lab,
+                "purpose": info.purpose,
+                "template": info.template,
+                "project": env.project.clone(),
+                "owner": info.owner,
+                "collaborators": info.collaborators,
+                "start": start,
+                "end": end,
+                "ipmi_password": info.configuration.ipmi_password,
+                "ipmi_username": info.configuration.ipmi_username,
+            }),
+        );
+        context.insert("owner", &is_owner);
+        context.insert("dashboard_url", &info.dashboard_url);
+
+        // create te notification
         let notification = Notification {
             title: if is_owner {
                 owner_title.clone()
@@ -115,25 +165,10 @@ pub async fn send_booking_notification(
             by_methods: preferred_methods(&username.clone()),
             situation,
             project: env.project.clone(),
-            context: tera::Context::from_value(json!({
-                "booking": {
-                    "id": info.id,
-                    "lab": info.lab,
-                    "purpose": info.purpose,
-                    "template": info.template,
-                    "owner": info.owner,
-                    "collaborators": info.collaborators,
-                    "start": start,
-                    "end": end,
-                    "ipmi_password": info.configuration.ipmi_password,
-                    "ipmi_username": info.configuration.ipmi_username,
-                },
-                "owner": is_owner,
-                "dashboard_url": info.dashboard_url,
-            }))
-            .expect("Expected to create context for notification"),
+            context, // Use the merged context here
             attachment: None,
         };
+
         match send(env, notification).await {
             Ok(_) => {}
             Err(e) => {
@@ -143,9 +178,44 @@ pub async fn send_booking_notification(
         }
     }
     if (errors.is_empty()) {
-        return Ok(());
+        Ok(())
     } else {
-        return Err(errors);
+        Err(errors)
+    }
+}
+
+pub async fn send_test_email(
+    status: Situation,
+    project: String,
+    owner_user: Username,
+    collab_users: Option<Vec<Username>>,
+) -> Result<(), Vec<anyhow::Error>> {
+    // create dummy BookingInfo
+    let dummy_info = BookingInfo {
+        owner: owner_user,
+        collaborators: collab_users.unwrap_or_default(),
+        lab: "Some Lab".to_owned(),
+        id: "12345".to_owned(),
+        template: "Test Pod".to_owned(),
+        purpose: "Email Testing".to_owned(),
+        start_date: Some(chrono::Utc::now()),
+        end_date: Some(chrono::Utc::now()),
+        dashboard_url: "https://example.com".to_owned(),
+        configuration: AggregateConfiguration {
+            ipmi_username: "fedora_the_explorer".to_owned(),
+            ipmi_password: "youwillneverguessthis".to_owned(),
+        },
+    };
+
+    let dummy_env = Env { project };
+
+    match status {
+        Situation::BookingExpired => booking_ended(&dummy_env, &dummy_info).await,
+        Situation::BookingCreated => booking_started(&dummy_env, &dummy_info).await,
+        Situation::BookingExpiring => booking_ending(&dummy_env, &dummy_info).await,
+        _ => Err(vec![anyhow::Error::msg(
+            "Invalid status for test email. Must be BookingExpired, BookingCreated or BookingExpiring",
+        )]),
     }
 }
 

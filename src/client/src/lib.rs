@@ -22,8 +22,7 @@ use common::prelude::{
     config::{settings, Situation},
     inquire::validator::Validation,
     itertools::Itertools,
-    serde_json,
-    tracing,
+    serde_json, tracing,
 };
 use liblaas::{
     booking::make_aggregate,
@@ -36,17 +35,14 @@ use models::{
     allocation::{Allocation, ResourceHandle},
     dal::{new_client, AsEasyTransaction, DBTable, EasyTransaction, ExistingRow, FKey, ID},
     dashboard::{
-        Aggregate,
-        BookingMetadata,
-        Instance,
-        LifeCycleState,
-        Network,
-        ProvisionLogEvent,
-        Template,
+        Aggregate, BookingMetadata, Instance, LifeCycleState, Network, ProvisionLogEvent, Template,
     },
     inventory::{BootTo, Host, Vlan},
 };
-use notifications::email::{send_to_admins_email, send_to_admins_gchat};
+use notifications::{
+    email::{send_to_admins_email, send_to_admins_gchat},
+    send_test_email,
+};
 use remote::{Password, Select, Server, Text};
 use std::{collections::HashMap, fmt::Formatter, path::PathBuf, str::FromStr, time::Duration};
 use tascii::prelude::Runtime;
@@ -502,15 +498,28 @@ async fn query(mut session: &Server) {
 
             for inst in agg.instances(&mut transaction).await.unwrap() {
                 let inst = inst.into_inner();
-                if let Some(h) = inst.linked_host && h == resource.id {
+                if let Some(h) = inst.linked_host
+                    && h == resource.id
+                {
                     // found our host, now can look at config
                     let conf = inst.config;
                     let image = conf.image.get(&mut transaction).await.unwrap().into_inner();
                     let hostname = conf.hostname.clone();
                     let _ = writeln!(session, "Hostname {hostname}");
-                    let _ = writeln!(session, "Assigned image: {}, cobbler id {}, id {:?}", image.name, image.cobbler_name, image.id);
+                    let _ = writeln!(
+                        session,
+                        "Assigned image: {}, cobbler id {}, id {:?}",
+                        image.name, image.cobbler_name, image.id
+                    );
                     let generated = workflows::deploy_booking::generate_cloud_config(
-                        conf.clone(), h, inst.id, agg.id, &mut transaction).await.unwrap();
+                        conf.clone(),
+                        h,
+                        inst.id,
+                        agg.id,
+                        &mut transaction,
+                    )
+                    .await
+                    .unwrap();
 
                     let _ = writeln!(session, "Primary CI file:");
                     let _ = writeln!(session, "{generated}");
@@ -518,7 +527,11 @@ async fn query(mut session: &Server) {
 
                     for cif in conf.cifile {
                         let cif = cif.get(&mut transaction).await.unwrap().into_inner();
-                        let _ = writeln!(session, "Additional CI file {:?}, priority {}:", cif.id, cif.priority);
+                        let _ = writeln!(
+                            session,
+                            "Additional CI file {:?}, priority {}:",
+                            cif.id, cif.priority
+                        );
                         let _ = writeln!(session, "=== BEGIN CONFIG FILE ===");
                         let _ = writeln!(session, "{}", cif.data);
                         let _ = writeln!(session, "==== END CONFIG FILE ====");
@@ -784,6 +797,7 @@ async fn overrides(mut session: &Server, tascii_rt: &'static Runtime) -> Result<
             "rerun host deployment",
             "send notification",
             "send email to admins",
+            "test email template",
             "send google chat to admins",
             "set host power state",
             "override endpoint hook",
@@ -842,6 +856,48 @@ async fn overrides(mut session: &Server, tascii_rt: &'static Runtime) -> Result<
 
             send_to_admins_email(email).await;
         }
+        "test email template" => {
+            let status = Select::new(
+                "Select a Status: ",
+                vec![
+                    Situation::BookingCreated,
+                    Situation::BookingExpiring,
+                    Situation::BookingExpired,
+                ],
+            )
+            .prompt(session)
+            .unwrap();
+
+            let project_type = Select::new(
+                "Select a Project: ",
+                settings()
+                    .projects
+                    .keys()
+                    .map(String::as_str)
+                    .collect::<Vec<&str>>(),
+            )
+            .prompt(session)
+            .unwrap();
+            let dest_user = Text::new("Destination Username: ").prompt(session).unwrap();
+
+            let result = send_test_email(
+                status,
+                project_type.to_owned(),
+                dest_user.clone(),
+                Some(vec![dest_user.clone()]),
+            )
+            .await;
+
+            match result {
+                Ok(_) => {
+                    tracing::info!("Successfully sent email to {:?}", &dest_user);
+                }
+                Err(e) => {
+                    tracing::error!("Failed to send email to {:?}: {:?}", &dest_user, e);
+                }
+            }
+        }
+
         "send google chat to admins" => {
             let gchat = Text::new("Message: ").prompt(session).unwrap();
 

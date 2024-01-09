@@ -13,13 +13,9 @@ use axum::{
     Extension,
 };
 use common::prelude::{
-    aide,
-    anyhow,
-    axum,
-    crossbeam_channel,
+    aide, anyhow, axum, crossbeam_channel,
     itertools::Itertools,
-    lazy_static,
-    schemars,
+    lazy_static, schemars,
     tracing::{self, debug},
 };
 use crossbeam_channel::{Receiver, Sender};
@@ -228,7 +224,7 @@ impl Mailbox {
     /// push() is how we enter messages from a resource into the system
     /// use llid in path to signify our handle id (reconstruct endpoint using that)
     pub async fn push(Path((instance, llid)): Path<(FKey<Instance>, ID)>, msg: String) {
-        warn!("Recieved message: {:#?}", msg);
+        warn!("Received message: {:#?}", msg);
         let mut mailbox = MAILBOX.lock().expect("couldn't lock mailbox");
 
         //this is not correct, endpoint needs to be reconstructed including the llid

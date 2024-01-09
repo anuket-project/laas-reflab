@@ -1,72 +1,118 @@
+<!DOCTYPE HTML5>
 <html>
-    <body>
-        <div id="message_content_wrapper" style="text-align: center; color:#343a40; margin: auto; background-color: #f8f9fa; position: center;">
-            {% if owner %}
-            <h2 style="font-family: 'Open Sans', 'Trebuchet MS', Verdana, Arial; font-size: 30px;">You Have Created a New Booking.</h2>
-            <div style="display: table; margin: auto; font-family: Verdana, Arial; text-align: justify; text-align-last: left;">
-                <p style="font-family: Verdana, Arial;">We have received your booking request and will start working on it right away.</p>
-            </div>
-            {% else %}
-            <h2 style="font-family: 'Open Sans', 'Trebuchet MS', Verdana, Arial; font-size: 30px;">You Have Been Added as a Collaborator to a Booking.</h2>
-            <div style="display: table; margin: auto; font-family: Verdana, Arial; text-align: justify; text-align-last: left;">
-                <p style="font-family: Verdana, Arial;">{{booking.owner}} has given you access to their booking.</p>
-            </div>
-            {% endif %}
-            <br>
-            <table style="margin-left: auto; margin-right: auto; border: 1px solid #8facc8; border-collapse: collapse;">
-                <tr style="border-bottom: 1px solid #8facc8; background-color: #8facc8;">
-                    <td style="color:#343a40; padding: 5px; font-family: Verdana, Arial; text-align: center; text-align: center; font-size: larger;" colspan="2">Booking Information:</td>
-                </tr>
-                <tr style="border-bottom: 1px solid #8facc8; background-color: #d7e2f0;">
-                    <td style="padding: 5px;">Owner:</td>
-                    <td style="padding: 5px;">{{booking.owner}}</td>
-                </tr>
-                <tr style="border-bottom: 1px solid #8facc8; background-color: #ffffff;">
-                    <td style="padding: 5px;">id:</td>
-                    <td style="padding: 5px;">{{booking.id}}</td>
-                </tr>
-                <tr style="border-bottom: 1px solid #8facc8; background-color: #d7e2f0;">
-                    <td style="padding: 5px;">lab:</td>
-                    <td style="padding: 5px;">{{booking.lab}}</td>
-                </tr>
-                <tr style="border-bottom: 1px solid #8facc8; background-color: #ffffff;">
-                    <td style="padding: 5px;">resource:</td>
-                    <td style="padding: 5px;">{{booking.template}}</td>
-                </tr>
-                <tr style="border-bottom: 1px solid #8facc8; background-color: #d7e2f0;">
-                    <td style="padding: 5px;">start:</td>
-                    <td style="padding: 5px;">{{booking.start}}</td>
-                </tr>
-                <tr style="border-bottom: 1px solid #8facc8; background-color: #ffffff;">
-                    <td style="padding: 5px;">end:</td>
-                    <td style="padding: 5px;">{{booking.end}}</td>
-                </tr>
-                <tr style="border-bottom: 1px solid #8facc8; background-color: #d7e2f0;">
-                    <td style="padding: 5px;">purpose:</td>
-                    <td style="padding: 5px;">{{booking.purpose}}</td>
-                </tr>
-                <tr style="border-bottom: 1px solid #8facc8; background-color: #d7e2f0;">
-                    <td style="padding: 5px;">ipmi username:</td>
-                    <td style="padding: 5px;">{{booking.ipmi_username}}</td>
-                </tr>
-                <tr style="border-bottom: 1px solid #8facc8; background-color: #d7e2f0;">
-                    <td style="padding: 5px;">ipmi password:</td>
-                    <td style="padding: 5px;">{{booking.ipmi_password}}</td>
-                </tr>
-                <tr style="border-bottom: 1px solid #8facc8; background-color: #ffffff;">
-                    <td colspan="2"  style="padding: 5px;">collaborator{{ booking.collaborators | length | pluralize }}:</td>
-                </tr>
-                {% for user in booking.collaborators %}
-                <tr style="border-bottom: 1px solid #8facc8; background-color: #d7e2f0;">
-                    <td colspan="2"  style="padding: 5px;">{{user}}</td>
-                </tr>
-                {% else %}
-                <tr style="border-bottom: 1px solid #8facc8; background-color: #d7e2f0;">
-                    <td colspan="2"  style="padding: 5px;">No collaborators</td>
-                </tr>
-                {% endfor %}
-            </table>
-            <a href="{{dashboard_url}}booking/detail/{{booking.id}}"><button style="background-color:#8facc8; color: #343a40; border: 0px; border-radius: 3mm; padding: 10px; text-align: center; margin: 15px; text-decoration: none; font-family: Verdana, Arial; font-size: 16;">You can find more detailed information here</button></a>
-        </div>
-    </body>
+  <body>
+    <div style="{{ styles.messageContentWrapperStyle }}">
+      {% if owner %}
+      <h2 style="{{ styles.headerStyle }}">NEW BOOKING CONFIRMATION</h2>
+      <div style="{{ styles.paragraphStyle }}">
+        <p>
+          We have received your booking request and will begin the deployment
+          process. Please review your booking information below.
+        </p>
+      </div>
+      {% else %}
+      <h2 style="{{ styles.headerStyle }}">
+        YOU HAVE BEEN ADDED TO A BOOKING AS A COLLABORATOR
+      </h2>
+      <div style="{{ styles.paragraphStyle }}">
+        <p>
+          You have been granted access to a booking reserved by {{ booking.owner
+          }}. You may view the booking information below.
+        </p>
+      </div>
+      {% endif %}
+      <table style="{{ styles.tableStyle }}">
+        <tr style="{{ styles.tableHeaderStyle }}">
+          <td style="{{ styles.tableHeaderCellStyle }}" colspan="2">
+            Booking Details
+          </td>
+        </tr>
+
+        <tr style="{{ styles.tableRowStyle}}">
+          <td style="{{ styles.tableCellStyle }}; font-weight: bold;">
+            Owner:
+          </td>
+          <td style="{{ styles.tableCellStyle }}">{{ booking.owner }}</td>
+        </tr>
+
+        <tr>
+          <td style="{{ styles.tableCellStyle }}; font-weight: bold;">ID:</td>
+          <td style="{{ styles.tableCellStyle }}">{{ booking.id }}</td>
+        </tr>
+
+        <tr style="{{ styles.tableRowStyle }}">
+          <td style="{{ styles.tableCellStyle }}; font-weight: bold;">Lab:</td>
+          <td style="{{ styles.tableCellStyle }}">{{ booking.lab }}</td>
+        </tr>
+
+        <tr>
+          <td style="{{ styles.tableCellStyle }}; font-weight: bold;">
+            Resource:
+          </td>
+          <td style="{{ styles.tableCellStyle }}">{{ booking.template }}</td>
+        </tr>
+
+        <tr style="{{styles.tableRowStyle}}">
+          <td style="{{ styles.tableCellStyle }}; font-weight: bold;">
+            Start Date/Time:
+          </td>
+          <td style="{{ styles.tableCellStyle }}">{{ booking.start}}</td>
+        </tr>
+
+        <tr>
+          <td style="{{ styles.tableCellStyle }}; font-weight: bold;">
+            End Date/Time:
+          </td>
+          <td style="{{ styles.tableCellStyle }}">{{ booking.end}}</td>
+        </tr>
+
+        <tr style="{{styles.tableRowStyle}}">
+          <td style="{{ styles.tableCellStyle }}; font-weight: bold;">
+            Purpose:
+          </td>
+          <td style="{{ styles.tableCellStyle }}">{{ booking.purpose }}</td>
+        </tr>
+
+        <tr>
+          <td style="{{ styles.tableCellStyle }}; font-weight: bold;">
+            IPMI Username:
+          </td>
+          <td style="{{ styles.tableCellStyle }}">
+            {{ booking.ipmi_username }}
+          </td>
+        </tr>
+
+        <tr style="{{ styles.tableRowStyle}}">
+          <td style="{{ styles.tableCellStyle }}; font-weight: bold;">
+            IPMI Password:
+          </td>
+          <td style="{{ styles.tableCellStyle }}">
+            {{ booking.ipmi_password }}
+          </td>
+        </tr>
+
+        {% if booking.collaborators %}
+        <tr>
+          <td style="{{ styles.tableCellStyle }}; font-weight: bold;">
+            Collaborators:
+          </td>
+          <td style="{{ styles.tableCellStyle }}">
+            {% for collaborator in booking.collaborators %} {{ collaborator }}
+            {% if not loop.last %}<br />{% endif %} {% endfor %}
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td style="{{ styles.tableCellStyle }}; font-weight: bold;">
+            Collaborators:
+          </td>
+          <td style="{{ styles.tableCellStyle }}">No collaborators</td>
+        </tr>
+        {% endif %}
+      </table>
+      <a href="{{ dashboard_url }}booking/detail/{{ booking.id }}">
+        <button style="{{ styles.buttonStyle }}">Manage Your Booking</button>
+      </a>
+    </div>
+  </body>
 </html>

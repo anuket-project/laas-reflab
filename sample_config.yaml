@@ -1,73 +1,74 @@
 dev:
-    status: true
-    hosts: ['']
+  status: true
+  hosts: [""]
 database:
-    url: localhost:5432
-    username: username
-    password: password
-    database_name: liblaasdb
-      
+  url: localhost:5432
+  username: username
+  password: password
+  database_name: liblaasdb
+
 web:
-    bind_addr: 0.0.0.0:3000
-    external_url: http://tascii.example.com:3000
-      
+  bind_addr: 0.0.0.0:3000
+  external_url: http://tascii.example.com:3000
+
 mailbox:
-    bind_addr: 0.0.0.0:3001
-    external_url: http://tascii.example.com:3001
-    
+  bind_addr: 0.0.0.0:3001
+  external_url: http://tascii.example.com:3001
+
 cli:
-    bind_addr: 0.0.0.0:3002
-    external_url: 0.0.0.0:3002
+  bind_addr: 0.0.0.0:3002
+  external_url: 0.0.0.0:3002
 
 notifications:
-    mail_server: mail.example.com
-    admin_gchat_webhook: http://example.com/?12345
-    admin_mail_server: http://example.mail/
-    send_from_email:
-        username: example
-        domain: mail.com
-    admin_send_from_email:
-        username: example
-        domain: mail.com
-    admin_send_to_email:
-        username: example
-        domain: mail.com
-
+  mail_server: mail.example.com
+  admin_gchat_webhook: http://example.com/?12345
+  admin_mail_server: http://example.mail/
+  send_from_email:
+    username: example
+    domain: mail.com
+  admin_send_from_email:
+    username: example
+    domain: mail.com
+  admin_send_to_email:
+    username: example
+    domain: mail.com
 
 cobbler:
-    url: http://cobbler.example.com/cobbler_api
-    username: username
-    password: password
+  url: http://cobbler.example.com/cobbler_api
+  username: username
+  password: password
 
 ipa:
-    url: https://ipa.example.com
-    username: username
-    password: password
-    certificate_path: config_data/os-ipa-ca.crt
+  url: https://ipa.example.com
+  username: username
+  password: password
+  certificate_path: config_data/os-ipa-ca.crt
 
 projects:
-    project1:
-        vpn:
-            ipa_group: project1
-        notifications:
-            email:
-                booking_created: project1/booking_created.html
-                booking_expiring: generic/booking_expiring.html
-                booking_expired: generic/booking_expired.html
-                vpn_access_added: project1/vpn_access_added.html
-                account_created: generic/account_created.html
-        search_domains: []
-        nameservers: []
+  project1:
+    vpn:
+      ipa_group: project1
+    notifications:
+      email:
+        booking_created: project1/booking_created.html
+        booking_expiring: generic/booking_expiring.html
+        booking_expired: generic/booking_expired.html
+        vpn_access_added: project1/vpn_access_added.html
+        account_created: generic/account_created.html
+    styles_path: ./templates/generic/styles.json
+    search_domains: []
+    nameservers: []
 
-    project2:
-        vpn:
-            ipa_group: project2
-        notifications:
-            email:
-                booking_created: project2/booking_created.html
-                booking_expiring: generic/booking_expiring.html
-                booking_expired: generic/booking_expired.html
-                vpn_access_added: project2/vpn_access_added.html
-                account_created: generic/account_created.html
-        search_domains: []
-        nameservers: []
+  project2:
+    vpn:
+      ipa_group: project2
+    notifications:
+      email:
+        booking_created: project2/booking_created.html
+        booking_expiring: generic/booking_expiring.html
+        booking_expired: generic/booking_expired.html
+        vpn_access_added: project2/vpn_access_added.html
+        account_created: generic/account_created.html
+    search_domains: []
+    nameservers: []
+
