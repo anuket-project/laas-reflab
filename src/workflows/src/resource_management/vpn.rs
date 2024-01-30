@@ -13,7 +13,6 @@ use tascii::{
 use users::*;
 
 
-
 use super::allocator;
 
 tascii::mark_task!(SyncVPN);

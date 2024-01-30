@@ -37,7 +37,7 @@ use models::{
     dashboard::{
         Aggregate, BookingMetadata, Instance, LifeCycleState, Network, ProvisionLogEvent, Template,
     },
-    inventory::{BootTo, Host, Vlan},
+    inventory::{BootTo, Host, Vlan, Lab},
 };
 use notifications::{
     email::{send_to_admins_email, send_to_admins_gchat},
@@ -371,8 +371,13 @@ async fn query(mut session: &Server) {
             let _ = writeln!(session, "Host is in state {ps:?}");
         }
         "list free vlans" => {
+            let lab = match get_lab(session, &mut transaction).await {
+                Ok(l) => l,
+                Err(e) => panic!("Unable to get lab: {e}"),
+            };
+            
             let mut vlans = allocator::Allocator::instance()
-                .get_free_vlans(&mut transaction)
+                .get_free_vlans(&mut transaction, lab)
                 .await
                 .unwrap();
 
@@ -390,8 +395,13 @@ async fn query(mut session: &Server) {
             let _ = writeln!(session, "=====");
         }
         "list free hosts" => {
+            let lab = match get_lab(session, &mut transaction).await {
+                Ok(l) => l,
+                Err(e) => panic!("Unable to get lab: {e}"),
+            };
+
             let hosts = allocator::Allocator::instance()
-                .get_free_hosts(&mut transaction)
+                .get_free_hosts(&mut transaction, lab)
                 .await
                 .unwrap();
 
@@ -555,10 +565,24 @@ fn areyousure(session: &Server) -> Result<(), anyhow::Error> {
     }
 }
 
-async fn select_host(
-    session: &Server,
-    transaction: &mut EasyTransaction<'_>,
-) -> Result<FKey<Host>, anyhow::Error> {
+async fn get_lab(session: &Server, transaction: &mut EasyTransaction<'_>) -> Result<FKey<Lab>, anyhow::Error>{
+    match Lab::select().run(transaction).await {
+        Ok(lab_list) => {
+            let name = Select::new("Select a Lab: ", lab_list.iter().map(|lab| lab.name.clone()).collect_vec())
+            .prompt(session).unwrap();
+            return match Lab::get_by_name(transaction, name).await {
+                Ok(opt_lab) => match opt_lab {
+                    Some(l) => Ok(l.id),
+                    None => Err(anyhow::Error::msg(format!("Error Lab does not exist"))),
+                },
+                Err(e) => Err(anyhow::Error::msg(format!("Error finding lab: {e}"))),
+            }
+        },
+        Err(e) => return Err(anyhow::Error::msg(format!("Failed to retrieve lab list: {e}"))),
+    }
+}
+
+async fn select_host(session: &Server, transaction: &mut EasyTransaction<'_>) -> Result<FKey<Host>, anyhow::Error> {
     let hosts = Host::select().run(transaction).await?;
 
     let mut disps = Vec::new();

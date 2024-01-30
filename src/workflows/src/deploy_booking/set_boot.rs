@@ -283,7 +283,7 @@ fn order(a: &(String, String), b: &(String, String), net_first: bool) -> cmp::Or
     let a_d = a.1.to_ascii_lowercase();
     let b_d = b.1.to_ascii_lowercase();
 
-    let f = |_a: &String, _b: &String| match (a_d.contains("network"), b_d.contains("network")) {
+    let f = |_a: &String, _b: &String| match (a_d.contains("pxe"), b_d.contains("pxe")) {
         (false, false) => cmp::Ordering::Equal,
         (true, false) => cmp::Ordering::Greater,
         (false, true) => cmp::Ordering::Less,

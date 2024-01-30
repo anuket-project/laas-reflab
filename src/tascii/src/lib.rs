@@ -6,14 +6,13 @@
     async_closure,
     async_iterator,
     result_flattening,
-    async_fn_in_trait,
     ptr_metadata,
     unboxed_closures,
     panic_backtrace_config,
     update_panic_count,
     panic_can_unwind,
-    local_key_cell_methods,
     let_chains,
+    generic_arg_infer
 )]
 
 pub mod task_trait;

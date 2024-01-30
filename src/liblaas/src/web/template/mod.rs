@@ -13,7 +13,7 @@ use axum::{extract::Path, Json};
 use models::{
     dal::{web::*, *},
     dashboard::{self, BondGroupConfig, HostConfig, Network, Template, VlanConnectionConfig},
-    inventory::{DataUnit, DataValue},
+    inventory::{DataUnit, DataValue, Lab},
 };
 
 use axum::http::StatusCode;
@@ -27,7 +27,7 @@ use super::{
 };
 
 pub async fn list_templates(
-    Path(username): Path<String>,
+    Path((request_origin, username)): Path<(String, String)>,
 ) -> Result<Json<Vec<TemplateBlob>>, WebError> {
     // Lists all templates available to a given user
     tracing::info!("API call to list_templates()");
@@ -58,7 +58,6 @@ pub async fn list_templates(
         let template = pair.1;
         let Template {
             id,
-            lab_name,
             name,
             deleted,
             description,
@@ -66,6 +65,7 @@ pub async fn list_templates(
             public,
             networks,
             hosts,
+            lab,
         } = template;
 
         if !template.deleted {
@@ -162,19 +162,23 @@ pub async fn list_templates(
                 network_blobs.push(nb);
             }
             tracing::debug!("pushing template {id:?}");
-
+            let lab = lab.get(t).await.expect("Expected to get origin lab");
             let tb = TemplateBlob {
                 id: Some(id),
                 owner: owner.unwrap_or("no owner".to_owned()),
-                lab_name,
-                pod_name: name,
+                pod_name: name.clone(),
                 pod_desc: description,
                 public,
                 host_list: host_blobs,
                 networks: network_blobs,
+                lab_name: lab.name.clone(),
             };
 
-            template_blobs.push(tb);
+            tracing::debug!("Trying to add template: {name}");
+            tracing::debug!("template lab: {}, request lab: {}", lab.name, request_origin);
+            if lab.name == request_origin {
+                template_blobs.push(tb);
+            }
         }
     }
 
@@ -204,18 +208,19 @@ pub async fn delete_template(Path(template_id): Path<ID>) -> Result<(), WebError
 }
 
 pub async fn make_template(
+    Path(lab_name): Path<String>,
     Json(blob): Json<TemplateBlob>,
 ) -> Result<Json<FKey<Template>>, WebError> {
     tracing::info!("API call to make_template()");
     let TemplateBlob {
         id,
         owner,
-        lab_name,
         pod_name,
         pod_desc,
         public,
         host_list,
         networks,
+        lab_name,
     } = blob;
 
     // discard the id field, since it's meaningless in this context
@@ -322,7 +327,6 @@ pub async fn make_template(
 
     let template = NewRow::new(Template {
         id: FKey::new_id_dangling(),
-        lab_name,
         name: pod_name,
         deleted: false,
         description: pod_desc,
@@ -330,6 +334,11 @@ pub async fn make_template(
         public,
         networks: db_networks,
         hosts: db_host_configs,
+        lab: Lab::get_by_name(&mut transaction, lab_name)
+            .await
+            .expect("Expected to find lab")
+            .expect("Expected that lab exists")
+            .id,
     });
 
     let template_fk = template
@@ -344,7 +353,7 @@ pub async fn make_template(
 
 pub fn routes(state: AppState) -> ApiRouter {
     return ApiRouter::new()
-        .route("/list/:user_id", get(list_templates))
+        .route("/list/:lab_name/:user_id", get(list_templates))
         .route("/:template_id", delete(delete_template))
-        .route("/create", post(make_template));
+        .route("/:lab_name/create", post(make_template));
 }

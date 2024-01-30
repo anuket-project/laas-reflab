@@ -83,7 +83,6 @@ impl Dispatcher {
 
                 }
                 Action::CleanupBooking { agg_id } => {
-                    // TODO: Create task
                     let task = crate::cleanup_booking::CleanupAggregate { agg_id };
 
                     let task_id = self.rt.enroll(task.into());

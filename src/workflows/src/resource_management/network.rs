@@ -116,7 +116,7 @@ pub struct VlanConnection {
 }
 
 impl VlanConnection {
-    pub async fn from_pair(t: &mut EasyTransaction<'_>, vlan_id: u16, tagged: bool) -> Self {
+    pub async fn from_pair(t: &mut EasyTransaction<'_>, vlan_id: i16, tagged: bool) -> Self {
         Self {
             vlan: Vlan::select()
                 .where_field("vlan_id")
@@ -130,16 +130,4 @@ impl VlanConnection {
             tagged,
         }
     }
-}
-
-#[derive(Debug, Clone, Hash, Serialize, Deserialize)]
-pub struct SwitchPort {
-    mac_address: Option<MacAddr6>,
-    port_name: String, // ex: Ethernet1/23
-    switch: SwitchIdentifier,
-}
-
-#[derive(Debug, Clone, Hash, Serialize, Deserialize)]
-pub struct SwitchIdentifier {
-    fqdn: String,
 }

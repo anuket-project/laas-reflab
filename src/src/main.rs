@@ -3,8 +3,8 @@
 
 use client::remote::{cli_client_entry, cli_server_entry};
 use common::prelude::{
-    axum::Json,
-    chrono::{Days, Utc},
+    axum::{Json, self},
+    chrono::{Days, Utc, self},
     itertools::Itertools,
     tokio,
     tokio::{sync::mpsc, task::LocalSet},
@@ -40,22 +40,50 @@ pub async fn allocate_unreserved_hosts() {
     tracing::info!("Got the transaction");
     let now = Utc::now();
 
-    let template = make_template(Json(TemplateBlob {
+    let lab = match Lab::get_by_name(&mut transaction, "reserved".to_string()).await {
+        Ok(opt_lab) => match opt_lab {
+            Some(l) => l.id,
+            None => {
+                let mut t = transaction.easy_transaction().await.unwrap();
+                let l = NewRow::new(Lab {
+                    id: FKey::new_id_dangling(),
+                    name: "reserved".to_string(),
+                    location: "".to_string(),
+                    email: "".to_string(),
+                    phone: "".to_string(),
+                    is_dynamic: true
+                }).insert(&mut t).await.unwrap();
+                t.commit().await.unwrap();
+                l
+            },
+        },
+        Err(e) => panic!("Failed to find reserved lab, unable to reserve hosts that may be in production until this is fixed, error: {}", e.to_string()),
+    };
+    println!("Labs: {:?}", Lab::select().run(&mut transaction).await);
+    transaction.commit().await.unwrap();
+
+    let mut transaction = client
+        .easy_transaction()
+        .await
+        .log_db_client_error()
+        .unwrap();
+
+    let template = make_template(axum::extract::path::Path::from(common::prelude::axum::extract::Path("reserved".to_string())), Json(TemplateBlob {
         id: None,
         owner: format!("root"),
-        lab_name: format!("reserved"),
         pod_name: format!("reserved"),
         pod_desc: format!("reserved"),
         public: false,
         host_list: vec![],
         networks: vec![],
+        lab_name: format!("reserved"),
     }))
     .await
     .expect("couldn't make default allocation template");
 
     let agg_id = FKey::new_id_dangling();
     let agg = Aggregate {
-        origin: String::from("reserved"),
+        lab,
         state: LifeCycleState::Active,
         id: agg_id,
         configuration: AggregateConfiguration {
@@ -79,7 +107,6 @@ pub async fn allocate_unreserved_hosts() {
             end: Some(now + Days::new(1000)),
         },
     };
-
     NewRow::new(agg).insert(&mut transaction).await.unwrap();
 
     let allocator = Allocator::instance();
@@ -92,7 +119,7 @@ pub async fn allocate_unreserved_hosts() {
 
     let hosts = hosts_builder.run(&mut transaction).await.unwrap();
 
-    let _ = transaction.commit().await;
+    transaction.commit().await.unwrap();
 
     for host in hosts {
         let mut transaction = client.easy_transaction().await.unwrap();
@@ -118,6 +145,7 @@ pub async fn allocate_unreserved_hosts() {
         }
     }
 }
+
 
 pub fn clear_tasks() {
     std::fs::remove_file("primary-targets.json").ok();
@@ -177,12 +205,13 @@ async fn main() {
 
     unsafe { backtrace_on_stack_overflow::enable() };
 
+    // Run migrations
     let ih = tokio::spawn(async {
         match models::dal::initialize().await {
             Ok(_) => {}
             Err(e) => {
                 for error in e {
-                    tracing::info!("Init Error: {}, check logs for panic", error.to_string())
+                    tracing::error!("Init Error: {}, check logs for panic", error.to_string())
                 }
             }
         }
@@ -190,6 +219,7 @@ async fn main() {
 
     let _ = ih.await;
 
+    // Reserve all hosts that are not dev hosts if dev mode is on
     let dev = settings().dev.clone();
     if dev.status {
         tracing::info!("Running LibLaaS as dev.");

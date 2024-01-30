@@ -5,7 +5,7 @@ use std::{
     cell::UnsafeCell,
     mem::MaybeUninit,
     panic::RefUnwindSafe,
-    sync::{atomic::fence, Arc, Weak},
+    sync::{atomic::fence, Arc, Weak}, collections::HashMap,
 };
 
 use dal::{
@@ -14,10 +14,12 @@ use dal::{
     DBTable,
     ExistingRow,
     FKey,
-    JsonModel,
     Migrate,
     NewRow,
-    ID,
+    ID, 
+    Migration, 
+    ToSqlObject, 
+    Apply,
 };
 
 use dashmap::DashMap;
@@ -498,13 +500,58 @@ pub struct DatabaseObjectWrapper<T: TaskSafe> {
     v: T,
 }
 
-impl<T: TaskSafe> JsonModel for DatabaseObjectWrapper<T> {
+impl<T: TaskSafe> DBTable for DatabaseObjectWrapper<T> {
     fn id(&self) -> ID {
         self.id.into_id()
     }
 
     fn table_name() -> &'static str {
         "tascii_database_objects"
+    }
+    // JSONMODEL -> DBTABLE
+    fn from_row(row: tokio_postgres::Row) -> Result<ExistingRow<Self>, anyhow::Error> {
+        let val: T = serde_json::from_value(row.try_get("v")?)?;
+        Ok(ExistingRow::from_existing(Self {
+            id: row.try_get("id")?,
+            v: val,
+        }))
+    }
+
+    fn to_rowlike(&self) -> Result<HashMap<&str, Box<dyn ToSqlObject>>, anyhow::Error> {
+        let v = serde_json::to_value(self.v.clone())?;
+        let c: [(&str, Box<dyn ToSqlObject>); _] = [
+            ("id", Box::new(self.id)),
+            ("v", Box::new(v)),
+        ];
+
+        Ok(c.into_iter().collect())
+    }
+
+    fn migrations() -> Vec<Migration> {
+        vec![
+            Migration { 
+                unique_name: "create_tascii_database_objects_0001",
+                description: "Creates the tascii_database_objects table",
+                depends_on: vec![],
+                apply: Apply::SQL(format!(
+                    "CREATE TABLE public.tascii_database_objects (
+                        id UUID NOT NULL,
+                        data JSONB NOT NULL
+                    );"
+                )),
+            },
+            Migration { 
+                unique_name: "migrate_tascii_database_objects_0002",
+                description: "Migrates the tascii_database_objects table",
+                depends_on: vec![],
+                apply: Apply::SQLMulti(vec![
+                    "ALTER TABLE tascii_database_objects ADD COLUMN v JSONB;".to_owned(),
+                    "UPDATE tascii_database_objects SET v = data -> 'v';".to_owned(),
+
+                    "ALTER TABLE tascii_database_objects DROP COLUMN data;".to_owned(),
+                ]),
+            },
+        ]
     }
 }
 
@@ -534,7 +581,7 @@ impl<T: TaskSafe> DatabaseObjectWrapper<T> {
         let mut client = dal::new_client().await?;
         let mut trans = client.easy_transaction().await?;
 
-        let tn = <DatabaseObjectWrapper<T> as JsonModel>::table_name();
+        let tn = <DatabaseObjectWrapper<T> as DBTable>::table_name();
         let id = self.id;
 
         let fk = self.id;

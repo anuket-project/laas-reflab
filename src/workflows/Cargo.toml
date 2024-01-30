@@ -17,6 +17,7 @@ base64 = "0.21.0"
 inventory = "0.3.6"
 tar = "*"
 url = "*"
+ssh2 = "0.9.4"
 
 [dependencies.ureq]
 version = "2.6"

@@ -1,16 +1,18 @@
 //! Copyright (c) 2023 University of New Hampshire
 //! SPDX-License-Identifier: MIT
 
-use common::prelude::{itertools::Itertools, macaddr::MacAddr6, *};
+use common::prelude::{itertools::Itertools, macaddr::MacAddr6, *, chrono::{DateTime, Utc}, axum::async_trait, serde_json::Value};
 use dal::{
     web::{AnyWay, *},
     *,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use strum_macros::Display;
+use tokio_postgres::types::{ToSql, FromSql, private::BytesMut};
 use std::{
     collections::HashMap,
-    net::{Ipv4Addr, Ipv6Addr},
+    net::{Ipv4Addr, Ipv6Addr}, str::Split, cmp::Ordering,
 };
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone, Hash, Copy, JsonSchema)]
@@ -64,16 +66,13 @@ pub struct Flavor {
     pub id: FKey<Flavor>, // Flavor io used to create an instance
 
     pub arch: Arch,
-    pub name: String, // Name of the flavor (used to match a selection to a flavor)
-    pub public: bool, // Default True. If template should be available to all users
-    pub cpu_count: usize, // Max 4.294967295 Billion
-    pub ram: DataValue, // Max 4.294 Petabytes in gig
-    pub root_size: DataValue, // Max 4.294 Exabytes in gig
-    pub disk_size: DataValue, // Max 4.294 Exabytes in gig
-    pub swap_size: DataValue, // Max 9.223372036854775807 Exabytes in gig
-
-                      //TODO: potentially move extra flavor info into an array/json field *on*
-                      //flavor, since it is almost never going to be used for a join
+    pub name: String,
+    pub public: bool,
+    pub cpu_count: usize,
+    pub ram: DataValue,
+    pub root_size: DataValue,
+    pub disk_size: DataValue,
+    pub swap_size: DataValue,
 }
 
 impl DBTable for Flavor {
@@ -211,7 +210,8 @@ impl DBTable for InterfaceFlavor {
                 );"
                 .to_owned(),
             ),
-        }]
+        },
+        ]
     }
 
     fn from_row(
@@ -340,8 +340,6 @@ pub struct Host {
     pub ipmi_user: String,
     pub ipmi_pass: String,
     pub fqdn: String,
-
-    /// the list of projects this resource can be allocated for
     pub projects: Vec<String>,
 }
 
@@ -400,8 +398,8 @@ impl DBTable for Host {
             ipmi_mac: row.try_get("ipmi_mac")?,
             ipmi_user: row.try_get("ipmi_user")?,
             ipmi_pass: row.try_get("ipmi_pass")?,
-            projects: serde_json::from_value(row.try_get("projects")?)?,
             fqdn: row.try_get("fqdn")?,
+            projects: serde_json::from_value(row.try_get("projects")?)?,
         }))
     }
 
@@ -418,11 +416,8 @@ impl DBTable for Host {
             ("ipmi_mac", Box::new(clone.ipmi_mac)),
             ("ipmi_user", Box::new(clone.ipmi_user)),
             ("ipmi_pass", Box::new(clone.ipmi_pass)),
-            (
-                "projects",
-                Box::new(serde_json::to_value(self.projects.clone())?),
-            ),
-            ("fqdn", Box::new(self.fqdn.clone())),
+            ("fqdn", Box::new(clone.fqdn)),
+            ("projects", Box::new(serde_json::to_value(clone.projects)?)),
         ];
 
         Ok(c.into_iter().collect())
@@ -494,6 +489,292 @@ impl Arch {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct LabStatusUpdate {
+    pub headline: String,
+    pub elaboration: Option<String>,
+    pub time: DateTime<Utc>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Forecast {
+    pub expected_time: Option<DateTime<Utc>>,
+    pub explanation: Option<String>,
+
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum LabStatusInner {
+    Operational(),
+    Recovered(),
+    Monitoring(),
+    StatusUpdate(),
+    UnplannedMaintenance(),
+    PlannedMaintenance(),
+    Degraded(),
+    Decommissioned(),
+}
+
+impl LabStatusInner {
+
+}
+
+inventory::submit! { Migrate::new(Lab::migrations) }
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Lab {
+    pub id: FKey<Lab>,
+    pub name: String,
+    pub location: String,
+    pub email: String,
+    pub phone: String,
+    pub is_dynamic: bool
+}
+
+impl Lab {
+    pub async fn status(&self) -> Option<FKey<LabStatus>> {
+        let mut client = new_client().await.expect("Expected to connect to db");
+        let mut transaction = client
+
+        .easy_transaction()
+        .await
+        .expect("Transaction creation error");
+        let stati = LabStatus::select().where_field("for_lab").equals(self.id).run(&mut transaction).await.expect("Statuses for lab not found");
+        match stati.len() {
+            0 | 1 => {
+                return
+                    match stati.get(0) {
+                        Some(s) => Some(s.id),
+                        None => None
+                    }
+            },
+            _ => {
+                let mut largest: ExistingRow<LabStatus> = stati.get(0).expect("Expected to have a lab status").clone();
+                for status in stati {
+                    if largest.time.cmp(&status.time) == Ordering::Less {
+                        largest = status;
+                    }
+                }
+                return Some(largest.id)
+            }
+        }
+    }
+
+    pub async fn get_by_name(
+        transaction: &mut EasyTransaction<'_>,
+        name: String,
+    ) -> Result<Option<ExistingRow<Lab>>, anyhow::Error> {
+        let tn = <Self as DBTable>::table_name();
+        let q = format!("SELECT * FROM {tn} WHERE name = '{name}';");
+        println!("{q}");
+
+        let opt_row = transaction.query_opt(&q, &[]).await.anyway()?;
+        Ok(match opt_row {
+            None => None,
+            Some(row) => Some(Self::from_row(row)?),
+        })
+    }
+}
+
+impl DBTable for Lab {
+
+    fn id(&self) -> ID {
+        self.id.into_id()
+    }
+
+    fn table_name() -> &'static str {
+        "labs"
+    }
+
+    fn from_row(row: tokio_postgres::Row) -> Result<ExistingRow<Self>, anyhow::Error> {
+        Ok(ExistingRow::from_existing(Self {
+            id: row.try_get("id")?,
+            name: row.try_get("name")?,
+            location: row.try_get("location")?,
+            email: row.try_get("email")?,
+            phone: row.try_get("phone")?,
+            is_dynamic: row.try_get("is_dynamic")?,
+        }))
+    }
+    
+    fn to_rowlike(&self) -> Result<HashMap<&str, Box<dyn ToSqlObject>>, anyhow::Error> {
+        let clone = self.clone();
+
+        let id = serde_json::to_value(clone.id)?;
+        let name = serde_json::to_value(clone.name)?;
+        let location = serde_json::to_value(clone.location)?;
+        let email = serde_json::to_value(clone.email)?;
+        let phone = serde_json::to_value(clone.phone)?;
+        let is_dynamic = serde_json::to_value(clone.is_dynamic)?;
+
+
+        let c: [(&str, Box<dyn ToSqlObject>); _] = [
+            ("id", Box::new(self.id)),
+            ("name", Box::new(self.name.clone())),
+            ("location", Box::new(self.location.clone())),
+            ("email", Box::new(self.email.clone())),
+            ("phone", Box::new(self.phone.clone())),
+            ("is_dynamic", Box::new(self.is_dynamic.clone())),
+
+        ];
+
+        Ok(c.into_iter().collect())
+    }
+
+    fn migrations() -> Vec<Migration> {
+        vec![Migration {
+            unique_name: "create_labs_0001",
+            description: "create sql model for labs",
+            depends_on: vec![],
+            apply: Apply::SQL(format!(
+                "CREATE TABLE IF NOT EXISTS labs (
+                        id UUID PRIMARY KEY NOT NULL,
+                        name VARCHAR NOT NULL,
+                        location VARCHAR NOT NULL,
+                        email VARCHAR NOT NULL,
+                        phone VARCHAR NOT NULL,
+                        is_dynamic BOOLEAN NOT NULL
+            );"
+            )),
+        },
+        Migration {
+            unique_name: "create_labs_0002",
+            description: "Import labs",
+            depends_on: vec!["create_labs_0001"],
+            apply: Apply::Operation(Box::new(UpsertLabs())),
+        }
+        ]
+    }
+}
+
+pub struct UpsertLabs();
+
+#[async_trait]
+impl ComplexMigration for UpsertLabs {
+    async fn run(&self, transaction: &mut EasyTransaction<'_>) -> Result<(), anyhow::Error> {
+        let projects = config::settings().projects.clone();
+
+    tracing::info!("Got client for upsert labs");
+
+    for (name, config) in projects {
+        // upsert the lab
+
+        let lab = Lab::get_by_name(transaction, name.clone()).await;
+
+        match lab {
+            Ok(lab) => {
+
+                match lab {
+                    Some(mut lab) => {
+                        // Lab exists, update it regardless if anything changed or not
+                        lab.location = config.location;
+                        lab.email = config.email;
+                        lab.phone = config.phone;
+
+                        lab.update(transaction).await.unwrap();
+
+                        tracing::info!("Updated existing lab: {:?}", lab);
+                    },
+                    None => {
+                        // Lab does not exist, create it
+                        let lab = Lab {
+                            id: FKey::new_id_dangling(),
+                            name: name.clone(),
+                            location: config.location,
+                            email: config.email,
+                            phone: config.phone,
+                            is_dynamic: config.is_dynamic,
+                        };
+
+                        let res = NewRow::new(lab.clone())
+                        .insert(transaction)
+                        .await.expect("Failed to insert lab into db!");
+                        
+                        tracing::info!("Added new lab: {:?}", lab.clone());
+                    },
+                }
+            },
+            Err(e) => {
+                tracing::error!("{}", format!("{:?}", e));
+                return Err(e);
+            },
+        }
+    }
+        Ok(())
+    }
+}
+
+inventory::submit! { Migrate::new(LabStatus::migrations) }
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct LabStatus {
+    pub id: FKey<LabStatus>,
+    pub for_lab: FKey<Lab>,
+
+    pub time: DateTime<Utc>,
+    
+    pub expected_next_event_time: Forecast,
+    pub status: LabStatusInner,
+    pub headline: Option<String>,
+    pub subline: Option<String>,
+}
+
+impl DBTable for LabStatus {
+    fn id(&self) -> ID {
+        self.id.into_id()
+    }
+
+    fn table_name() -> &'static str {
+        "lab_statuses"
+    }
+
+    fn from_row(row: tokio_postgres::Row) -> Result<ExistingRow<Self>, anyhow::Error> {
+        Ok(ExistingRow::from_existing(Self {
+            id: row.try_get("id")?,
+            for_lab: row.try_get("for_lab")?,
+            time: row.try_get("time")?,
+            expected_next_event_time: serde_json::from_value(row.try_get("expected_next_event_time")?)?,
+            status: serde_json::from_value(row.try_get("status")?)?,
+            headline: row.try_get("headline")?,
+            subline: row.try_get("subline")?,
+        }))
+    }
+    
+    fn to_rowlike(&self) -> Result<HashMap<&str, Box<dyn ToSqlObject>>, anyhow::Error> {
+        let clone = self.clone();
+
+        let c: [(&str, Box<dyn ToSqlObject>); _] = [
+            ("id", Box::new(self.id)),
+            ("for_lab", Box::new(self.for_lab)),
+            ("time", Box::new(self.time)),
+            ("expected_next_event_time", Box::new(serde_json::to_value(self.expected_next_event_time.clone())?)),
+            ("status", Box::new(serde_json::to_value(self.status.clone())?)),
+            ("headline", Box::new(self.headline.clone())),
+            ("subline", Box::new(self.subline.clone())),
+        ];
+
+        Ok(c.into_iter().collect())
+    }
+
+    fn migrations() -> Vec<Migration> {
+        vec![Migration {
+            unique_name: "create_lab_statuses_0001",
+            description: "create sql model for lab statuses",
+            depends_on: vec![],
+            apply: Apply::SQL(format!(
+                "CREATE TABLE IF NOT EXISTS lab_statuses (
+                        id UUID PRIMARY KEY NOT NULL,
+                        for_lab UUID NOT NULL,
+                        time TIMESTAMP NOT NULL,
+                        expected_next_event_time JSONB NOT NULL,
+                        status JSONB NOT NULL,
+                        headline VARCHAR,
+                        subline VARCHAR
+            );"
+            )),
+        }]
+    }
+}
+
+
 inventory::submit! { Migrate::new(Switch::migrations) }
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Switch {
@@ -503,16 +784,147 @@ pub struct Switch {
     pub ip: String,
     pub user: String,
     pub pass: String,
-    pub switch_type: String,
+    pub switch_os: Option<FKey<SwitchOS>>,
+    pub management_vlans: Vec<i16>,
+    pub ipmi_vlan: i16,
+    pub public_vlans: Vec<i16>
 }
 
-impl JsonModel for Switch {
+impl PartialEq for Switch {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id && self.name == other.name && self.ip == other.ip && self.user == other.user && self.pass == other.pass && self.switch_os == other.switch_os
+    }
+}
+
+impl DBTable for Switch {
     fn id(&self) -> ID {
         self.id.into_id()
     }
 
     fn table_name() -> &'static str {
         "switches"
+    }
+    // JSONMODEL -> DBTABLE
+    fn from_row(row: tokio_postgres::Row) -> Result<ExistingRow<Self>, anyhow::Error> {
+        Ok(ExistingRow::from_existing(Self {
+            id: row.try_get("id")?,
+            name: row.try_get("name")?,
+            ip: row.try_get("ip")?,
+            user: row.try_get("switch_user")?,
+            pass: row.try_get("switch_pass")?,
+            switch_os: row.try_get("switch_os")?,
+            management_vlans: row.try_get("management_vlans")?,
+            ipmi_vlan: row.try_get("ipmi_vlan")?,
+            public_vlans: row.try_get("public_vlans")?,
+        }))
+    }
+
+    fn to_rowlike(&self) -> Result<HashMap<&str, Box<dyn ToSqlObject>>, anyhow::Error> {
+        let clone = self.clone();
+        let c: [(&str, Box<dyn ToSqlObject>); _] = [
+            ("id", Box::new(clone.id)),
+            ("name", Box::new(clone.name)),
+            ("ip", Box::new(clone.ip)),
+            ("switch_user", Box::new(clone.user)),
+            ("switch_pass", Box::new(clone.pass)),
+            ("switch_os", Box::new(clone.switch_os)),
+            ("management_vlans", Box::new(clone.management_vlans)),
+            ("ipmi_vlan", Box::new(clone.ipmi_vlan)),
+            ("public_vlans", Box::new(clone.public_vlans)),
+        ];
+
+        Ok(c.into_iter().collect())
+    }
+
+    fn migrations() -> Vec<Migration> {
+        vec![
+            Migration { 
+                unique_name: "create_switches_0001",
+                description: "Create switches table",
+                depends_on: vec![],
+                apply: Apply::SQL(format!(
+                    "CREATE TABLE IF NOT EXISTS switches (
+                            id UUID PRIMARY KEY NOT NULL,
+                            data JSONB NOT NULL
+                    );"
+                )),
+            },
+            Migration { 
+                unique_name: "migrate_switches_0002",
+                description: "Migrates the switch table",
+                depends_on: vec!["create_switches_0001"],
+                apply: Apply::SQLMulti(vec![
+                    "ALTER TABLE switches ADD COLUMN name VARCHAR;".to_owned(),
+                    "UPDATE switches SET name = data ->> 'name';".to_owned(),
+                    "ALTER TABLE switches ALTER COLUMN name SET NOT NULL;".to_owned(),
+
+                    "ALTER TABLE switches ADD COLUMN ip VARCHAR;".to_owned(),
+                    "UPDATE switches SET ip = data ->> 'ip';".to_owned(),
+                    "ALTER TABLE switches ALTER COLUMN ip SET NOT NULL;".to_owned(),
+
+                    "ALTER TABLE switches ADD COLUMN switch_user VARCHAR;".to_owned(),
+                    "UPDATE switches SET switch_user = data ->> 'user';".to_owned(),
+                    "ALTER TABLE switches ALTER COLUMN switch_user SET NOT NULL;".to_owned(),
+
+                    "ALTER TABLE switches ADD COLUMN switch_pass VARCHAR;".to_owned(),
+                    "UPDATE switches SET switch_pass = data ->> 'pass';".to_owned(),
+                    "ALTER TABLE switches ALTER COLUMN switch_pass SET NOT NULL;".to_owned(),
+
+                    "ALTER TABLE switches ADD COLUMN switch_type VARCHAR;".to_owned(),
+                    "UPDATE switches SET switch_type = data ->> 'switch_type';".to_owned(),
+                    "ALTER TABLE switches ALTER COLUMN switch_type SET NOT NULL;".to_owned(),
+
+                    "ALTER TABLE IF EXISTS switches DROP COLUMN data;".to_owned(),
+                ]),
+            },
+            Migration { 
+                unique_name: "add_switch_os_0003",
+                description: "Adds the Switch OS column",
+                depends_on: vec!["migrate_switches_0002"],
+                apply: Apply::SQLMulti(vec![
+                    "ALTER TABLE switches ADD COLUMN switch_os UUID;".to_owned(),
+                ]),
+            },
+            Migration {
+                unique_name: "add_vlan_support_0004",
+                description: "Adds management, public, and ipmi vlans for switches",
+                depends_on: vec!["add_switch_os_0003"],
+                apply: Apply::SQLMulti(vec![
+                    "ALTER TABLE switches ADD COLUMN management_vlans SMALLINT[];".to_owned(),
+                    "ALTER TABLE switches ADD COLUMN ipmi_vlan SMALLINT;".to_owned(),
+                    "ALTER TABLE switches ADD COLUMN public_vlans SMALLINT[];".to_owned(),
+                ]),
+            },
+            Migration {
+                unique_name: "wip_switch_type_removal_0005",
+                description: "Allowing switch_type to be mull",
+                depends_on: vec!["add_vlan_support_0004"],
+                apply: Apply::SQLMulti(vec![
+                    "ALTER TABLE switches ALTER COLUMN switch_type DROP NOT NULL;".to_owned(),
+                ]),
+            },
+            Migration {
+                unique_name: "set_vlan_defaults_0006",
+                description: "Sets default values for vlans on existing switches",
+                depends_on: vec!["wip_switch_type_removal_0005"],
+                apply: Apply::SQLMulti(vec![
+                    "UPDATE switches SET management_vlans = '{0}';".to_owned(),
+                    "UPDATE switches SET ipmi_vlan = 0;".to_owned(),
+                    "UPDATE switches SET public_vlans = '{0}';".to_owned(),
+                ]),
+            },
+            Migration { //Comment for first run if migrating with aggregates using string origins
+                unique_name: "drop_switch_type_0010",
+                description: "Drops the switch type in favor of the switch os column",
+                depends_on: vec!["migrate_switches_0002", "create_switch_os_0001"],
+                apply: Apply::SQLMulti(vec![
+                    "ALTER TABLE IF EXISTS switches DROP COLUMN switch_type;".to_owned(),
+                    "ALTER TABLE switches ALTER COLUMN management_vlans SET NOT NULL;".to_owned(),
+                    "ALTER TABLE switches ALTER COLUMN ipmi_vlan SET NOT NULL;".to_owned(),
+                    "ALTER TABLE switches ALTER COLUMN public_vlans SET NOT NULL;".to_owned(),
+                ]),
+            },
+        ]
     }
 }
 
@@ -521,10 +933,8 @@ impl Switch {
         transaction: &mut EasyTransaction<'_>,
         ip: String,
     ) -> Result<Option<ExistingRow<Switch>>, anyhow::Error> {
-        let ip = serde_json::to_value(ip).unwrap();
         let tn = <Self as DBTable>::table_name();
-        let q = format!("SELECT * FROM {tn} WHERE data -> 'ip' = $1;");
-
+        let q = format!("SELECT * FROM {tn} WHERE ip = $1;");
         let opt_row = transaction.query_opt(&q, &[&ip]).await.anyway()?;
         Ok(match opt_row {
             None => None,
@@ -536,15 +946,246 @@ impl Switch {
         transaction: &mut EasyTransaction<'_>,
         name: String,
     ) -> Result<Option<ExistingRow<Switch>>, anyhow::Error> {
-        let name = serde_json::to_value(name).unwrap();
         let tn = <Self as DBTable>::table_name();
-        let q = format!("SELECT * FROM {tn} WHERE data -> 'name' = $1;");
+        let q = format!("SELECT * FROM {tn} WHERE name = $1;");
 
         let opt_row = transaction.query_opt(&q, &[&name]).await.anyway()?;
         Ok(match opt_row {
             None => None,
             Some(row) => Some(Self::from_row(row)?),
         })
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum Version {
+    Nxos(NxosVersion),
+    Sonic(SonicVersion),
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct NxosVersion {
+    major: i32,
+    minor: i32,
+    maintenance: i32,
+    train: String,
+    rebuild: i32,
+}
+
+impl NxosVersion {
+    pub fn to_string(&self) -> String {
+        return format!("{}.{}({}){}{}", self.major, self.minor, self.maintenance, self.train, self.rebuild)
+    }
+
+    pub fn from_string(s: String) -> Result<NxosVersion, Box<dyn std::error::Error + Sync + Send>> {
+        if s.contains('.') { // 7.0(3)I3(1)
+                let mut version_nums = s.split(['.', '(', ')']);
+                // 7 0 3 I3 1
+                let major = match verion_num_from_split(&mut version_nums) {
+                    Ok(m) => m,
+                    Err(e) => return Err(e),
+                };
+                let minor = match verion_num_from_split(&mut version_nums) {
+                    Ok(m) => m,
+                    Err(e) => return Err(e),
+                };
+                let maintenance = match verion_num_from_split(&mut version_nums) {
+                    Ok(m) => m,
+                    Err(e) => return Err(e),
+                };
+                let mut train: String = "".to_string();
+                let mut rebuild: i32 = 0;
+
+                match version_nums.next() {
+                    Some(st) => {
+                        if st.len() == 2 {
+                            let temp = st.split_at(1);
+                            train = temp.0.to_string();
+                            rebuild = match i32::from_str_radix(temp.1, 10) {
+                                Ok(r) => r,
+                                Err(e) => return Err(Box::new(e)),
+                            }
+                        } else if st.len() == 1 {
+                            train = st.to_string();
+                            rebuild = 0;
+                        }
+                    },
+                    None => {
+                        train = "".to_string();
+                        rebuild = 0;
+                    }
+                };
+    
+                Ok(NxosVersion {
+                    major,
+                    minor,
+                    maintenance,
+                    train,
+                    rebuild,
+                }
+            )
+        } else {
+            return Err("version format incorrect, missing major or minor".into())
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SonicVersion {
+    year: i32,
+    month: i8, // If there are somehow more than 256 months in a year please add this to the list of falsehoods programmers believe about time
+}
+
+impl SonicVersion {
+    pub fn to_string(&self) -> String {
+        return format!("{}{:02}", self.year, self.month)
+    }
+
+    pub fn from_string(s: String) -> Result<SonicVersion, Box<dyn std::error::Error + Sync + Send>> {
+        let version_nums = s.split_at(4);
+            Ok(SonicVersion {
+                year: match i32::from_str_radix(version_nums.0, 10) {
+                    Ok(m) => m,
+                    Err(e) => return Err(Box::new(e)),
+                },
+                month: match i8::from_str_radix(version_nums.1, 10) {
+                    Ok(m) => m,
+                    Err(e) => return Err(Box::new(e)),
+                },
+            })
+    }
+}
+
+impl Version {
+    pub fn to_string(&self) -> String {
+        match self {
+            Version::Nxos(v) => v.to_string(),
+            Version::Sonic(v) => v.to_string(),
+        }
+    }
+
+    pub fn from_string(s: String) -> Result<Version, Box<dyn std::error::Error + Sync + Send>> {
+        match s {
+            _ if s.contains('.') && s.contains('(') && s.contains(')') => {
+                match NxosVersion::from_string(s) {
+                    Ok(v) => {Ok(Version::Nxos(v))},
+                    Err(e) => {Err(e)}
+                }
+            },
+            _ if s.len() == 6 => {
+                match SonicVersion::from_string(s) {
+                    Ok(v) => {Ok(Version::Sonic(v))},
+                    Err(e) => {Err(e)}
+                }
+            },
+            _ => Err("version format is not supported".into()),
+        }
+    }
+
+    pub fn eq(self, other: Version) -> bool{
+        self.to_string().eq(&other.to_string())
+    }
+}
+
+impl ToSql for Version {
+    fn to_sql(&self, ty: &tokio_postgres::types::Type, out: &mut BytesMut) -> Result<tokio_postgres::types::IsNull, Box<dyn std::error::Error + Sync + Send>>
+    where
+        Self: Sized {
+        self.to_string().to_sql(ty, out)
+    }
+
+    fn to_sql_checked(
+        &self,
+        ty: &tokio_postgres::types::Type,
+        out: &mut BytesMut,
+    ) -> Result<tokio_postgres::types::IsNull, Box<dyn std::error::Error + Sync + Send>> {
+        self.to_string().to_sql_checked(ty, out)
+    }
+
+    fn accepts(ty: &tokio_postgres::types::Type) -> bool
+    where
+        Self: Sized {
+            <String as ToSql>::accepts(ty)
+    }
+}
+
+impl FromSql<'_> for Version {
+    fn from_sql<'a>(ty: &tokio_postgres::types::Type, raw: &'a [u8]) -> Result<Self, Box<dyn std::error::Error + Sync + Send>> {
+        match Version::from_string(match String::from_sql(ty, raw) {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        }) {
+            Ok(v) => return Ok(v),
+            Err(e) => return Err(e),
+        }
+    }
+
+    fn accepts(ty: &tokio_postgres::types::Type) -> bool {
+        <String as FromSql>::accepts(ty)
+    }
+}
+
+fn verion_num_from_split(spl: &mut Split<'_, [char; 3]>) -> Result<i32, Box<dyn std::error::Error + Sync + Send>> {
+    return match spl.next() {
+        Some(st) => match i32::from_str_radix(st, 10) {
+            Ok(m) => Ok(m),
+            Err(e) => Err(Box::new(e)),
+        },
+        None => Err("version format incorrect".into()),
+    }
+}
+
+inventory::submit! { Migrate::new(SwitchOS::migrations) }
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SwitchOS {
+    pub id: FKey<SwitchOS>,
+    pub os_type: String,
+    pub version: Version,
+}
+
+impl DBTable for SwitchOS {
+    fn table_name() -> &'static str {
+        "switch_os"
+    }
+
+    fn id(&self) -> ID {
+        self.id.into_id()
+    }
+    // JSONMODEL -> DBTABLE
+    fn from_row(row: tokio_postgres::Row) -> Result<ExistingRow<Self>, anyhow::Error> {
+        Ok(ExistingRow::from_existing(Self {
+            id: row.try_get("id")?,
+            os_type: row.try_get("os_type")?,
+            version: row.try_get("version")?,
+        }))
+    }
+
+    fn to_rowlike(&self) -> Result<HashMap<&str, Box<dyn ToSqlObject>>, anyhow::Error> {
+        let clone = self.clone();
+        let c: [(&str, Box<dyn ToSqlObject>); _] = [
+            ("id", Box::new(clone.id)),
+            ("os_type", Box::new(clone.os_type)),
+            ("version", Box::new(clone.version)),
+        ];
+
+        Ok(c.into_iter().collect())
+    }
+
+    fn migrations() -> Vec<Migration> {
+        vec![
+            Migration { 
+                unique_name: "create_switch_os_0001",
+                description: "create switch os table",
+                depends_on: vec![],
+                apply: Apply::SQL(format!(
+                    "CREATE TABLE IF NOT EXISTS switch_os (
+                            id UUID PRIMARY KEY NOT NULL,
+                            os_type VARCHAR NOT NULL,
+                            version VARCHAR NOT NULL
+                    );"
+                )),
+            }
+        ]
     }
 }
 
@@ -664,16 +1305,70 @@ pub struct SwitchPort {
 
     pub for_switch: FKey<Switch>,
     pub name: String,
-    pub mac_address: Option<MacAddr6>, // may not need mac address? may want to be option?
 }
 
-impl JsonModel for SwitchPort {
+impl DBTable for SwitchPort {
     fn id(&self) -> ID {
         self.id.into_id()
     }
 
     fn table_name() -> &'static str {
         "switchports"
+    }
+    // JSONMODEL -> DBTABLE
+    fn from_row(row: tokio_postgres::Row) -> Result<ExistingRow<Self>, anyhow::Error> {
+
+        Ok(ExistingRow::from_existing(Self {
+            id: row.try_get("id")?,
+            for_switch: row.try_get("for_switch")?,
+            name: row.try_get("name")?,
+        }))
+    }
+
+    fn to_rowlike(&self) -> Result<HashMap<&str, Box<dyn ToSqlObject>>, anyhow::Error> {
+        let clone = self.clone();
+
+        let c: [(&str, Box<dyn ToSqlObject>); _] = [
+            ("id", Box::new(clone.id)),
+            ("for_switch", Box::new(clone.for_switch)),
+            ("name", Box::new(clone.name)),
+        ];
+
+        Ok(c.into_iter().collect())
+    }
+
+    fn migrations() -> Vec<Migration> {
+        vec![
+            Migration { 
+                unique_name: "create_switchports_0001",
+                description: "Creates the switchports table",
+                depends_on: vec![],
+                apply: Apply::SQL(format!(
+                    "CREATE TABLE public.switchports (
+                        id UUID NOT NULL,
+                        data JSONB NOT NULL
+                    );"
+                )),
+            },
+            Migration { 
+                unique_name: "migrate_switchports_0002",
+                description: "Migrates the switchport table",
+                depends_on: vec!["create_switchports_0001"],
+                apply: Apply::SQLMulti(vec![
+                    "ALTER TABLE switchports ADD COLUMN for_switch VARCHAR;".to_owned(),
+                    "UPDATE switchports SET for_switch = data ->> 'for_switch';".to_owned(),
+                    "ALTER TABLE switchports ALTER COLUMN for_switch SET NOT NULL;".to_owned(),
+
+                    "ALTER TABLE switchports ADD COLUMN name VARCHAR;".to_owned(),
+                    "UPDATE switchports SET name = data ->> 'name';".to_owned(),
+                    "ALTER TABLE switchports ALTER COLUMN name SET NOT NULL;".to_owned(),
+
+                    "ALTER TABLE IF EXISTS switchports DROP COLUMN data;".to_owned(),
+
+                    "ALTER TABLE switchports ALTER COLUMN for_switch SET DATA TYPE uuid using for_switch::uuid;".to_owned(),
+                ]),
+            }
+        ]
     }
 }
 
@@ -685,7 +1380,7 @@ impl SwitchPort {
     ) -> Result<ExistingRow<SwitchPort>, anyhow::Error> {
         let tn = <Self as DBTable>::table_name();
         let q =
-            format!("SELECT * FROM {tn} WHERE data -> 'for_switch' = $1 AND data -> 'name' = $2;");
+            format!("SELECT * FROM {tn} WHERE for_switch = $1 AND name = $2;");
 
         let existing = t
             .query_opt(
@@ -705,7 +1400,6 @@ impl SwitchPort {
                     id: FKey::new_id_dangling(),
                     for_switch: on,
                     name,
-                    mac_address: None,
                 };
 
                 Ok(NewRow::new(sp).insert(t).await?.get(t).await?)
@@ -820,13 +1514,70 @@ pub struct Action {
     is_complete: bool,
 }
 
-impl JsonModel for Action {
+impl DBTable for Action {
     fn id(&self) -> ID {
         self.id.into_id()
     }
 
     fn table_name() -> &'static str {
         "host_actions"
+    }
+    // JSONMODEL -> DBTABLE
+    fn from_row(row: tokio_postgres::Row) -> Result<ExistingRow<Self>, anyhow::Error> {
+        Ok(ExistingRow::from_existing(Self {
+            id: row.try_get("id")?,
+            for_host: row.try_get("for_host")?,
+            in_tascii: row.try_get("in_tascii")?,
+            is_complete: row.try_get("is_complete")?,
+        }))
+    }
+
+    fn to_rowlike(&self) -> Result<HashMap<&str, Box<dyn ToSqlObject>>, anyhow::Error> {
+        let clone = self.clone();
+        let c: [(&str, Box<dyn ToSqlObject>); _] = [
+            ("id", Box::new(clone.id)),
+            ("for_host", Box::new(clone.for_host)),
+            ("in_tascii", Box::new(clone.in_tascii)),
+            ("is_complete", Box::new(clone.is_complete)),
+        ];
+
+        Ok(c.into_iter().collect())
+    }
+
+    fn migrations() -> Vec<Migration> {
+        vec![
+            Migration { 
+                unique_name: "create_host_actions_0001",
+                description: "Creates the host_actions table",
+                depends_on: vec![],
+                apply: Apply::SQL(format!(
+                    "CREATE TABLE public.host_actions (
+                        id UUID NOT NULL,
+                        data JSONB NOT NULL
+                    );"
+                )),
+            },
+            Migration { 
+                unique_name: "migrate_host_actions_0002",
+                description: "Migrates the host_actions table",
+                depends_on: vec!["create_host_actions_0001"],
+                apply: Apply::SQLMulti(vec![
+                    "ALTER TABLE host_actions ADD COLUMN for_host UUID;".to_owned(),
+                    "UPDATE host_actions SET for_host = (data ->> 'for_host')::UUID;".to_owned(),
+                    "ALTER TABLE host_actions ALTER COLUMN for_host SET NOT NULL;".to_owned(),
+
+                    "ALTER TABLE host_actions ADD COLUMN in_tascii VARCHAR;".to_owned(),
+                    "UPDATE host_actions SET in_tascii = data ->> 'in_tascii';".to_owned(),
+                    "ALTER TABLE host_actions ALTER COLUMN in_tascii SET NOT NULL;".to_owned(),
+
+                    "ALTER TABLE host_actions ADD COLUMN is_complete BOOLEAN;".to_owned(),
+                    "UPDATE host_actions SET in_tascii = (data ->> 'is_complete')::BOOLEAN;".to_owned(),
+                    "ALTER TABLE host_actions ALTER COLUMN is_complete SET NOT NULL;".to_owned(),
+
+                    "ALTER TABLE IF EXISTS host_actions DROP COLUMN data;".to_owned(),
+                ]),
+            },
+        ]
     }
 }
 
@@ -837,7 +1588,7 @@ impl Action {
     ) -> Result<Vec<ExistingRow<Action>>, anyhow::Error> {
         let tn = <Self as DBTable>::table_name();
         let q = format!(
-            "SELECT * FROM {tn} WHERE data -> 'is_complete' = $1 AND data -> 'for_host' = $2;"
+            "SELECT * FROM {tn} WHERE is_complete = $1 AND for_host = $2;"
         );
 
         let res = t.query(&q, &[&false, &host]).await.anyway()?;

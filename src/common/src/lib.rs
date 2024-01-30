@@ -49,6 +49,7 @@ pub mod prelude {
     pub use tower;
     pub use tower_http;
     pub use tracing;
+    pub use async_trait;
 
     pub use serde::{Deserialize, Serialize};
 }

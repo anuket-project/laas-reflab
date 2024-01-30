@@ -2,23 +2,31 @@
 //! SPDX-License-Identifier: MIT
 
 use common::prelude::{
+    axum::async_trait,
     itertools::Itertools,
     rand::{seq::SliceRandom, thread_rng},
+    serde_json::Value,
 };
+use llid::*;
 use dal::{web::*, *};
 use tokio_postgres::types::ToSql;
 
+// use core::slice::SlicePattern;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    path::PathBuf,
+};
 
 use super::{dal::*, dashboard::*, inventory::*};
 
 use common::prelude::*;
 
-#[derive(Deserialize, Serialize, Debug, Clone, Hash, Copy)]
+#[derive(Deserialize, Serialize, Debug, Clone, Hash)]
 pub struct ResourceHandle {
     pub id: FKey<ResourceHandle>,
     pub tracks: ResourceHandleInner,
+    pub lab: Option<FKey<Lab>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Hash, Copy)]
@@ -41,7 +49,6 @@ inventory::submit! { Migrate::new(VPNToken::migrations) }
 #[derive(Serialize, Deserialize, Debug, Clone, Hash)]
 pub struct VPNToken {
     id: FKey<VPNToken>,
-
     username: String,
     project: String,
 }
@@ -111,7 +118,6 @@ impl DBTable for VPNToken {
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Hash, Copy)]
 pub enum ResourceHandleInner {
     Host(FKey<Host>),
-    //Vlan(FKey<Vlan>),
     PrivateVlan(FKey<Vlan>),
     PublicVlan(FKey<Vlan>),
     VPNAccess(FKey<VPNToken>),
@@ -151,7 +157,9 @@ pub enum AllocationReason {
 
 impl Serialize for AllocationReason {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where S: serde::Serializer {
+    where
+        S: serde::Serializer,
+    {
         match self {
             Self::ForBooking() => "booking",
             Self::ForMaintenance() => "maintenance",
@@ -164,7 +172,9 @@ impl Serialize for AllocationReason {
 
 impl<'de> Deserialize<'de> for AllocationReason {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where D: serde::Deserializer<'de> {
+    where
+        D: serde::Deserializer<'de>,
+    {
         let as_s = String::deserialize(deserializer)?;
 
         Ok(match as_s.as_str() {
@@ -306,32 +316,37 @@ pub enum ResourceRequestInner {
     VlanByCharacteristics {
         public: bool,
         serves_dhcp: bool,
+        lab: FKey<Lab>,
     },
 
     SpecificVlan {
         vlan: FKey<Vlan>,
+        lab: FKey<Lab>,
     },
 
     HostByFlavor {
         flavor: FKey<Flavor>,
+        lab: FKey<Lab>,
     },
 
     HostByCharacteristics {
         arch: Option<Arch>,
         minimum_ram: Option<DataValue>,
         maximum_ram: Option<DataValue>,
-
         minimum_cores: Option<DataValue>,
         maximum_cores: Option<DataValue>,
+        lab: FKey<Lab>,
     },
 
     SpecificHost {
         host: FKey<Host>,
+        lab: FKey<Lab>,
     },
 
     VPNAccess {
         for_project: String,
         for_user: String,
+        lab: FKey<Lab>,
     },
 
     /// Deallocates this resource only so long
@@ -369,24 +384,30 @@ impl DBTable for ResourceHandle {
                 "bad specifier for resource type '{t}'"
             )))?,
         };
+        let lab = row.try_get("lab").anyway()?;
 
-        let s = Self { id, tracks: inner };
+        let s = Self {
+            id,
+            tracks: inner,
+            lab,
+        };
 
         Ok(ExistingRow::from_existing(s))
     }
 
     fn to_rowlike(&self) -> Result<HashMap<&str, Box<dyn ToSql + Sync + Send>>, anyhow::Error> {
-        let (tracking_type, tracking_id) = match self.tracks {
-            ResourceHandleInner::Host(h) => ("host", h.into_id()),
-            ResourceHandleInner::PrivateVlan(id) => ("private_vlan", id.into_id()),
-            ResourceHandleInner::PublicVlan(id) => ("public_vlan", id.into_id()),
-            ResourceHandleInner::VPNAccess(id) => ("vpn", id.into_id()),
+        let (tracking_type, tracking_id, lab) = match self.tracks {
+            ResourceHandleInner::Host(h) => ("host", h.into_id(), self.lab),
+            ResourceHandleInner::PrivateVlan(id) => ("private_vlan", id.into_id(), self.lab),
+            ResourceHandleInner::PublicVlan(id) => ("public_vlan", id.into_id(), self.lab),
+            ResourceHandleInner::VPNAccess(id) => ("vpn", id.into_id(), self.lab),
         };
 
         let c: [(&str, Box<dyn tokio_postgres::types::ToSql + Sync + Send>); _] = [
             ("id", Box::new(self.id)),
             ("tracks_resource", Box::new(tracking_id)),
             ("tracks_resource_type", Box::new(tracking_type)),
+            ("lab", Box::new(lab)),
         ];
 
         Ok(c.into_iter().collect())
@@ -394,18 +415,6 @@ impl DBTable for ResourceHandle {
 
     fn migrations() -> Vec<Migration> {
         vec![
-            /*Migration {
-                unique_name: "create_allocation_statuses_enum_0001",
-                description: "create an enum constraint for what statuses a host can be in",
-                depends_on: vec![],
-                apply: Apply::SQL(format!("CREATE TYPE IF NOT EXISTS possible_allocation_statuses AS ENUM ('allocated', 'free', 'broken');"))
-            },
-            Migration {
-                unique_name: "create_resource_types_enum_0001",
-                description: "create an enum for what types a resource handle could be of",
-                depends_on: vec![],
-                apply: Apply::SQL(format!("CREATE TYPE IF NOT EXISTS possible_resource_types AS ENUM ('host', 'private_vlan', 'public_vlan', 'vpn');"))
-            },*/ // we aren't going with enum types here since they can not be abridged later, in favor of a check constraint
             Migration {
                 unique_name: "create_resource_handles_0001",
                 description: "create the table for resource handles",
@@ -415,8 +424,204 @@ impl DBTable for ResourceHandle {
                             tracks_resource UUID UNIQUE NOT NULL,
                             tracks_resource_type VARCHAR NOT NULL CHECK (tracks_resource_type IN ('vpn', 'public_vlan', 'private_vlan', 'host'))
                 );")),
-            }
+            },
+            Migration {
+                unique_name: "add_lab_to_resource_handles_0002",
+                description: "add lab field to resource handles",
+                depends_on: vec!["create_resource_handles_0001", "create_labs_0002"],
+                apply: Apply::SQL(format!("ALTER TABLE resource_handles ADD COLUMN lab UUID;")),
+            },
+
+            Migration {
+                unique_name: "set_lab_in_resource_handles_0003",
+                description: "add lab field to resource handles",
+                depends_on: vec!["add_lab_to_resource_handles_0002"],
+                apply: Apply::Operation(Box::new(UpsertResourceHandles())),
+            },
+            Migration {
+                unique_name: "set_lab_no_null_0004",
+                description: "set lab field to not null",
+                depends_on: vec!["set_lab_in_resource_handles_0003"],
+                apply: Apply::SQL(format!(
+                    "ALTER TABLE resource_handles ALTER COLUMN lab SET NOT NULL;"
+                )),
+            },
         ]
+    }
+}
+
+pub struct UpsertResourceHandles();
+
+#[async_trait]
+impl ComplexMigration for UpsertResourceHandles {
+    async fn run(&self, transaction: &mut EasyTransaction<'_>) -> Result<(), anyhow::Error> {
+
+        let dir = PathBuf::from("./config_data/laas-hosts/inventory");
+
+        let mut proj_vec = dir.read_dir().expect("Expected to read import dir");
+
+        for f in proj_vec {
+            let proj = f.unwrap();
+            println!("project: {:?}", proj.file_name());
+            let lab_name = proj.file_name().to_str().unwrap().to_owned();
+
+            for h in proj.path().read_dir().unwrap() {
+                let mut t = transaction.easy_transaction().await.unwrap();
+                let host_file = h.unwrap();
+                println!("host {:?}", host_file.file_name().to_str().unwrap().split('.').collect_tuple::<(&str, &str)>().unwrap().0.to_owned());
+
+                let host = Host::get_by_name(
+                    &mut t,
+                    host_file
+                        .file_name()
+                        .to_str()
+                        .unwrap()
+                        .to_owned()
+                        .split('.')
+                        .collect_tuple::<(&str, &str)>()
+                        .unwrap()
+                        .0
+                        .to_owned(),
+                )
+                .await
+                .unwrap();
+                let mut binding = ResourceHandle::select()
+                    .where_field("tracks_resource")
+                    .equals(host.id)
+                    .run(&mut t)
+                    .await
+                    .unwrap();
+
+                let mut handle = binding.pop().unwrap();
+
+                handle.lab = Some(Lab::get_by_name(&mut t, lab_name.clone())
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .id);
+                match (handle.update(&mut t)).await {
+                    Ok(_) => {
+                        t.commit().await.unwrap();
+                    }
+                    Err(_) => {
+                        tracing::error!(
+                            "FAILED TO UPSERT RESOURCE HANDLE FOR HOST {}",
+                            host.server_name
+                        );
+                    }
+                }
+            }
+        }
+
+        let mut pub_vlan_handles = ResourceHandle::select()
+            .where_field("tracks_resource_type")
+            .equals("public_vlan")
+            .run(transaction)
+            .await
+            .unwrap();
+
+        let lab = Lab::select()
+            .where_field("name")
+            .equals("anuket")
+            .run(transaction)
+            .await
+            .unwrap()
+            .get(0)
+            .cloned()
+            .expect("Expected to find the anuket lab");
+
+        for handle in pub_vlan_handles.iter_mut() {
+            handle.lab = Some(lab.id);
+            handle
+                .update(transaction)
+                .await
+                .expect(format!("Expected to update {:?}", handle.id).leak());
+        }
+
+        let mut vpn_handles = ResourceHandle::select()
+            .where_field("tracks_resource_type")
+            .equals("vpn")
+            .run(transaction)
+            .await
+            .unwrap();
+
+        for handle in vpn_handles.iter_mut() {
+            handle.lab = Some(lab.id);
+            handle
+                .update(transaction)
+                .await
+                .expect(format!("Expected to update {:?}", handle.id).leak());
+        }
+
+        let mut public_vlan_handles = ResourceHandle::select()
+            .where_field("tracks_resource_type")
+            .equals("public_vlan")
+            .run(transaction)
+            .await
+            .unwrap();
+
+        for handle in public_vlan_handles.iter_mut() {
+            handle.lab = Some(lab.id);
+            handle
+                .update(transaction)
+                .await
+                .expect(format!("Expected to update {:?}", handle.id).leak());
+        }
+
+        let mut private_vlan_handles = ResourceHandle::select()
+            .where_field("tracks_resource_type")
+            .equals("private_vlan")
+            .run(transaction)
+            .await
+            .unwrap();
+
+        for handle in private_vlan_handles.iter_mut() {
+            handle.lab = Some(lab.id);
+            handle
+                .update(transaction)
+                .await
+                .expect(format!("Expected to update {:?}", handle.id).leak());
+        }
+
+        let lfedge_lab = Lab::select()
+            .where_field("name")
+            .equals("lfedge")
+            .run(transaction)
+            .await
+            .unwrap()
+            .get(0)
+            .cloned()
+            .expect("Expected to find the anuket lab");
+
+        let lfedge_vlans = [3001, 3002, 3003, 3004, 3007, 3008, 3015, 3016];
+
+
+    for vlan_id in lfedge_vlans {
+        let lfedge_vlan = Vlan::select()
+            .where_field("vlan_id")
+            .equals(vlan_id as i16)
+            .run(transaction)
+            .await
+            .unwrap()
+            .get(0)
+            .cloned()
+            .expect("Can't find vlan with id");
+
+        let mut resource_handle = ResourceHandle::select()
+            .where_field("tracks_resource")
+            .equals(lfedge_vlan.id)
+            .run(transaction)
+            .await
+            .unwrap()
+            .get(0)
+            .cloned()
+            .expect("Expected to find resource handle for vlan!");
+
+        resource_handle.lab = Some(lfedge_lab.id);
+        resource_handle.update(transaction).await.expect("Expected to update lab for resource handle!");
+    }
+
+        Ok(())
     }
 }
 
@@ -441,14 +646,41 @@ impl ResourceHandle {
         let handles_tn = <ResourceHandle as DBTable>::table_name();
         let allocation_tn = Allocation::table_name();
 
-        let vpn_tokens = Self::query_allocated::<VPNToken>(
-            t,
-            Some(format!("{v_tn}.username = $1")),
-            None,
-            &[&user],
-            &vec![],
+        /*let q = format!("SELECT DISTINCT {v_tn}.project
+        FROM (
+                {v_tn}
+            INNER JOIN
+                {handles_tn}
+            ON ({handles_tn}.tracks_resource = {v_tn}.id)
         )
-        .await?;
+        WHERE
+            ({v_tn}.username = $1)
+        AND
+            EXISTS (
+                SELECT * FROM {allocation_tn}
+                      WHERE ended IS NULL AND {allocation_tn}.for_resource = {handles_tn}.tracks_resource);");*/
+
+        let mut vpn_tokens: Vec<(FKey<VPNToken>, FKey<ResourceHandle>)> = Vec::new();
+        // TODO: Could change to query less and just itereate through all of the labs if query_allocated can handle an Option<Fkey<Lab>>
+        for lab in match Lab::select().run(t).await {
+            Ok(lab_vec) => lab_vec,
+            Err(e) => return Err(anyhow::Error::msg("Error getting labs: {e}")), // this is failing
+        } {
+            let mut tokens = match Self::query_allocated::<VPNToken>(
+                t,
+                lab.id,
+                Some(format!("{v_tn}.username = $1")),
+                None,
+                &[&user],
+                &vec![],
+            )
+            .await
+            {
+                Ok(t) => t.into_iter().map(|f| f).collect_vec(),
+                Err(e) => return Err(anyhow::Error::msg("Error getting labs: {e}")),
+            };
+            vpn_tokens.append(&mut tokens)
+        }
 
         let mut projects = HashSet::new();
 
@@ -485,7 +717,19 @@ impl ResourceHandle {
         }
     }
 
-    fn make_query<T: DBTable>(available: bool, filter: Option<String>) -> String {
+    /// Expects the first argument to the query this produces to be the FK of
+    /// the lab the resource is owned by
+    ///
+    /// WARNING: this function is gross and kind of a footgun at times,
+    /// I recommend carefully tracing the whole `make_query`, `query`, `query_free` and
+    /// `query_allocated` call chain before making any tweaks here, as it all tightly integrates
+    /// and is the very core part of LibLaaS that avoids double booking hosts or resources
+    /// and maintains DB consistency
+    fn make_query<T: DBTable>(
+        available: bool,
+        lab_param_idx: usize,
+        filter: Option<String>,
+    ) -> String {
         let free = true;
 
         let additional_filter = if let Some(v) = filter {
@@ -498,10 +742,13 @@ impl ResourceHandle {
         let a_tn = Allocation::table_name();
         let handles_tn = ResourceHandle::table_name();
 
+        tracing::info!("Lab param: {}", lab_param_idx);
+
         // if ended is null, then it has not yet ended
         // select handles where no allocation exists that hasn't yet ended
         let available_handles = format!("SELECT * FROM {handles_tn}
-            WHERE NOT EXISTS (SELECT * FROM {a_tn} WHERE ended IS NULL AND {a_tn}.for_resource = {handles_tn}.id)");
+            WHERE (NOT EXISTS (SELECT * FROM {a_tn} WHERE ended IS NULL AND {a_tn}.for_resource = {handles_tn}.id))
+            AND lab = ${lab_param_idx}");
 
         let allocated_handles = format!("SELECT * FROM {handles_tn}
             WHERE EXISTS (SELECT * FROM {a_tn} WHERE ended IS NULL AND {a_tn}.for_resource = {handles_tn}.id)");
@@ -512,38 +759,44 @@ impl ResourceHandle {
             allocated_handles
         };
 
-        format!(
+        let g = format!(
             "SELECT resources.id AS resource_id, handles_with_allocs.id AS handle_id FROM (
                     (SELECT * FROM {tn} WHERE {additional_filter}) AS resources
                 INNER JOIN
                     ({handle_set}) AS handles_with_allocs
                 ON handles_with_allocs.tracks_resource = resources.id
             )"
-        )
+        );
+
+        tracing::info!(g);
+        g
     }
 
     pub async fn query_free<T: DBTable>(
         t: &mut EasyTransaction<'_>,
+        lab: FKey<Lab>,
         filter: Option<String>,
         limit: Option<usize>,
         params: &[&(dyn ToSql + Sync)],
         except_for: &Vec<FKey<ResourceHandle>>,
     ) -> Result<Vec<(FKey<T>, FKey<ResourceHandle>)>, anyhow::Error> {
-        Self::query(t, true, filter, limit, params, except_for).await
+        Self::query(t, lab, true, filter, limit, params, except_for).await
     }
 
     pub async fn query_allocated<T: DBTable>(
         t: &mut EasyTransaction<'_>,
+        lab: FKey<Lab>,
         filter: Option<String>,
         limit: Option<usize>,
         params: &[&(dyn ToSql + Sync)],
         except_for: &Vec<FKey<ResourceHandle>>,
     ) -> Result<Vec<(FKey<T>, FKey<ResourceHandle>)>, anyhow::Error> {
-        Self::query(t, false, filter, limit, params, except_for).await
+        Self::query(t, lab, false, filter, limit, params, except_for).await
     }
 
     pub async fn query<T: DBTable>(
         t: &mut EasyTransaction<'_>,
+        lab: FKey<Lab>,
         free: bool,
         filter: Option<String>,
         limit: Option<usize>,
@@ -553,11 +806,16 @@ impl ResourceHandle {
         let tn = T::table_name();
         tracing::info!("Querying for free {tn}");
 
-        let query = Self::make_query::<T>(free, filter);
+        let mut params: Vec<&(dyn ToSql + Sync)> = Vec::from_iter(params.iter().copied());
+
+        params.push(&lab);
+
+
+        let query = Self::make_query::<T>(free, params.len(), filter);
 
         tracing::info!("Query that is getting run is\n{query}");
 
-        let v = t.query(&query, params).await?;
+        let v = t.query(&query, params.as_slice()).await?;
 
         let v = v
             .into_iter()
@@ -582,13 +840,14 @@ impl ResourceHandle {
             ResourceRequestInner::HostByCharacteristics { .. } => {
                 todo!("implement filtering by specs")
             }
-            ResourceRequestInner::HostByFlavor { flavor } => {
+            ResourceRequestInner::HostByFlavor { flavor, lab } => {
                 let host_tn = Host::table_name();
                 let handles_tn = <ResourceHandle as DBTable>::table_name();
                 let allocation_tn = Allocation::table_name();
 
                 let free_hosts = Self::query_free::<Host>(
                     transaction,
+                    lab,
                     Some(format!("{host_tn}.flavor = $1")),
                     None,
                     &[&flavor],
@@ -655,6 +914,7 @@ impl ResourceHandle {
             ResourceRequestInner::VlanByCharacteristics {
                 public,
                 serves_dhcp: _,
+                lab,
             } => {
                 let vlan_tn = <Vlan as DBTable>::table_name();
                 let handles_tn = <ResourceHandle as DBTable>::table_name();
@@ -679,6 +939,7 @@ impl ResourceHandle {
 
                 let set = Self::query_free::<Vlan>(
                     transaction,
+                    lab,
                     Some(additional_public_query),
                     None,
                     &[],
@@ -708,7 +969,7 @@ impl ResourceHandle {
                 Ok(rh)
             }
 
-            ResourceRequestInner::SpecificVlan { vlan } => {
+            ResourceRequestInner::SpecificVlan { vlan, lab } => {
                 let tn = Self::table_name();
 
                 let actual_vlan = vlan.get(transaction).await?;
@@ -718,6 +979,7 @@ impl ResourceHandle {
                 //let vlan = transaction.query_opt(&q, &[&vlan]).await.anyway()?;
                 let vlans = Self::query_free::<Vlan>(
                     transaction,
+                    lab,
                     Some(format!("id = $1")),
                     None,
                     &[&vlan],
@@ -741,7 +1003,7 @@ impl ResourceHandle {
                 Ok(handle.get(transaction).await?)
             }
 
-            ResourceRequestInner::SpecificHost { host } => {
+            ResourceRequestInner::SpecificHost { host, lab } => {
                 let tn = Self::table_name();
 
                 let actual_host = host.get(transaction).await?;
@@ -776,6 +1038,7 @@ impl ResourceHandle {
             ResourceRequestInner::VPNAccess {
                 for_project,
                 for_user,
+                lab,
             } => {
                 //let tn = <VPNToken as DBTable>::table_name();
 
@@ -790,9 +1053,20 @@ impl ResourceHandle {
 
                 let vti = nr.insert(transaction).await?;
 
-                let ri =
-                    ResourceHandle::add_resource(transaction, ResourceHandleInner::VPNAccess(vti))
-                        .await?;
+                let lab = match Lab::get_by_name(transaction, "anuket".to_string()).await {
+                    Ok(o) => match o {
+                        Some(lab) => lab.id,
+                        None => return Err(anyhow::Error::msg("Lab does not exist".to_string())),
+                    },
+                    Err(e) => return Err(anyhow::Error::msg(e.to_string())),
+                };
+
+                let ri = ResourceHandle::add_resource(
+                    transaction,
+                    ResourceHandleInner::VPNAccess(vti),
+                    lab,
+                )
+                .await?;
 
                 ri.get(transaction).await
             }
@@ -906,9 +1180,7 @@ impl ResourceHandle {
 
                 match res {
                     Ok(()) => continue,
-                    Err(e) => {
-                        Err(e)?
-                    }
+                    Err(e) => Err(e)?,
                 }
             } else {
                 tracing::warn!("Trying to end an allocation that already ended");
@@ -979,10 +1251,12 @@ impl ResourceHandle {
     pub async fn add_resource(
         transaction: &mut EasyTransaction<'_>,
         resource: ResourceHandleInner,
+        lab: FKey<Lab>,
     ) -> Result<FKey<ResourceHandle>, anyhow::Error> {
         NewRow::new(Self {
             id: FKey::new_id_dangling(),
             tracks: resource,
+            lab: Some(lab),
         })
         .insert(transaction)
         .await

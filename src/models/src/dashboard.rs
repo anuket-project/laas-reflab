@@ -17,27 +17,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-use crate::inventory::{Flavor, Host, Vlan};
+use crate::inventory::{Flavor, Host, Lab, Vlan};
 
 use super::dal::*;
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct PartialTemplate {
-    pub id: FKey<PartialTemplate>,
-    pub owner: i64,
-    pub at_lab: String,
-    pub data: serde_json::Value,
-}
-
-impl JsonModel for PartialTemplate {
-    fn table_name() -> &'static str {
-        "partial_templates"
-    }
-
-    fn id(&self) -> ID {
-        self.id.into_id()
-    }
-}
 
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema)]
 pub struct AggregateConfiguration {
@@ -66,7 +48,7 @@ pub struct Aggregate {
     pub configuration: AggregateConfiguration,
 
     /// The originating project for this aggregate
-    pub origin: String,
+    pub lab: FKey<Lab>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
@@ -151,7 +133,7 @@ impl DBTable for Aggregate {
                     ipmi_password: String::new(),
                 },
             ),
-            origin: row.try_get("origin")?,
+            lab: row.try_get("lab")?,
         }))
     }
 
@@ -165,7 +147,7 @@ impl DBTable for Aggregate {
             ("metadata", Box::new(serde_json::to_value(clone.metadata)?)),
             ("template", Box::new(clone.template)),
             ("lifecycle_state", Box::new(clone.state)),
-            ("origin", Box::new(clone.origin)),
+            ("lab", Box::new(clone.lab)),
             (
                 "configuration",
                 Box::new(serde_json::to_value(clone.configuration)?),
@@ -215,6 +197,28 @@ impl DBTable for Aggregate {
                     "ALTER TABLE aggregates ALTER COLUMN configuration SET NOT NULL;".to_owned(),
                 ]),
             },
+            Migration {
+                unique_name: "rename_origin_to_origin_string_aggregates_0004",
+                description: "add field to track aggregate origin project",
+                depends_on: vec!["add_configuration_aggregates_0003", "create_labs_0001"],
+                apply: Apply::SQLMulti(vec![
+                    "ALTER TABLE aggregates RENAME COLUMN origin TO origin_string;".to_owned(),
+                    "ALTER TABLE aggregates ADD COLUMN lab UUID;".to_owned(),
+
+                    "UPDATE aggregates SET origin_string = 'reserved' WHERE origin_string = '';".to_owned(),
+                ]),
+            },
+            Migration {
+                unique_name: "move_from_origin_string_in_aggregates_0005",
+                description: "remove origin_string after setting the correct lab",
+                depends_on: vec!["rename_origin_to_origin_string_aggregates_0004"],
+                apply: Apply::SQLMulti(vec![
+                    "UPDATE aggregates SET lab = (SELECT id FROM labs WHERE name = aggregates.origin_string);".to_owned(),
+
+                    "ALTER TABLE aggregates ALTER COLUMN lab SET NOT NULL;".to_owned(),
+                    "ALTER TABLE aggregates DROP COLUMN origin_string;".to_owned(),
+                ]),
+            },
         ]
     }
 }
@@ -236,7 +240,6 @@ inventory::submit! { Migrate::new(Template::migrations) }
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Template {
     pub id: FKey<Template>,
-    pub lab_name: String,
     pub name: String,
     pub deleted: bool,
     pub description: String,
@@ -244,6 +247,7 @@ pub struct Template {
     pub public: bool,                 // If template should be available to all users
     pub networks: Vec<FKey<Network>>, // User defined network
     pub hosts: Vec<HostConfig>,
+    pub lab: FKey<Lab>,
 }
 
 impl DBTable for Template {
@@ -262,10 +266,10 @@ impl DBTable for Template {
             name: row.try_get("name")?,
             deleted: row.try_get("deleted")?,
             public: row.try_get("public")?,
-            lab_name: row.try_get("lab_name")?,
             description: row.try_get("description")?,
             networks: row.try_get("networks")?,
             hosts: serde_json::from_value(row.try_get("hosts")?)?,
+            lab: row.try_get("lab")?,
         }))
     }
 
@@ -277,22 +281,23 @@ impl DBTable for Template {
             ("name", Box::new(clone.name)),
             ("deleted", Box::new(clone.deleted)),
             ("public", Box::new(clone.public)),
-            ("lab_name", Box::new(clone.lab_name)),
             ("description", Box::new(clone.description)),
             ("networks", Box::new(clone.networks)),
             ("hosts", Box::new(serde_json::to_value(clone.hosts)?)),
+            ("lab", Box::new(clone.lab)),
         ];
 
         Ok(c.into_iter().collect())
     }
 
     fn migrations() -> Vec<Migration> {
-        vec![Migration {
-            unique_name: "create_templates_0001",
-            description: "create sql model for templates",
-            depends_on: vec!["create_networks_0001"],
-            apply: Apply::SQL(format!(
-                "CREATE TABLE IF NOT EXISTS templates (
+        vec![
+            Migration {
+                unique_name: "create_templates_0001",
+                description: "create sql model for templates",
+                depends_on: vec!["create_networks_0001"],
+                apply: Apply::SQL(format!(
+                    "CREATE TABLE IF NOT EXISTS templates (
                         id UUID PRIMARY KEY NOT NULL,
                         owner VARCHAR,
                         name VARCHAR NOT NULL,
@@ -303,8 +308,40 @@ impl DBTable for Template {
                         networks UUID[] NOT NULL,
                         hosts JSONB NOT NULL
             );"
-            )),
-        }]
+                )),
+            },
+            Migration {
+                unique_name: "add_origin_to_templates_0002",
+                description: "add origins field to templates",
+                depends_on: vec!["create_templates_0001"],
+                apply: Apply::SQL(format!(
+                    "ALTER TABLE IF EXISTS templates ADD origins UUID;"
+                )),
+            },
+            Migration {
+                unique_name: "remove_lab_name_from_templates_0003",
+                description: "removes lab_name from templates",
+                depends_on: vec!["add_origin_to_templates_0002"],
+                apply: Apply::SQL(format!(
+                    "ALTER TABLE IF EXISTS templates DROP IF EXISTS lab_name;"
+                )),
+            },
+            Migration {
+                unique_name: "rename_origins_to_lab_0004",
+                description: "renames origins to lab",
+                depends_on: vec!["remove_lab_name_from_templates_0003"],
+                apply: Apply::SQL(format!(
+                    "ALTER TABLE IF EXISTS templates RENAME COLUMN origins TO lab;"
+                )),
+            },
+
+            Migration {
+                unique_name: "set_default_lab_for_templates_0005",
+                description: "set all template to 'anuket'",
+                depends_on: vec!["rename_origins_to_lab_0004", "create_labs_0001"],
+                apply: Apply::SQL("UPDATE templates SET lab = (SELECT id FROM labs WHERE name = 'anuket');".to_owned()),
+            }
+        ]
     }
 }
 
@@ -356,6 +393,24 @@ impl Template {
     }
 
     pub async fn get_by_name(
+        t: &mut EasyTransaction<'_>,
+        name: String,
+    ) -> Result<Vec<ExistingRow<Template>>, anyhow::Error> {
+        let table_name = Template::table_name();
+
+        let query = format!("SELECT * FROM {table_name} WHERE name = $1;");
+        let rows = t.query(&query, &[&name]).await?;
+        let vals: Result<Vec<_>, anyhow::Error> = rows
+            .into_iter()
+            .map(|row| Template::from_row(row))
+            .collect();
+
+        let vals = vals?;
+
+        Ok(vals)
+    }
+
+    pub async fn get_by_lab(
         t: &mut EasyTransaction<'_>,
         name: String,
     ) -> Result<Vec<ExistingRow<Template>>, anyhow::Error> {
@@ -934,13 +989,64 @@ pub struct Network {
     pub public: bool,
 }
 
-impl JsonModel for Network {
+impl DBTable for Network {
     fn id(&self) -> ID {
         self.id.into_id()
     }
 
     fn table_name() -> &'static str {
         "networks"
+    }
+    // JSONMODEL -> DBTABLE
+    fn from_row(row: tokio_postgres::Row) -> Result<ExistingRow<Self>, anyhow::Error> {
+        Ok(ExistingRow::from_existing(Self {
+            id: row.try_get("id")?,
+            name: row.try_get("name")?,
+            public: row.try_get("public")?,
+        }))
+    }
+
+    fn to_rowlike(&self) -> Result<HashMap<&str, Box<dyn ToSqlObject>>, anyhow::Error> {
+        let clone = self.clone();
+        let c: [(&str, Box<dyn ToSqlObject>); _] = [
+            ("id", Box::new(clone.id)),
+            ("name", Box::new(clone.name)),
+            ("public", Box::new(clone.public)),
+        ];
+
+        Ok(c.into_iter().collect())
+    }
+
+    fn migrations() -> Vec<Migration> {
+        vec![
+            Migration { 
+                unique_name: "create_networks_0001",
+                description: "Creates the network table",
+                depends_on: vec![],
+                apply: Apply::SQL(format!(
+                    "CREATE TABLE public.networks (
+                        id UUID NOT NULL,
+                        data JSONB NOT NULL
+                    );"
+                )),
+            },
+            Migration { 
+                unique_name: "migrate_networks_0002",
+                description: "Migrates the network table",
+                depends_on: vec![],
+                apply: Apply::SQLMulti(vec![
+                    "ALTER TABLE networks ADD COLUMN name VARCHAR;".to_owned(),
+                    "UPDATE networks SET name = data ->> 'name';".to_owned(),
+                    "ALTER TABLE networks ALTER COLUMN name SET NOT NULL;".to_owned(),
+
+                    "ALTER TABLE networks ADD COLUMN public BOOLEAN;".to_owned(),
+                    "UPDATE networks SET public = (data ->> 'public')::BOOLEAN;".to_owned(),
+                    "ALTER TABLE networks ALTER COLUMN public SET NOT NULL;".to_owned(),
+
+                    "ALTER TABLE IF EXISTS networks DROP COLUMN data;".to_owned(),
+                ]),
+            },
+        ]
     }
 }
 
@@ -982,13 +1088,67 @@ impl Cifile {
     }
 }
 
-impl JsonModel for Cifile {
+impl DBTable for Cifile {
     fn table_name() -> &'static str {
         "ci_files"
     }
 
     fn id(&self) -> ID {
         self.id.into_id()
+    }
+    // JSONMODEL -> DBTABLE
+    fn from_row(row: tokio_postgres::Row) -> Result<ExistingRow<Self>, anyhow::Error> {
+        Ok(ExistingRow::from_existing(Self {
+            id: row.try_get("id")?,
+            priority: row.try_get("priority")?,
+            data: row.try_get("data")?,
+        }))
+    }
+
+    fn to_rowlike(&self) -> Result<HashMap<&str, Box<dyn ToSqlObject>>, anyhow::Error> {
+        let clone = self.clone();
+        let c: [(&str, Box<dyn ToSqlObject>); _] = [
+            ("id", Box::new(clone.id)),
+            ("priority", Box::new(clone.priority)),
+            ("data", Box::new(clone.data)),
+        ];
+
+        Ok(c.into_iter().collect())
+    }
+// id uuid NOT NULL,
+// data jsonb NOT NULL
+    fn migrations() -> Vec<Migration> {
+        vec![
+            Migration { 
+                unique_name: "create_ci_files_0001",
+                description: "Creates the ci file table",
+                depends_on: vec![],
+                apply: Apply::SQL(format!(
+                    "CREATE TABLE public.ci_files (
+                        id UUID NOT NULL,
+                        data JSONB NOT NULL
+                    );"
+                )),
+            },
+            Migration { 
+                unique_name: "update_ci_files_0002",
+                description: "Migrates the ci file table",
+                depends_on: vec!["create_ci_files_0001"],
+                apply: Apply::SQLMulti(vec![
+                    "ALTER TABLE ci_files ADD COLUMN ci_data VARCHAR;".to_owned(),
+                    "UPDATE ci_files SET ci_data = data ->> 'data';".to_owned(),
+                    "ALTER TABLE ci_files ALTER COLUMN ci_data SET NOT NULL;".to_owned(),
+
+                    "ALTER TABLE ci_files ADD COLUMN priority SMALLINT;".to_owned(),
+                    "UPDATE ci_files SET priority = (data ->> 'priority')::SMALLINT;".to_owned(),
+                    "ALTER TABLE ci_files ALTER COLUMN priority SET NOT NULL;".to_owned(),
+
+                    "ALTER TABLE IF EXISTS ci_files DROP COLUMN data;".to_owned(),
+
+                    "ALTER TABLE ci_files RENAME COLUMN ci_data TO data;".to_owned(),
+                ]),
+            },
+        ]
     }
 }
 

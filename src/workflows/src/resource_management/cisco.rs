@@ -131,6 +131,10 @@ pub async fn nx_run_network_task(nc: NetworkConfig) {
             let hp = member.get(&mut transaction).await.unwrap();
             if let Some(sp) = hp.switchport {
                 let sp = sp.get(&mut transaction).await.unwrap();
+                // As all hostports must be connected to the same cisco switch we can safely return without doing anything if any hostport is connected to an edgecore
+                if sp.for_switch.get(&mut transaction).await.unwrap().switch_os.unwrap().get(&mut transaction).await.expect("Expected to get OS").os_type != "NXOS".to_string() {
+                    return;
+                }
 
                 for_switch = match for_switch {
                     None => Some(sp.for_switch),
@@ -150,69 +154,70 @@ pub async fn nx_run_network_task(nc: NetworkConfig) {
             .unwrap()
             .into_inner();
 
-        let nxcommand = switches.entry(for_switch.id).or_insert_with(|| {
-            NXCommand::for_switch(for_switch.ip).with_credentials(for_switch.user, for_switch.pass)
-        });
-
-        tracing::warn!("not supporting/doing actual bond groups yet, just assume each port is in a separate one");
-        for port in bondgroup.member_host_ports {
-            *nxcommand = nxcommand.clone().and_then(format!(
-                "interface {}",
-                port.get(&mut transaction)
-                    .await
-                    .unwrap()
-                    .switchport
-                    .unwrap()
-                    .get(&mut transaction)
-                    .await
-                    .unwrap()
-                    .name
-            ));
-            *nxcommand = nxcommand.clone().and_then("switchport mode trunk");
-
-            let mut native_vlan = None;
-
-            let mut allowed_vlans = Vec::new();
-
-            for vlan_connection in bondgroup.vlans.clone() {
-                let vlan = vlan_connection.vlan.get(&mut transaction).await.unwrap();
-                if !vlan_connection.tagged {
-                    assert!(
-                        native_vlan.replace(vlan.vlan_id).is_none(),
-                        "already had a native vlan?"
-                    );
+        
+            let nxcommand = switches.entry(for_switch.id).or_insert_with(|| {
+                NXCommand::for_switch(for_switch.ip).with_credentials(for_switch.user, for_switch.pass)
+            });
+    
+            tracing::warn!("not supporting/doing actual bond groups yet, just assume each port is in a separate one");
+            for port in bondgroup.member_host_ports {
+                *nxcommand = nxcommand.clone().and_then(format!(
+                    "interface {}",
+                    port.get(&mut transaction)
+                        .await
+                        .unwrap()
+                        .switchport
+                        .unwrap()
+                        .get(&mut transaction)
+                        .await
+                        .unwrap()
+                        .name
+                ));
+                *nxcommand = nxcommand.clone().and_then("switchport mode trunk");
+    
+                let mut native_vlan = None;
+    
+                let mut allowed_vlans = Vec::new();
+    
+                for vlan_connection in bondgroup.vlans.clone() {
+                    let vlan = vlan_connection.vlan.get(&mut transaction).await.unwrap();
+                    if !vlan_connection.tagged {
+                        assert!(
+                            native_vlan.replace(vlan.vlan_id).is_none(),
+                            "already had a native vlan?"
+                        );
+                    }
+    
+                    allowed_vlans.push(vlan.vlan_id);
                 }
-
-                allowed_vlans.push(vlan.vlan_id);
+    
+                allowed_vlans.sort(); // try to make them always incrementing to avoid complaints from
+                                      // switches
+    
+                let allowed_vlans_string = allowed_vlans
+                    .into_iter()
+                    .map(|vlid| vlid.to_string())
+                    .intersperse(",".to_string())
+                    .reduce(|acc, e| acc + e.as_str());
+    
+                if let Some(vlans) = allowed_vlans_string {
+                    *nxcommand = nxcommand
+                        .clone()
+                        .and_then(format!("switchport trunk allowed vlan {vlans}"));
+                }
+    
+                if let Some(nvlid) = native_vlan {
+                    *nxcommand = nxcommand
+                        .clone()
+                        .and_then(format!("switchport trunk native vlan {nvlid}"));
+                } else {
+                    *nxcommand = nxcommand
+                        .clone()
+                        .and_then("no switchport trunk native vlan");
+                }
+    
+                tracing::info!("running command on switch: {nxcommand:#?}");
             }
-
-            allowed_vlans.sort(); // try to make them always incrementing to avoid complaints from
-                                  // switches
-
-            let allowed_vlans_string = allowed_vlans
-                .into_iter()
-                .map(|vlid| vlid.to_string())
-                .intersperse(",".to_string())
-                .reduce(|acc, e| acc + e.as_str());
-
-            if let Some(vlans) = allowed_vlans_string {
-                *nxcommand = nxcommand
-                    .clone()
-                    .and_then(format!("switchport trunk allowed vlan {vlans}"));
-            }
-
-            if let Some(nvlid) = native_vlan {
-                *nxcommand = nxcommand
-                    .clone()
-                    .and_then(format!("switchport trunk native vlan {nvlid}"));
-            } else {
-                *nxcommand = nxcommand
-                    .clone()
-                    .and_then("no switchport trunk native vlan");
-            }
-
-            tracing::info!("running command on switch: {nxcommand:#?}");
-        }
     }
 
     for (_sw, nxc) in switches {

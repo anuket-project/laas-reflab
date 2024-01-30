@@ -424,12 +424,11 @@ async fn get_ci_file(
     let mut transaction = client.easy_transaction().await.log_db_client_error()?;
     // todo - finish this
     //let config = dashboard::HostConfig::get(&mut new_client().unwrap(), server.);
+    debug!("Mailbox was asked to get the CI files for {instance_id:?}");
     let instance = instance_id
         .get(&mut transaction)
         .await
         .expect("invalid hostconfig id provided");
-
-    debug!("Mailbox was asked to get the CI files for {instance_id:?}");
 
     tracing::debug!("Config: {:?}", instance);
 
