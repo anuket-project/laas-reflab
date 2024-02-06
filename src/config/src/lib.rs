@@ -157,6 +157,10 @@ pub struct ProjectConfig {
     pub dashboard_url: String,
     pub search_domains: Vec<String>,
     pub nameservers: Vec<String>,
+    pub location: String,
+    pub email: String,
+    pub phone: String,
+    pub is_dynamic: bool
 }
 
 #[derive(Debug, Deserialize, Clone)]

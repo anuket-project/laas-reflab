@@ -24,7 +24,7 @@ use models::{
         NetworkAssignmentMap,
         ProvEvent,
         StatusSentiment,
-    },
+    }, inventory::Lab,
 };
 
 
@@ -74,13 +74,13 @@ pub async fn make_aggregate(
         .get(&blob.origin)
         .ok_or(anyhow::Error::msg(format!(
             "no project supported by origin name {}",
-            blob.origin
+            &blob.origin
         )))?;
 
     let now = Utc::now();
     let agg = NewRow::new(Aggregate {
         state: dashboard::LifeCycleState::New,
-        origin: blob.origin,
+        lab: Lab::get_by_name(&mut transaction, blob.origin.clone()).await.expect("Expected to find lab").expect("Expected lab to exist").id,
         id: FKey::new_id_dangling(),
         users: blob.allowed_users,
         vlans: netmap,
@@ -155,10 +155,9 @@ pub async fn make_aggregate(
         allocation.update(&mut transaction).await?;
     }
 
-    // now, alocate vlans for it
     allocator
-        .allocate_vlans_for(&mut transaction, agg.id, template.networks.clone(), netmap)
-        .await?;
+    .allocate_vlans_for(&mut transaction, agg.id, template.networks.clone(), netmap)
+    .await?;
 
     for host_config in template.hosts.clone() {
         // create instance from config

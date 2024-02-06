@@ -4,7 +4,6 @@
 #![allow(dead_code, unused_variables)]
 #![feature(
     min_specialization,
-    async_fn_in_trait,
     associated_type_defaults,
     never_type,
     generic_arg_infer,
@@ -15,12 +14,12 @@
 
 pub mod web;
 
-use common::prelude::tokio_postgres::types::FromSql;
+use common::prelude::{tokio_postgres::types::FromSql, axum::async_trait};
 use sha2::Digest;
 use std::{
     any::type_name,
     backtrace::Backtrace,
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     hash::Hash,
     marker::PhantomData,
     str::FromStr,
@@ -103,6 +102,19 @@ impl ToSql for ID {
         out: &mut tokio_postgres::types::private::BytesMut,
     ) -> Result<tokio_postgres::types::IsNull, Box<dyn std::error::Error + Sync + Send>> {
         self.0.to_sql_checked(ty, out)
+    }
+}
+
+impl FromSql<'_> for ID {
+    fn from_sql<'a>(ty: &tokio_postgres::types::Type, raw: &'a [u8]) -> Result<Self, Box<dyn std::error::Error + Sync + Send>> {
+        match uuid::Uuid::from_sql(ty, raw) {
+            Ok(u) => return Ok(ID(u)),
+            Err(e) => return Err(e),
+        }
+    }
+
+    fn accepts(ty: &tokio_postgres::types::Type) -> bool {
+        <uuid::Uuid as FromSql>::accepts(ty)
     }
 }
 
@@ -712,6 +724,11 @@ impl Protect {
     }
 }
 
+#[async_trait]
+pub trait ComplexMigration {
+    async fn run(&self, transaction: &mut EasyTransaction<'_>) -> Result<(), anyhow::Error>;
+}
+
 pub enum Apply {
     /// If this migration should be run as a
     /// single SQL query, provide this
@@ -726,7 +743,7 @@ pub enum Apply {
     /// If the migration is more complicated,
     /// provide it as this and you can run your own
     /// SQL queries in a migration transaction here
-    Operation(Box<dyn Fn() -> () + Send + Sync>),
+    Operation(Box<dyn ComplexMigration + Send + Sync>),
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -913,7 +930,25 @@ impl Migration {
                 Apply::NOOP() => {
                     //
                 }
-                Apply::Operation(o) => o(),
+                Apply::Operation(q) => {
+                    tracing::info!("Running migration {}", self.unique_name);
+                    let r = q.run(transaction).await;
+                    if let Err(e) = r {
+                        println!("Error applying migration {}", self.unique_name);
+                        println!("{e:?}");
+                        panic!("Couldn't apply migration");
+                    }
+
+                    NewRow::new(MigrationRecord {
+                        id: FKey::new_id_dangling(),
+                        unique_name: self.unique_name.to_owned(),
+                        apply_date: chrono::Utc::now(),
+                        payload_hash: self.payload_hash(),
+                    })
+                    .insert(transaction)
+                    .await
+                    .expect("Couldn't insert record that migration applied");
+                },
             };
         } else {
             tracing::info!("Tried to reapply {}", self.unique_name);
@@ -921,104 +956,6 @@ impl Migration {
     }
 }
 
-pub trait JsonModel: Sized + Serialize + Send + Sync {
-    fn table_name() -> &'static str;
-
-    fn id(&self) -> ID;
-
-    /// Users of this trait should not override
-    /// this method after the initial creation of the model,
-    /// this only simplifies the default "table creation"
-    /// part of things
-    fn _default_migrations() -> Vec<Migration> {
-        let table_name = Self::table_name();
-
-        let make_table = Migration {
-            unique_name: format!("create_{table_name}_0001").leak(),
-            description: "default json model table creation migration",
-            depends_on: vec![],
-            apply: Apply::SQL(format!(
-                "CREATE TABLE IF NOT EXISTS {table_name} (
-                id UUID PRIMARY KEY NOT NULL,
-                data jsonb NOT NULL
-            );"
-            )),
-        };
-
-        let index_name = format!("json_index_{table_name}");
-        let index_json = Migration {
-            unique_name: format!("json_index_{table_name}_0002").leak(),
-            description: "create an index on the json field so that it can be efficiently queried based on subfields later",
-            depends_on: vec![make_table.unique_name],
-            apply: Apply::SQL(format!("CREATE INDEX {index_name} ON {table_name} USING GIN (data jsonb_path_ops);"))
-        };
-
-        let additional_deps = [make_table.unique_name, index_json.unique_name];
-        let mut migs = vec![make_table, index_json];
-
-        for mut migration in Self::override_migrations() {
-            for dep in additional_deps {
-                migration.depends_on.push(dep);
-            }
-
-            migs.push(migration);
-        }
-
-        migs
-    }
-
-    fn override_migrations() -> Vec<Migration> {
-        Vec::new()
-    }
-}
-
-impl<T> DBTable for T
-where T: JsonModel + 'static + DeserializeOwned
-{
-    fn id(&self) -> ID {
-        self.id()
-    }
-
-    fn table_name() -> &'static str {
-        <Self as JsonModel>::table_name()
-    }
-
-    fn migrations() -> Vec<Migration> {
-        Self::_default_migrations()
-    }
-
-    fn from_row(
-        row: tokio_postgres::Row,
-    ) -> Result<ExistingRow<T>, common::prelude::anyhow::Error> {
-        tracing::trace!("Converting a row to a {}", std::any::type_name::<T>());
-        let _id: uuid::Uuid = row.try_get("id").anyway()?;
-        let data: serde_json::Value = row.try_get("data").anyway()?;
-
-        Ok(ExistingRow::from_existing(
-            serde_json::value::from_value(data).anyway()?,
-        ))
-    }
-
-    fn to_rowlike(
-        &self,
-    ) -> Result<HashMap<&str, Box<dyn ToSql + Sync + Send>>, common::prelude::anyhow::Error> {
-        tracing::trace!(
-            "Converting a {} to its rowlike form",
-            std::any::type_name::<T>()
-        );
-        let s: String = serde_json::to_string(self).anyway()?;
-        let v = serde_json::Value::from_str(&s).anyway()?;
-
-        let id = self.id();
-
-        let mut hm: HashMap<&str, Box<dyn ToSql + Sync + Send + 'static>> = HashMap::new();
-
-        hm.insert("id", Box::new(id));
-        hm.insert("data", Box::new(v));
-
-        Ok(hm)
-    }
-}
 
 pub struct ClientPair {
     client: Client,
@@ -1243,6 +1180,11 @@ pub async fn initialize() -> Result<(), Vec<common::prelude::anyhow::Error>> {
 
     let mut errors = Vec::new();
 
+    let g: VecDeque<Migration> = all_migrations();
+    for migration in g {
+        let a = migration.unique_name;
+        println!("Gathered migration: {a}");
+    }
     let mut all_migrations = all_migrations();
 
     // this is inefficient, but also only runs once on program startup

@@ -9,3 +9,4 @@ pub mod ipmi_accounts;
 pub mod mailbox;
 pub mod network;
 pub mod vpn;
+pub mod sonic;

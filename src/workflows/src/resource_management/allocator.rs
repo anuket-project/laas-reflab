@@ -4,7 +4,7 @@
 use common::{
     prelude::{*},
 };
-use models::{allocation::*, dal::*, dashboard::*};
+use models::{allocation::*, dal::*, dashboard::*, inventory::Lab};
 
 
 use models::{
@@ -54,9 +54,11 @@ impl Allocator {
     pub async fn get_free_hosts(
         &self,
         t: &mut EasyTransaction<'_>,
+        lab: FKey<Lab>,
     ) -> Result<Vec<(ExistingRow<Host>, ExistingRow<ResourceHandle>)>, anyhow::Error> {
         //let handles = ResourceHandle::get_free(&self.token, t, ResourceClass::Host).await?;
-        let handles = ResourceHandle::query_free::<Host>(t, None, None, &[], &Vec::new()).await?;
+        let handles =
+            ResourceHandle::query_free::<Host>(t, lab, None, None, &[], &Vec::new()).await?;
 
         let mut r = Vec::new();
 
@@ -73,9 +75,11 @@ impl Allocator {
     pub async fn get_free_vlans(
         &self,
         t: &mut EasyTransaction<'_>,
+        lab: FKey<Lab>,
     ) -> Result<Vec<(ExistingRow<Vlan>, ExistingRow<ResourceHandle>)>, anyhow::Error> {
         //let handles = ResourceHandle::get_free(&self.token, t, ResourceClass::Host).await?;
-        let handles = ResourceHandle::query_free::<Vlan>(t, None, None, &[], &Vec::new()).await?;
+        let handles =
+            ResourceHandle::query_free::<Vlan>(t, lab, None, None, &[], &Vec::new()).await?;
 
         let mut r = Vec::new();
 
@@ -125,10 +129,33 @@ impl Allocator {
         let _lock = self.lock.lock().await;
         let mut t = t.easy_transaction().await?;
 
+        let lab = match for_aggregate.get(&mut t).await {
+            Ok(a) => match a.metadata.lab.clone() {
+                Some(lab_name) => match Lab::get_by_name(&mut t, lab_name).await {
+                    Ok(lab_res) => match lab_res {
+                        Some(l) => l,
+                        None => {
+                            return Err(anyhow::Error::msg(
+                                "Lab does not exist, unable to allocate",
+                            ))
+                        }
+                    },
+                    Err(e) => {
+                        return Err(anyhow::Error::msg("Error finding lab, unable to allocate"))
+                    }
+                },
+                None => return Err(anyhow::Error::msg("No lab provided, unable to allocate")),
+            },
+            Err(e) => return Err(e),
+        };
+
         let res = ResourceHandle::allocate_one(
             &self.token,
             &mut t,
-            models::allocation::ResourceRequestInner::HostByFlavor { flavor },
+            models::allocation::ResourceRequestInner::HostByFlavor {
+                flavor,
+                lab: lab.id,
+            },
             Some(for_aggregate),
             reason,
             &self.except_resources(),
@@ -137,8 +164,14 @@ impl Allocator {
         .map(|v| v.into_inner());
 
         match res {
-            Ok(handle @ ResourceHandle { id: _, tracks }) if let ResourceHandleInner::Host(h) = tracks => {
-                t.commit().await.map_err(|e| anyhow::Error::msg(format!("Couldn't commit allocation of resource, error: {e:?}")))?;
+            Ok(handle @ ResourceHandle { id, tracks, lab })
+                if let ResourceHandleInner::Host(h) = tracks =>
+            {
+                t.commit().await.map_err(|e| {
+                    anyhow::Error::msg(format!(
+                        "Couldn't commit allocation of resource, error: {e:?}"
+                    ))
+                })?;
                 if !fake {
                     // add cooldowns again *if necessary*
                     //self.add_cooldown(id);
@@ -147,7 +180,9 @@ impl Allocator {
             }
             Ok(v) => {
                 let _ = t.rollback(); // let go of the resource, on failure this automatically happens at "some point" anyway
-                Err(anyhow::Error::msg(format!("got wrong type of resource given back to us from allocator: {v:?}")))
+                Err(anyhow::Error::msg(format!(
+                    "got wrong type of resource given back to us from allocator: {v:?}"
+                )))
             }
             Err(e) => {
                 let _ = t.rollback(); // let go of the resource, on failure this automatically happens at "some point" anyway
@@ -168,10 +203,15 @@ impl Allocator {
         let _lock = self.lock.lock().await;
         let mut t = t.easy_transaction().await?;
 
+        let lab = match ResourceHandle::handle_for_host(&mut t, host.clone()).await {
+            Ok(res) => res.lab,
+            Err(e) => return Err(e),
+        };
+
         let res = ResourceHandle::allocate_one(
             &self.token,
             &mut t,
-            models::allocation::ResourceRequestInner::SpecificHost { host },
+            models::allocation::ResourceRequestInner::SpecificHost { host, lab: lab.expect("Expected to find specific host!") },
             Some(for_aggregate),
             reason,
             &self.except_resources(),
@@ -180,14 +220,22 @@ impl Allocator {
         .map(|v| v.into_inner());
 
         match res {
-            Ok(handle @ ResourceHandle { id: _, tracks }) if let ResourceHandleInner::Host(h) = tracks => {
-                t.commit().await.map_err(|e| anyhow::Error::msg(format!("Couldn't commit allocation of resource, error: {e:?}")))?;
+            Ok(handle @ ResourceHandle { id, tracks, lab })
+                if let ResourceHandleInner::Host(h) = tracks =>
+            {
+                t.commit().await.map_err(|e| {
+                    anyhow::Error::msg(format!(
+                        "Couldn't commit allocation of resource, error: {e:?}"
+                    ))
+                })?;
                 //self.add_cooldown(id);
                 Ok((h, handle))
             }
             Ok(v) => {
                 let _ = t.rollback(); // let go of the resource, on failure this automatically happens at "some point" anyway
-                Err(anyhow::Error::msg(format!("got wrong type of resource given back to us from allocator: {v:?}")))
+                Err(anyhow::Error::msg(format!(
+                    "got wrong type of resource given back to us from allocator: {v:?}"
+                )))
             }
             Err(e) => {
                 let _ = t.rollback(); // let go of the resource, on failure this automatically happens at "some point" anyway
@@ -214,21 +262,40 @@ impl Allocator {
         // if all succeed, return the aggregate map
 
         //let mut map = NetworkAssignmentMap::empty();
+        let lab = match agg.get(&mut t).await {
+            Ok(a) => a.lab,
+            Err(e) => return Err(anyhow::Error::msg("Error getting aggregate: {e}")),
+        };
+
+        tracing::warn!("Lab is {:?}", lab);
         let mut map = within.get(&mut t).await?;
+        tracing::warn!("Map is {:?}", map);
+        let is_dynamic = lab.get(&mut t).await.expect("Expected to get lab from fkey").is_dynamic;
 
         for network in networks {
             let net = network.get(&mut t).await.map_err(|e| anyhow::Error::msg(format!("Failure to get network from fkey, bubbling error so that mutex guard doesn't poison: {e:?}")))?;
+            
+            let vlan = match is_dynamic {
+                true => None,
+                false => {
+                tracing::warn!("Lab is not dynamic. Network is {net:?}");
+                // There is no good way to find out which specific vlan we need without major breaking changes. For now, just use the name of the network.
+                let static_vlan_id = Self::get_static_vlan(&mut t, &net).await;
+                tracing::warn!("Lab is not dynamic. Passing vlan ({static_vlan_id:?})");
+                Some(static_vlan_id)
+                },
+            };
 
             let allocation_result = self
-                .allocate_vlan_internal(
-                    &mut t,
-                    Some(agg),
-                    net.public,
-                    None,
-                    AllocationReason::ForBooking(),
-                )
-                .await;
-
+            .allocate_vlan_internal(
+                &mut t,
+                Some(agg),
+                net.public,
+                vlan,
+                AllocationReason::ForBooking(),
+                lab
+            )
+            .await;
             match allocation_result {
                 Ok((v, _h)) => {
                     map.add_assignment(network, v);
@@ -244,8 +311,6 @@ impl Allocator {
             }
         }
 
-        //let nr = NewRow::new(map);
-
         let _nam = map.update(&mut t).await.map_err(|e| {
             /* t automatically rolls back on drop */
             e
@@ -254,6 +319,22 @@ impl Allocator {
         t.commit().await?;
 
         Ok(())
+    }
+
+
+    pub async fn get_static_vlan(t: &mut EasyTransaction<'_>, net: &ExistingRow<Network>) -> FKey<Vlan> {
+
+        let network_name = net.name.clone();
+        let split_index = network_name.find(char::is_numeric).unwrap_or(network_name.len());
+
+        let (_, network_number) = network_name.split_at(split_index);
+
+        tracing::warn!("Getting static vlan for {network_number}");
+        // jump!
+
+        let network_number = network_number.parse::<i16>().expect("expected to convert &str to i16");
+        let vlan = Vlan::select().where_field("vlan_id").equals(network_number).run(t).await.unwrap().get(0).expect("Expected to find a vlan from id").id;
+        vlan
     }
 
     pub async fn allocate_vlan(
@@ -266,9 +347,13 @@ impl Allocator {
     ) -> Result<(FKey<Vlan>, ResourceHandle), anyhow::Error> {
         let _lock = self.lock.lock().await;
         let mut t = t.easy_transaction().await?;
+        let lab = match for_agg.expect("Expected to have an agg").get(&mut t).await {
+            Ok(a) => a.lab,
+            Err(e) => return Err(anyhow::Error::msg("Error getting aggregate: {e}")),
+        };
 
         let res = self
-            .allocate_vlan_internal(&mut t, for_agg, public, id, reason)
+            .allocate_vlan_internal(&mut t, for_agg, public, id, reason, lab)
             .await;
 
         t.commit().await?;
@@ -296,12 +381,21 @@ impl Allocator {
     ) -> Result<(), anyhow::Error> {
         let _lock = self.lock.lock().await;
 
+        let lab = match Lab::get_by_name(t, for_project.clone()).await {
+            Ok(opt_lab) => match opt_lab {
+                Some(l) => l.id,
+                None => return Err(anyhow::Error::msg("Lab does not exist")),
+            },
+            Err(e) => return Err(anyhow::Error::msg("Failed to find lab: {e}")),
+        };
+
         let _vpn = ResourceHandle::allocate_one(
             &self.token,
             t,
             ResourceRequestInner::VPNAccess {
                 for_project,
                 for_user,
+                lab,
             },
             Some(for_aggregate),
             AllocationReason::ForBooking(),
@@ -321,12 +415,14 @@ impl Allocator {
         public: bool,
         id: Option<FKey<Vlan>>,
         reason: AllocationReason,
+        lab: FKey<Lab>
     ) -> Result<(FKey<Vlan>, ResourceHandle), anyhow::Error> {
         let inner = match id {
-            Some(id) => ResourceRequestInner::SpecificVlan { vlan: id },
+            Some(id) => ResourceRequestInner::SpecificVlan { vlan: id, lab },
             None => ResourceRequestInner::VlanByCharacteristics {
                 public,
                 serves_dhcp: public,
+                lab,
             },
         };
 

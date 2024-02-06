@@ -45,30 +45,38 @@ ipa:
   certificate_path: config_data/os-ipa-ca.crt
 
 projects:
-  project1:
-    vpn:
-      ipa_group: project1
-    notifications:
-      email:
-        booking_created: project1/booking_created.html
-        booking_expiring: generic/booking_expiring.html
-        booking_expired: generic/booking_expired.html
-        vpn_access_added: project1/vpn_access_added.html
-        account_created: generic/account_created.html
-    styles_path: ./templates/generic/styles.json
-    search_domains: []
-    nameservers: []
+    project1:
+        vpn:
+            ipa_group: project1
+        notifications:
+            email:
+                booking_created: project1/booking_created.html
+                booking_expiring: generic/booking_expiring.html
+                booking_expired: generic/booking_expired.html
+                vpn_access_added: project1/vpn_access_added.html
+                account_created: generic/account_created.html
+        styles_path: ./templates/generic/styles.json
+        search_domains: []
+        nameservers: []
+        location: ""
+        email: ""
+        phone: ""
+        is_dynamic: true
 
-  project2:
-    vpn:
-      ipa_group: project2
-    notifications:
-      email:
-        booking_created: project2/booking_created.html
-        booking_expiring: generic/booking_expiring.html
-        booking_expired: generic/booking_expired.html
-        vpn_access_added: project2/vpn_access_added.html
-        account_created: generic/account_created.html
-    search_domains: []
-    nameservers: []
-
+    project2:
+        vpn:
+            ipa_group: project2
+        notifications:
+            email:
+                booking_created: project2/booking_created.html
+                booking_expiring: generic/booking_expiring.html
+                booking_expired: generic/booking_expired.html
+                vpn_access_added: project2/vpn_access_added.html
+                account_created: generic/account_created.html
+        styles_path: ./templates/generic/styles.json
+        search_domains: []
+        nameservers: []
+        location: ""
+        email: ""
+        phone: ""
+        is_dynamic: false

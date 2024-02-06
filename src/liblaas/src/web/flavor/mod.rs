@@ -22,7 +22,7 @@ use axum::{
 };
 use common::prelude::{itertools::Itertools, *};
 use models::{
-    allocation::{self, AllocationReason},
+    allocation::{self, AllocationReason, ResourceHandle},
     dal::*,
     dashboard::Image,
     inventory::*,
@@ -68,7 +68,7 @@ pub struct FlavorDetails {
     ifaces: Vec<IfaceDetails>,
 }
 
-pub async fn list_flavors() -> Json<Vec<FlavorBlob>> {
+pub async fn list_flavors(Path(lab_name): Path<String>) -> Result<Json<Vec<FlavorBlob>>, WebError> {
     let res = {
         tracing::info!("API call to list_flavors()");
         let mut client = new_client().await.expect("Expected to connect to db");
@@ -78,13 +78,18 @@ pub async fn list_flavors() -> Json<Vec<FlavorBlob>> {
             .expect("Transaction creation error");
         let mut fbs: Vec<FlavorBlob> = Vec::new();
 
-        tracing::debug!("Getting flavors now");
-
         let flavors = Flavor::select().run(&mut transaction).await.unwrap();
 
-        tracing::debug!("Got flavors, now iterating...");
+        let lab = match Lab::get_by_name(&mut transaction, lab_name.clone()).await {
+            Ok(lab_option) => match lab_option {
+                Some(l) => l.id,
+                None => return Err((StatusCode::NOT_FOUND, format!("Failed to find lab"))),
+            },
+            Err(e) => return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to retrieve lab: {e}"))),
+        };
+
         let hosts = allocator::Allocator::instance()
-            .get_free_hosts(&mut transaction)
+            .get_free_hosts(&mut transaction, lab)
             .await
             .unwrap();
 
@@ -138,19 +143,19 @@ pub async fn list_flavors() -> Json<Vec<FlavorBlob>> {
                 swap_size: f.swap_size.clone(),
             };
 
-            fbs.push(fb);
+            if Host::select().where_field("flavor").equals(f.id).run(&mut transaction).await.expect("Expected to find host").get(0).unwrap().projects.get(0).unwrap().clone() == lab_name.clone() {
+                fbs.push(fb);
+            }
         }
 
         transaction.commit().await.expect("didn't commit?");
-
-        tracing::debug!("got the flavors");
 
         Json(fbs)
     };
 
     tracing::debug!("Exit from client drop");
 
-    res
+    Ok(res)
 }
 
 fn list_flavors_docs(op: TransformOperation) -> TransformOperation {
@@ -164,111 +169,8 @@ pub struct ListFlavorsRequest {
     flavor_id: LLID,
 }
 
-#[axum::debug_handler]
-pub async fn list_flavor_images(
-    Path((flavor_id, owner)): Path<(LLID, String)>,
-) -> Result<Json<Vec<api::ImageBlob>>, WebError> {
-    let mut client = new_client().await.log_db_client_error()?;
-    let mut transaction = client.easy_transaction().await.log_db_client_error()?;
-    //let ListFlavorsRequest { user_id, flavor_id } = req;
-    debug!("Looking for a list of images for user {owner} and flavor {flavor_id}");
-
-    let images = dashboard::Image::images_for_flavor(
-        &mut transaction,
-        FKey::from_id(ID::from(flavor_id)),
-        Some(owner),
-    )
-    .await;
-
-    let images = images
-        .map(|v| {
-            Json(
-                v.into_iter()
-                    .map(|i| api::ImageBlob {
-                        image_id: i.id,
-                        name: i.name,
-                    })
-                    .collect(),
-            )
-        })
-        .log_opaque_server_error(true);
-
-    transaction
-        .end_with(images.is_ok())
-        .await
-        .log_db_client_error()?;
-
-    images
-}
-
-fn list_flavor_images_docs(op: TransformOperation) -> TransformOperation {
-    op.description("List name and ids of images compatible with a flavor.")
-        .response::<200, Json<Vec<(String, String)>>>()
-}
-
-#[axum::debug_handler]
-pub async fn get_flavor_by_id(
-    Path(id): Path<FKey<inventory::Flavor>>,
-) -> Result<Json<api::FlavorBlob>, WebError> {
-    let mut client = new_client().await.log_db_client_error()?;
-    let mut transaction = client.easy_transaction().await.log_db_client_error()?;
-
-    let f = id
-        .get(&mut transaction)
-        .await
-        .log_db_client_error()?
-        .into_inner();
-
-    let mut available_count = HashMap::new();
-
-    let hosts = allocator::Allocator::instance()
-        .get_free_hosts(&mut transaction)
-        .await
-        .unwrap();
-    for (host, _) in hosts {
-        let flavor = host.flavor;
-        let ent = available_count.entry(flavor).or_insert(0);
-        *ent += 1;
-    }
-
-    let fb = api::FlavorBlob {
-        available_count: available_count.get(&f.id).copied().unwrap_or(0),
-        flavor_id: f.id,
-        name: f.name.clone(),
-        images: Image::images_for_flavor(&mut transaction, f.id, None)
-            .await
-            .log_db_client_error()?
-            .into_iter()
-            .map(|img| ImageBlob {
-                image_id: img.id,
-                name: img.name,
-            })
-            .collect(),
-        interfaces: f
-            .ports(&mut transaction)
-            .await
-            .log_server_error("unable to query ports for flavor", true)?
-            .into_iter()
-            .map(|r| InterfaceBlob {
-                name: r.name.clone(),
-                speed: r.speed.clone(),
-                cardtype: r.cardtype.clone(),
-            })
-            .collect_vec(),
-        cpu_count: f.cpu_count,
-        ram: f.ram.clone(),
-        root_size: f.root_size.clone(),
-        disk_size: f.disk_size.clone(),
-        swap_size: f.swap_size.clone(),
-    };
-
-    transaction.commit().await.log_db_client_error()?;
-
-    Ok(Json(fb))
-}
-
 /// List hosts, filtering to only hosts for the given project (dashboard)
-pub async fn list_hosts(Path(project): Path<String>) -> Result<Json<Vec<api::HostBlob>>, WebError> {
+pub async fn list_hosts(Path(lab_name): Path<String>) -> Result<Json<Vec<api::HostBlob>>, WebError> {
     tracing::info!("API call to list_hosts()");
     let mut client = new_client().await.log_db_client_error()?;
     let mut transaction = client.easy_transaction().await.log_db_client_error()?;
@@ -285,7 +187,7 @@ pub async fn list_hosts(Path(project): Path<String>) -> Result<Json<Vec<api::Hos
 
     for host in hosts {
         let host = host.into_inner();
-        if !host.projects.contains(&project) {
+        if !(ResourceHandle::handle_for_host(&mut transaction, host.id).await.expect("Expected lab to exist").lab.unwrap().get(&mut transaction).await.expect("Expected lab to exist").name == lab_name) {
             continue;
         }
 
@@ -314,7 +216,7 @@ pub async fn list_hosts(Path(project): Path<String>) -> Result<Json<Vec<api::Hos
                         id: agg.id,
                         purpose: agg.metadata.purpose,
                         project: agg.metadata.project,
-                        origin: agg.origin,
+                        origin: agg.lab.get(&mut transaction).await.expect("Expected lab to exist").name.clone(),
                     })
                 } else {
                     None
@@ -356,11 +258,6 @@ pub async fn list_hosts(Path(project): Path<String>) -> Result<Json<Vec<api::Hos
 
 pub fn routes(_state: AppState) -> ApiRouter {
     return ApiRouter::new()
-        .api_route("/", get(list_flavors))
-        .api_route(
-            "/:flavor_id/:user_id/images/",
-            get_with(list_flavor_images, list_flavor_images_docs),
-        )
-        .api_route("/name/:flavor_id/", get(get_flavor_by_id))
-        .api_route("/hosts/:project", get(list_hosts));
+        .api_route("/:lab_name", get(list_flavors))
+        .api_route("/:lab_name/hosts", get(list_hosts));
 }

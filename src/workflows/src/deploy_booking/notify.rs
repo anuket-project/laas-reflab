@@ -33,16 +33,17 @@ impl AsyncRunnable for Notify {
 
         let agg = self.aggregate.get(&mut transaction).await.unwrap();
         let env = Env {
-            project: agg.origin.clone(),
+            project: agg.lab.get(&mut transaction).await.expect("Expected to find lab").name.clone(),
+            //project: agg.metadata.project.clone().unwrap_or("None".to_owned()),
         };
         let info = BookingInfo {
             owner: agg.metadata.owner.clone().unwrap_or("None".to_owned()),
             collaborators: agg
-                .users
-                .iter()
-                .cloned()
-                .filter(|username| *username != agg.metadata.owner.as_deref().unwrap_or_default())
-                .collect(),
+            .users
+            .iter()
+            .cloned()
+            .filter(|username| *username != agg.metadata.owner.as_deref().unwrap_or_default())
+            .collect(),
             lab: agg.metadata.lab.clone().unwrap_or("None".to_owned()),
             id: agg.metadata.booking_id.clone().unwrap_or("None".to_owned()),
             template: agg
@@ -55,10 +56,10 @@ impl AsyncRunnable for Notify {
             purpose: agg.metadata.purpose.clone().unwrap_or("None".to_owned()),
             start_date: agg.metadata.start,
             end_date: agg.metadata.end,
-            dashboard_url: match Some(agg.origin.clone()) {
+            dashboard_url: match Some(agg.lab.clone()) {
                 Some(p) => settings()
                     .projects
-                    .get(p.as_str())
+                    .get(p.get(&mut transaction).await.expect("Expected to find lab").name.clone().as_str())
                     .unwrap()
                     .dashboard_url
                     .clone(),

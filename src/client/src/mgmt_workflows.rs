@@ -3,8 +3,8 @@
 
 use models::{
     allocation::ResourceHandle,
-    dal::{new_client, AsEasyTransaction, FKey},
-    inventory::{BootTo, Host},
+    dal::{new_client, AsEasyTransaction, FKey, DBTable},
+    inventory::{BootTo, Host, Lab},
 };
 use tascii::prelude::*;
 use workflows::{
@@ -100,11 +100,17 @@ impl AsyncRunnable for BootBookedHosts {
         let mut client = new_client().await.unwrap();
         let mut transaction = client.easy_transaction().await.unwrap();
 
-        for (host, _handle) in
-            ResourceHandle::query_allocated::<Host>(&mut transaction, None, None, &[], &Vec::new())
-                .await?
-        {
-            context.spawn(BootBookedHost { host });
+        for lab in match Lab::select().run(&mut transaction).await {
+            Ok(v) => v,
+            Err(e) => return Err(TaskError::Reason(format!("Unable to get labs: {e}"))),
+        } {
+            let lab_id = 
+            for (host, handle) in
+                ResourceHandle::query_allocated::<Host>(&mut transaction, lab.id, None, None, &[], &Vec::new())
+                    .await?
+            {
+                context.spawn(BootBookedHost { host });
+            };
         }
 
         Ok(())

@@ -45,13 +45,18 @@ use models::{
         IPNetwork,
         InterfaceFlavor,
         Switch,
+        SwitchOS,
+        Version,
+        NxosVersion,
+        SonicVersion,
         SwitchPort,
         Vlan,
+        Lab
     },
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fs, net::Ipv4Addr, path::PathBuf, str::FromStr};
-use workflows::resource_management::allocator::Allocator;
+use workflows::resource_management::allocator::{Allocator};
 
 use crate::remote::{Select, Server};
 
@@ -204,7 +209,15 @@ pub async fn import_vlans_once(
         if !disallowed_vlans.contains(&count)
             && (!reserved.get(count as usize).expect("weird count idx") || public_config.is_some())
         {
-            let _rh = models::allocation::ResourceHandle::add_resource(&mut transaction, inner)
+            let lab = match Lab::get_by_name(&mut transaction, "anuket".to_string()).await {
+                Ok(o) => match o {
+                    Some(lab) => lab.id,
+                    None => return Err(anyhow::Error::msg("Lab not found")),
+                },
+                Err(e) => return Err(anyhow::Error::msg(format!("Failed to get lab: {e}"))),
+            };
+
+            let rh = models::allocation::ResourceHandle::add_resource(&mut transaction, inner, lab)
                 .await
                 .expect("Couldn't create tracking handle for vlan");
         }
@@ -242,7 +255,7 @@ pub async fn get_or_import_flavor(
     confluence_data: &Value,
     image_data: &Value,
     flavor_name: String,
-    projects: Vec<String>,
+    origin: String,
 ) -> Result<
     (
         FKey<Flavor>,
@@ -334,7 +347,7 @@ pub async fn get_or_import_flavor(
             host_data,
             confluence_data,
             image_data,
-            projects.clone(),
+            origin.clone(),
             ifaces.clone(),
             fk,
         )
@@ -350,7 +363,7 @@ pub async fn import_image_and_create_templates(
     _host_data: &Value,
     _confluence_data: &Value,
     image_data: &Value,
-    projects: Vec<String>,
+    origin: String,
     ifaces: HashMap<String, FKey<InterfaceFlavor>>,
     fk: FKey<Flavor>,
 ) -> Result<(), anyhow::Error> {
@@ -387,83 +400,85 @@ pub async fn import_image_and_create_templates(
                         .expect("couldn't insert image");
                     }
                 };
-                for project in projects.clone() {
-                    let net_id = FKey::new_id_dangling();
+                let net_id = FKey::new_id_dangling();
 
-                    let first_iface = ifaces
-                        .get_key_value("ens1f0")
-                        .unwrap_or(
-                            ifaces
-                                .get_key_value("enP2p1s0v0")
-                                .unwrap_or(ifaces.iter().next().unwrap()),
-                        )
-                        .0;
+                let first_iface = ifaces
+                    .get_key_value("ens1f0")
+                    .unwrap_or(
+                        ifaces
+                            .get_key_value("enP2p1s0v0")
+                            .unwrap_or(ifaces.iter().next().unwrap()),
+                    )
+                    .0;
 
-                    let images =
-                        dashboard::Image::images_for_flavor(&mut transaction, fk.clone(), None)
-                            .await
-                            .expect("Expected to find images for flavor");
+                let images =
+                    dashboard::Image::images_for_flavor(&mut transaction, fk.clone(), None)
+                        .await
+                        .expect("Expected to find images for flavor");
 
-                    let mut desc: String = "Default template for ".to_owned();
-                    for image in image_data.as_object().unwrap() {
-                        for img_flavor in image.1["flavors"].as_array().unwrap() {
-                            if img_flavor["name"].as_str().unwrap() == flavor_name.clone() {
-                                desc = img_flavor["description"].as_str().unwrap().to_owned();
-                            }
+                let mut desc: String = "Default template for ".to_owned();
+                for image in image_data.as_object().unwrap() {
+                    for img_flavor in image.1["flavors"].as_array().unwrap() {
+                        if img_flavor["name"].as_str().unwrap() == flavor_name.clone() {
+                            desc = img_flavor["description"].as_str().unwrap().to_owned();
                         }
                     }
+                }
 
-                    if Template::get_by_name(&mut transaction, flavor_name.clone())
-                        .await
-                        .unwrap()
-                        .len()
-                        == 0
-                    {
-                        match NewRow::new(Template {
-                            id: FKey::new_id_dangling(),
-                            lab_name: project.clone(),
-                            name: flavor_name.clone(),
-                            deleted: false,
-                            description: desc,
-                            owner: None,
-                            public: false,
-                            networks: vec![NewRow::new(Network {
-                                id: net_id.clone(),
-                                name: "public".to_owned(),
-                                public: true,
-                            })
-                            .insert(&mut transaction)
-                            .await
-                            .expect("Expected to insert new network")],
-                            hosts: vec![HostConfig {
-                                hostname: "laas-host".to_owned(),
-                                flavor: fk,
-                                image: images.get(0).expect("Expected to find image").id,
-                                cifile: Vec::new(),
-                                connections: vec![BondGroupConfig {
-                                    connects_to: vec![VlanConnectionConfig {
-                                        network: net_id.clone(),
-                                        tagged: true,
-                                    }]
-                                    .into_iter()
-                                    .collect(),
-                                    member_interfaces: vec![first_iface.clone()]
-                                        .into_iter()
-                                        .collect(),
-                                }],
-                            }],
+                if Template::get_by_name(&mut transaction, flavor_name.clone())
+                    .await
+                    .unwrap()
+                    .len()
+                    == 0
+                {
+                    match NewRow::new(Template {
+                        id: FKey::new_id_dangling(),
+                        name: flavor_name.clone(),
+                        deleted: false,
+                        description: desc,
+                        owner: None,
+                        public: false,
+                        networks: vec![NewRow::new(Network {
+                            id: net_id.clone(),
+                            name: "public".to_owned(),
+                            public: true,
                         })
                         .insert(&mut transaction)
                         .await
-                        {
-                            Ok(_) => {
-                                let _ = writeln!(session, "Created new template for flavor");
-                            }
-                            Err(e) => writeln!(
+                        .expect("Expected to insert new network")],
+                        hosts: vec![HostConfig {
+                            hostname: "laas-host".to_owned(),
+                            flavor: fk,
+                            image: images.get(0).expect("Expected to find image").id,
+                            cifile: Vec::new(),
+                            connections: vec![BondGroupConfig {
+                                connects_to: vec![VlanConnectionConfig {
+                                    network: net_id.clone(),
+                                    tagged: true,
+                                }]
+                                .into_iter()
+                                .collect(),
+                                member_interfaces: vec![first_iface.clone()].into_iter().collect(),
+                            }],
+                        }],
+                        lab: Lab::get_by_name(&mut transaction, origin.clone())
+                            .await
+                            .expect("Expected to find lab")
+                            .expect("Expected lab to exist")
+                            .id,
+                    })
+                    .insert(&mut transaction)
+                    .await
+                    {
+                        Ok(_) => {
+                            let _ = writeln!(session, "Created new template for flavor");
+                        }
+                        Err(e) => {
+                            let _ = writeln!(
                                 session,
-                                "Error creating template for {project} with error {}",
+                                "Error creating template for {origin} with error {}",
                                 e.to_string()
-                            )?,
+                            );
                         }
                     }
                 }
@@ -479,7 +494,7 @@ pub async fn import_host(
     import_path: PathBuf,
     conf_path: PathBuf,
     image_path: PathBuf,
-    projects: Vec<String>,
+    origin: String,
 ) -> Result<Host, anyhow::Error> {
     let import_json: Value =
         serde_json::from_str(&fs::read_to_string(import_path).expect("Host import not found"))
@@ -508,7 +523,7 @@ pub async fn import_host(
         &conf_json,
         &image_json,
         flavor,
-        projects.clone(),
+        origin.clone(),
     )
     .await?;
 
@@ -563,15 +578,24 @@ pub async fn import_host(
                 .unwrap(),
                 ipmi_user: conf_json[name]["ipmi_user"].as_str().unwrap().to_owned(),
                 ipmi_pass: conf_json[name]["ipmi_pass"].as_str().unwrap().to_owned(),
-                projects,
                 fqdn: name.to_owned(),
+                projects: vec![origin],
             })
             .insert(&mut transaction)
             .await?;
 
+            let lab = match Lab::get_by_name(transaction, "anuket".to_string()).await {
+                Ok(o) => match o {
+                    Some(lab) => lab.id,
+                    None => return Err(anyhow::Error::msg("Lab does not exist".to_string())),
+                },
+                Err(e) => return Err(anyhow::Error::msg(e.to_string())),
+            };
+
             models::allocation::ResourceHandle::add_resource(
                 &mut transaction,
                 ResourceHandleInner::Host(host),
+                lab,
             )
             .await
             .expect("Expected to make host allocatable");
@@ -656,7 +680,40 @@ pub async fn import_switches(mut session: &Server, path: PathBuf) -> Result<(), 
             ip: switch_data["ip"].as_str().unwrap().to_owned(),
             user: switch_data["user"].as_str().unwrap().to_owned(),
             pass: switch_data["pass"].as_str().unwrap().to_owned(),
-            switch_type: switch_data["type"].as_str().unwrap().to_owned(),
+            switch_os: {
+                let res = SwitchOS::select()
+                .where_field("os_type")
+                .equals(switch_data["type"]["name"].as_str().unwrap().to_owned())
+                .where_field("version")
+                .equals(switch_data["type"]["version"].as_str().unwrap().to_owned())
+                .run(&mut t)
+                .await;
+
+                match res {
+                    Ok(r) => {
+                        println!("len: {}", r.len());
+                        println!("{:?}", r);
+                        if (r.len() > 0) {
+                            Some(r.get(0).expect("Expected vector length to not be 0").id)
+                        } else {
+                            match create_switch_os(switch_data, &mut t).await {
+                                Ok(f) => Some(f),
+                                Err(e) => return Err(anyhow::Error::msg(format!("Error creating switch: {}", e.to_string()))),
+                            }
+                        }
+                    },
+                    Err(e) => {
+                        println!("PSQL Error: {}" ,e.to_string());
+                        match create_switch_os(switch_data, &mut t).await {
+                            Ok(f) => Some(f),
+                            Err(e) => return Err(anyhow::Error::msg(format!("Error creating switch: {}", e.to_string()))),
+                        }
+                    },
+                }
+            },
+            management_vlans: switch_data["mgmt_vlans"].as_array().expect("Expected management vlan array to exist").into_iter().map(|f|f.as_i64().expect("Expected management vlan array to contain an integer") as i16).collect_vec(),
+            ipmi_vlan: switch_data["ipmi_vlan"].as_i64().expect("Expected ipmi vlan to be an integer") as i16,
+            public_vlans: switch_data["public_vlans"].as_array().expect("Expected public vlan array to exist").into_iter().map(|f|f.as_i64().expect("Expected public vlan array to contain an integer") as i16).collect_vec(),
         };
 
         let res =
@@ -673,6 +730,7 @@ pub async fn import_switches(mut session: &Server, path: PathBuf) -> Result<(), 
                 *v = Switch { id: v.id, ..s };
 
                 v.update(&mut t).await?;
+                t.commit().await.unwrap();
             }
             None => {
                 let _ = writeln!(
@@ -689,8 +747,29 @@ pub async fn import_switches(mut session: &Server, path: PathBuf) -> Result<(), 
             }
         }
     }
-    transaction.commit().await.unwrap();
-    Ok(())
+    match transaction.commit().await {
+        Ok(r) => Ok(r),
+        Err(e) => Err(anyhow::Error::msg(format!("Failed to import or update switches: {}", e.to_string()))),
+    }
+}
+
+async fn create_switch_os(switch_data: &Value, t: &mut EasyTransaction<'_>) -> Result<FKey<SwitchOS>, anyhow::Error> {
+    let s_os_id = FKey::new_id_dangling();
+    let s_os = SwitchOS {
+        id: s_os_id.clone(),
+        os_type: switch_data["type"]["name"].as_str().unwrap().to_owned(),
+        version: match Version::from_string(switch_data["type"]["version"].as_str().unwrap().to_owned()) {
+            Ok(v) => v,
+            Err(e) => return Err(anyhow::Error::msg(e.to_string()))
+        },
+    };
+    println!("{:?}", s_os);
+    println!("{}", s_os.version.to_string());
+
+    Ok(NewRow::new(s_os)
+            .insert(t)
+            .await
+            .expect("couldn't insert switch_os"))
 }
 
 pub async fn import_proj(mut session: &Server, t: &mut EasyTransaction<'_>, proj: PathBuf) {
@@ -717,13 +796,12 @@ pub async fn import_proj(mut session: &Server, t: &mut EasyTransaction<'_>, proj
                 host_file_path,
                 PathBuf::from("./config_data/laas-hosts/tascii/host_confluence.json"),
                 PathBuf::from("./config_data/laas-hosts/tascii/images.json"),
-                vec![proj
-                    .file_name()
+                proj.file_name()
                     .expect("Expected dir to be named")
                     .to_str()
                     .to_owned()
                     .unwrap()
-                    .to_owned()],
+                    .to_owned(),
             )
             .await;
 
@@ -780,7 +858,7 @@ pub async fn import_hosts(mut session: &Server) {
                     host_file_path,
                     PathBuf::from("./config_data/laas-hosts/tascii/host_confluence.json"),
                     PathBuf::from("./config_data/laas-hosts/tascii/images.json"),
-                    vec![project.clone()],
+                    project.clone(),
                 )
                 .await;
 
@@ -825,7 +903,7 @@ pub async fn import_vlans(mut session: &Server) -> Result<(), anyhow::Error> {
     }
 }
 
-async fn allocate_vlan(
+async fn import_allocate_vlan(
     mut session: &Server,
     mut transaction: &mut EasyTransaction<'_>,
     agg_id: FKey<Aggregate>,
@@ -926,7 +1004,6 @@ pub async fn import_bookings(mut session: &Server, booking_path: PathBuf) {
 
         let template = match NewRow::new(Template {
             id: FKey::new_id_dangling(),
-            lab_name: old_booking.booking_meta.lab.clone(),
             name: format!(
                 "{}: {}",
                 old_booking.booking_meta.project, old_booking.booking_meta.job
@@ -937,6 +1014,11 @@ pub async fn import_bookings(mut session: &Server, booking_path: PathBuf) {
             public: false,
             networks: networks.clone(),
             hosts: template_hosts,
+            lab: Lab::get_by_name(&mut transaction, origin.clone())
+                .await
+                .expect("Expected to find lab")
+                .expect("Expected lab to exist")
+                .id,
         })
         .insert(&mut transaction)
         .await
@@ -957,7 +1039,11 @@ pub async fn import_bookings(mut session: &Server, booking_path: PathBuf) {
         };
 
         let aggregate = Aggregate {
-            origin: origin.clone(),
+            lab: Lab::get_by_name(&mut transaction, origin.clone())
+                .await
+                .expect("Expected to find lab")
+                .expect("Expected lab to exist")
+                .id,
             state: lc,
             id: booking_id,
             configuration: AggregateConfiguration {
@@ -1107,7 +1193,7 @@ pub async fn import_bookings(mut session: &Server, booking_path: PathBuf) {
                     };
 
                     let mut t = transaction.easy_transaction().await.unwrap();
-                    let res = allocate_vlan(session, &mut t, agg.id, vlan_fk.id).await;
+                    let res = import_allocate_vlan(session, &mut t, agg.id, vlan_fk.id).await;
                     if let Ok(vid) = res {
                         t.commit().await.unwrap();
                         vlans.add_assignment(network_keys.next().unwrap(), vid);

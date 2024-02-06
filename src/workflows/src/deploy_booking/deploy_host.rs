@@ -583,7 +583,7 @@ pub async fn postprovision_network_config(
         builder = builder.bond(
             BondGroup::new()
                 .with_vlan(VlanConnection::from_pair(t, 99, true).await)
-                .with_vlan(VlanConnection::from_pair(t, public_vlan_id, false).await)
+                .with_vlan(VlanConnection::from_pair(t, public_vlan_id as i16, false).await)
                 .with_port(port.id),
         );
     }

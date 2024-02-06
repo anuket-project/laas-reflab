@@ -109,7 +109,7 @@ impl AsyncRunnable for BookingTask {
 
         // now need to set up things like vpn, notify booking done, etc
         // give each user a VPN token
-        let project = agg.origin.clone();
+        let project = agg.lab.get(&mut transaction).await.expect("Expected to get lab").name.clone();
         tracing::info!("Processing a booking for project {project}");
         for user in agg.users.clone() {
             tracing::info!("Adding user {user} to have vpn access");
@@ -363,7 +363,7 @@ impl AsyncRunnable for SingleHostDeploy {
                                 // we failed on a single host, but if we haven't
                                 // hit the limit yet then we should mark this host as not
                                 // working and continue with a different host
-                                maybe_bad_hosts.push(rh);
+                                maybe_bad_hosts.push(rh.clone());
 
                                 continue;
                             }
@@ -491,6 +491,7 @@ async fn mark_not_working(hosts: Vec<ResourceHandle>, original_agg: FKey<Aggrega
     let mut client = new_client().await.unwrap();
     let mut transaction = client.easy_transaction().await.unwrap();
     let allocator = allocator::Allocator::instance();
+    let lab = original_agg.get(&mut transaction).await.expect("Expected to get original aggregate").lab;
 
     if !hosts.is_empty() {
         let agg = Aggregate {
@@ -503,7 +504,6 @@ async fn mark_not_working(hosts: Vec<ResourceHandle>, original_agg: FKey<Aggrega
                 .unwrap(),
             template: NewRow::new(Template {
                 id: FKey::new_id_dangling(),
-                lab_name: String::from(""),
                 name: String::from("bad hosts"),
                 deleted: false,
                 description: String::from("bad hosts"),
@@ -511,6 +511,7 @@ async fn mark_not_working(hosts: Vec<ResourceHandle>, original_agg: FKey<Aggrega
                 public: false,
                 networks: vec![],
                 hosts: vec![],
+                lab,
             })
             .insert(&mut transaction)
             .await
@@ -529,7 +530,7 @@ async fn mark_not_working(hosts: Vec<ResourceHandle>, original_agg: FKey<Aggrega
                 ipmi_username: String::new(),
                 ipmi_password: String::new(),
             },
-            origin: String::new(),
+            lab,
         };
 
         let agg_id = NewRow::new(agg).insert(&mut transaction).await.unwrap();
@@ -538,7 +539,7 @@ async fn mark_not_working(hosts: Vec<ResourceHandle>, original_agg: FKey<Aggrega
 
         for handle in hosts {
             match allocator
-                .deallocate_host(&mut transaction, handle, original_agg)
+                .deallocate_host(&mut transaction, handle.clone(), original_agg)
                 .await
             {
                 Ok(_v) => {
@@ -1024,8 +1025,8 @@ async fn ci_serialize_netconf(
     // Generate network configs
     let host = host_id.get(&mut transaction).await.unwrap();
     let aggregate = aggregate_id.get(&mut transaction).await.unwrap();
-    let project = aggregate.origin.clone();
-    let project_config = config::settings().projects.get(&project).expect("no matching project for aggregate");
+    let project = aggregate.lab.clone();
+    let project_config = config::settings().projects.get(&project.get(&mut transaction).await.expect("Expected to find agg").name).expect("no matching project for aggregate");
     let search_domains = project_config.search_domains.clone();
     let nameservers = project_config.nameservers.clone();
 
@@ -1282,7 +1283,7 @@ async fn ci_serialize_runcmds(
     let base_host = url::Url::parse(&config::settings().mailbox.external_url).ok();
     if let Some(v) = base_host.as_ref().map(|v| v.host()).flatten() {
         tracing::info!("Going to hit host at to check up {v}");
-        command(val(format!("while ! ping -c 1 -W 1 {v}; do echo 'waiting for networking to come up' && sleep 10; done")));
+        command(val(format!("while ! ping -c 1 -W 1 {v}; do echo 'waiting for networking to come up before installing packages' && sleep 10; done")));
     }
 
     // on ubuntu, we need to install NetworkManager first
@@ -1384,7 +1385,7 @@ async fn ci_serialize_runcmds(
     if let Some(v) = base_host.as_ref().map(|v| v.host()).flatten() {
         tracing::info!("Going to hit host at to check up {v}");
         command(val("sleep 30"));
-        command(val(format!("while ! ping -c 1 -W 1 {v}; do echo 'waiting for networking to come up' && sleep 10; done || true")));
+        command(val(format!("while ! ping -c 1 -W 1 {v}; do echo 'waiting for networking to come up after configuring production networks' && sleep 10; done || true")));
     }
 
     // do final phone home
