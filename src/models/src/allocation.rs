@@ -676,10 +676,9 @@ impl ResourceHandle {
             )
             .await
             {
-                Ok(t) => t.into_iter().map(|f| f).collect_vec(),
-                Err(e) => return Err(anyhow::Error::msg("Error getting labs: {e}")),
+                Ok(t) => vpn_tokens.append(&mut t.into_iter().map(|f| f).collect_vec()),
+                Err(e) => tracing::debug!("No VPN allocations for lab: {:?}", lab.name),
             };
-            vpn_tokens.append(&mut tokens)
         }
 
         let mut projects = HashSet::new();
