@@ -43,15 +43,6 @@ use workflows::entry::*;
 
 use crate::web::api;
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        let result = 2 + 2;
-        assert_eq!(result, 4);
-    }
-}
-
 pub async fn make_aggregate(
     blob: api::BookingBlob,
 ) -> Result<FKey<dashboard::Aggregate>, anyhow::Error> {
@@ -96,11 +87,8 @@ pub async fn make_aggregate(
             lab: blob.metadata.lab,
             purpose: blob.metadata.purpose,
             project: blob.metadata.project,
-            start: Some(now.clone()),
-            end: match blob.metadata.length {
-                Some(l) => Some(now + Days::new(l)),
-                None => None,
-            },
+            start: Some(now),
+            end: blob.metadata.length.map(|l| now + Days::new(l)),
         },
     })
     .insert(&mut transaction)
@@ -114,7 +102,7 @@ pub async fn make_aggregate(
 
     // try alloc, bailing out if this aggregate could not possibly be deployed (also letting any
     // acquired vlans roll back as we unwind)
-    let _ = {
+    {
         let mut ct = transaction.easy_transaction().await?;
         let mut to_free = Vec::new();
 
@@ -167,8 +155,8 @@ pub async fn make_aggregate(
         tracing::debug!("got config_info {config:?}");
 
         let mut instance = dashboard::InstanceProvData {
-            hostname: String::from(config.hostname.clone()),
-            flavor: config.flavor.clone(),
+            hostname: config.hostname.clone(),
+            flavor: config.flavor,
             image: String::from(""),
             cifile: Vec::new(),
             ipmi_create: true,

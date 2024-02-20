@@ -14,15 +14,6 @@ pub mod utils;
 
 use tascii::{prelude::*, task_trait::AsyncRunnable};
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        let result = 2 + 2;
-        assert_eq!(result, 4);
-    }
-}
-
 pub fn retry_for<R: AsyncRunnable + 'static>(
     r: R,
     c: &Context,

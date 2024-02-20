@@ -1,7 +1,7 @@
 //! Copyright (c) 2023 University of New Hampshire
 //! SPDX-License-Identifier: MIT
 
-use common::prelude::{itertools::Itertools, *};
+use common::prelude::{aide::axum::routing::post, itertools::Itertools, *};
 use models::dashboard::{AggregateConfiguration, Instance, StatusSentiment};
 
 use super::{api, AppState, WebError};
@@ -15,7 +15,6 @@ use aide::axum::{
 use axum::{
     extract::{Json, Path},
     http::StatusCode,
-    routing::post,
 };
 
 use llid::LLID;
@@ -28,6 +27,10 @@ use serde::{Deserialize, Serialize};
 
 use std::collections::HashMap;
 
+pub mod host;
+
+use host::{instance_power_control, instance_power_state};
+
 #[axum::debug_handler]
 async fn create_booking(
     Json(agg): Json<api::BookingBlob>,
@@ -36,7 +39,6 @@ async fn create_booking(
     let agg = make_aggregate(agg)
         .await
         .log_server_error("unable to create the aggregate/booking", true)?;
-
 
     Ok(Json(agg))
 }
@@ -171,9 +173,17 @@ async fn booking_status(Path(agg_id): Path<LLID>) -> Result<Json<BookingStatus>,
 }
 
 pub fn routes(state: AppState) -> ApiRouter {
-    return ApiRouter::new() // remember that in order to have the Handler trait, all inputs for
+    ApiRouter::new() // remember that in order to have the Handler trait, all inputs for
         // a handler need to implement FromRequest, and all outputs need to implement IntoResponse
         .route("/:agg_id/end", delete(end_booking))
         .route("/:agg_id/status", get(booking_status))
-        .route("/create", post(create_booking));
+        .route("/create", post(create_booking))
+        .route(
+            "/ipmi/:instance_id/powerstatus",
+            axum::routing::get(instance_power_state),
+        )
+        .route(
+            "/ipmi/:instance_id/setpower",
+            axum::routing::post(instance_power_control),
+        )
 }

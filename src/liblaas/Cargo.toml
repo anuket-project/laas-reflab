@@ -4,11 +4,16 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-serde = "*" # serde_derive misbehaves when reexported
+serde = "*"      # serde_derive misbehaves when reexported
 serde_with = "*"
 
-axum-macros = "*" # also misbehaves
-axum-extra = "*" # avoid misbehavior
+tracing = "*"
+thiserror = "*"
+strum = "0.24.1"
+strum_macros = "0.24.3"
+
+axum-macros = "*"                                            # also misbehaves
+axum-extra = "*"                                             # avoid misbehavior
 axum = { version = "0.6.1", features = ["http2", "macros"] } # avoid misbehavior
 
 [dependencies.common]

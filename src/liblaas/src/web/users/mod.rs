@@ -125,10 +125,10 @@ pub async fn request_password_reset(Path(username): Path<String>) -> Result<(), 
 }
 
 pub fn routes(state: AppState) -> ApiRouter {
-    return ApiRouter::new()
+    ApiRouter::new()
         .route("/:username", get(get_user))
         .route("/create", post(create_user))
         .route("/:username/ssh", post(set_ssh))
         .route("/:username/company", post(set_company))
-        .route("/:username/email", post(set_email));
+        .route("/:username/email", post(set_email))
 }

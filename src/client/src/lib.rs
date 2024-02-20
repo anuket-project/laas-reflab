@@ -51,7 +51,9 @@ use workflows::{
     deploy_booking::{
         deploy_host::DeployHost,
         notify::Notify,
-        set_host_power_state::{get_host_power_state, PowerState, SetPower},
+        set_host_power_state::{
+            get_host_power_state, HostConfig, PowerState, PowerStateError, SetPower,
+        },
     },
     entry::DISPATCH,
     resource_management::{allocator, mailbox::Mailbox},
@@ -363,12 +365,62 @@ async fn query(mut session: &Server) {
             let host = host.get(&mut transaction).await.unwrap();
 
             let ipmi_fqdn = &host.ipmi_fqdn;
-            let ipmi_admin_user = &host.ipmi_user;
-            let ipmi_admin_password = &host.ipmi_pass;
 
-            let ps = get_host_power_state(ipmi_fqdn, ipmi_admin_user, ipmi_admin_password);
-
-            let _ = writeln!(session, "Host is in state {ps:?}");
+            match get_host_power_state(&HostConfig::try_from(host.clone().into_inner()).unwrap())
+                .await
+            {
+                Ok(power_state) => {
+                    let msg = format!(
+                        "Host {} is currently in power state: {:?}\n",
+                        ipmi_fqdn, power_state
+                    );
+                    writeln!(session, "{}", msg).expect("Failed to write to session");
+                }
+                Err(e) => {
+                    let error_msg = match e {
+                        PowerStateError::CommandNonZeroExitStatus(code, err_msg) => {
+                            format!(
+                                "Failed to get power state for host {}. Exit code: {}. Error: {}\n",
+                                ipmi_fqdn, code, err_msg
+                            )
+                        }
+                        PowerStateError::CommandExecutionFailed(err_msg) => {
+                            format!(
+                                "Command execution failed for host {}: {}\n",
+                                ipmi_fqdn, err_msg
+                            )
+                        }
+                        PowerStateError::UnknownPowerState(err_msg) => {
+                            format!("Unknown power state for host {}: {}\n", ipmi_fqdn, err_msg)
+                        }
+                        PowerStateError::InvalidInputParameter(param) => {
+                            format!(
+                                "Invalid input parameter for host {}: {}\n",
+                                ipmi_fqdn, param
+                            )
+                        }
+                        PowerStateError::Utf8Error(err) => {
+                            format!("UTF-8 encoding error for host {}: {}\n", ipmi_fqdn, err)
+                        }
+                        PowerStateError::TimeoutReached => {
+                            format!(
+                                "Timeout reached while getting power state for host {}\n",
+                                ipmi_fqdn
+                            )
+                        }
+                        PowerStateError::SetUnknown => {
+                            format!(
+                                "Attempted to set an unknown power state for host {}\n",
+                                ipmi_fqdn
+                            )
+                        }
+                        PowerStateError::HostUnreachable(host) => {
+                            format!("Host {} is unreachable.", host)
+                        }
+                    };
+                    writeln!(session, "{}", error_msg).expect("Failed to write to session");
+                }
+            }
         }
         "list free vlans" => {
             let lab = match get_lab(session, &mut transaction).await {
