@@ -137,10 +137,10 @@ pub async fn list_flavors(Path(lab_name): Path<String>) -> Result<Json<Vec<Flavo
                 images,
                 available_count: count,
                 cpu_count: f.cpu_count,
-                ram: f.ram.clone(),
-                root_size: f.root_size.clone(),
-                disk_size: f.disk_size.clone(),
-                swap_size: f.swap_size.clone(),
+                ram: f.ram,
+                root_size: f.root_size,
+                disk_size: f.disk_size,
+                swap_size: f.swap_size,
             };
 
             if Host::select().where_field("flavor").equals(f.id).run(&mut transaction).await.expect("Expected to find host").get(0).unwrap().projects.get(0).unwrap().clone() == lab_name.clone() {

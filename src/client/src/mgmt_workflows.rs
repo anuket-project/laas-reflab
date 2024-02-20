@@ -10,7 +10,7 @@ use tascii::prelude::*;
 use workflows::{
     deploy_booking::{
         set_boot::SetBoot,
-        set_host_power_state::{get_host_power_state, PowerState, SetPower},
+        set_host_power_state::{get_host_power_state, HostConfig, PowerState, SetPower},
     },
     retry_for,
 };
@@ -69,15 +69,11 @@ impl AsyncRunnable for GetPowerState {
         let host = self.host.get(&mut transaction).await.unwrap();
         transaction.commit().await.unwrap();
 
-        let ipmi_fqdn = &host.ipmi_fqdn;
-        let ipmi_admin_user = &host.ipmi_user;
-        let ipmi_admin_password = &host.ipmi_pass;
-
-        Ok(get_host_power_state(
-            ipmi_fqdn,
-            ipmi_admin_user,
-            ipmi_admin_password,
-        ))
+        Ok(
+            get_host_power_state(&HostConfig::try_from(host.into_inner()).unwrap())
+                .await
+                .map_err(|_| TaskError::Reason("Error getting power state".to_owned()))?,
+        )
     }
 
     fn summarize(&self, _id: models::dal::ID) -> String {

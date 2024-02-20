@@ -51,7 +51,7 @@ pub struct Aggregate {
     pub lab: FKey<Lab>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LifeCycleState {
     New,    // signals this booking has not yet been fully provisioned
     Active, // signals this booking is actively being used and has already been provisioned
@@ -72,7 +72,9 @@ impl ToSql for LifeCycleState {
     }
 
     fn accepts(ty: &tokio_postgres::types::Type) -> bool
-    where Self: Sized {
+    where
+        Self: Sized,
+    {
         <serde_json::Value as ToSql>::accepts(ty)
     }
 
@@ -314,9 +316,7 @@ impl DBTable for Template {
                 unique_name: "add_origin_to_templates_0002",
                 description: "add origins field to templates",
                 depends_on: vec!["create_templates_0001"],
-                apply: Apply::SQL(format!(
-                    "ALTER TABLE IF EXISTS templates ADD origins UUID;"
-                )),
+                apply: Apply::SQL(format!("ALTER TABLE IF EXISTS templates ADD origins UUID;")),
             },
             Migration {
                 unique_name: "remove_lab_name_from_templates_0003",
@@ -334,13 +334,15 @@ impl DBTable for Template {
                     "ALTER TABLE IF EXISTS templates RENAME COLUMN origins TO lab;"
                 )),
             },
-
             Migration {
                 unique_name: "set_default_lab_for_templates_0005",
                 description: "set all template to 'anuket'",
                 depends_on: vec!["rename_origins_to_lab_0004", "create_labs_0001"],
-                apply: Apply::SQL("UPDATE templates SET lab = (SELECT id FROM labs WHERE name = 'anuket');".to_owned()),
-            }
+                apply: Apply::SQL(
+                    "UPDATE templates SET lab = (SELECT id FROM labs WHERE name = 'anuket');"
+                        .to_owned(),
+                ),
+            },
         ]
     }
 }
@@ -1019,7 +1021,7 @@ impl DBTable for Network {
 
     fn migrations() -> Vec<Migration> {
         vec![
-            Migration { 
+            Migration {
                 unique_name: "create_networks_0001",
                 description: "Creates the network table",
                 depends_on: vec![],
@@ -1030,7 +1032,7 @@ impl DBTable for Network {
                     );"
                 )),
             },
-            Migration { 
+            Migration {
                 unique_name: "migrate_networks_0002",
                 description: "Migrates the network table",
                 depends_on: vec![],
@@ -1038,11 +1040,9 @@ impl DBTable for Network {
                     "ALTER TABLE networks ADD COLUMN name VARCHAR;".to_owned(),
                     "UPDATE networks SET name = data ->> 'name';".to_owned(),
                     "ALTER TABLE networks ALTER COLUMN name SET NOT NULL;".to_owned(),
-
                     "ALTER TABLE networks ADD COLUMN public BOOLEAN;".to_owned(),
                     "UPDATE networks SET public = (data ->> 'public')::BOOLEAN;".to_owned(),
                     "ALTER TABLE networks ALTER COLUMN public SET NOT NULL;".to_owned(),
-
                     "ALTER TABLE IF EXISTS networks DROP COLUMN data;".to_owned(),
                 ]),
             },
@@ -1115,11 +1115,11 @@ impl DBTable for Cifile {
 
         Ok(c.into_iter().collect())
     }
-// id uuid NOT NULL,
-// data jsonb NOT NULL
+    // id uuid NOT NULL,
+    // data jsonb NOT NULL
     fn migrations() -> Vec<Migration> {
         vec![
-            Migration { 
+            Migration {
                 unique_name: "create_ci_files_0001",
                 description: "Creates the ci file table",
                 depends_on: vec![],
@@ -1130,7 +1130,7 @@ impl DBTable for Cifile {
                     );"
                 )),
             },
-            Migration { 
+            Migration {
                 unique_name: "update_ci_files_0002",
                 description: "Migrates the ci file table",
                 depends_on: vec!["create_ci_files_0001"],
@@ -1138,13 +1138,10 @@ impl DBTable for Cifile {
                     "ALTER TABLE ci_files ADD COLUMN ci_data VARCHAR;".to_owned(),
                     "UPDATE ci_files SET ci_data = data ->> 'data';".to_owned(),
                     "ALTER TABLE ci_files ALTER COLUMN ci_data SET NOT NULL;".to_owned(),
-
                     "ALTER TABLE ci_files ADD COLUMN priority SMALLINT;".to_owned(),
                     "UPDATE ci_files SET priority = (data ->> 'priority')::SMALLINT;".to_owned(),
                     "ALTER TABLE ci_files ALTER COLUMN priority SET NOT NULL;".to_owned(),
-
                     "ALTER TABLE IF EXISTS ci_files DROP COLUMN data;".to_owned(),
-
                     "ALTER TABLE ci_files RENAME COLUMN ci_data TO data;".to_owned(),
                 ]),
             },
