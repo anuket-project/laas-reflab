@@ -52,7 +52,7 @@ impl AsyncRunnable for DeployHost {
 
         let mut mock_waiter = Mailbox::set_endpoint_hook(self.using_instance, "mock")
             .await
-            .unwrap();
+            .as_taskerr()?;
 
         self.using_instance
             .log(
@@ -100,23 +100,23 @@ impl AsyncRunnable for DeployHost {
 
         let mut preimage_waiter = Mailbox::set_endpoint_hook(self.using_instance, "pre_image")
             .await
-            .unwrap();
+            .as_taskerr()?;
 
         let mut imaging_waiter = Mailbox::set_endpoint_hook(self.using_instance, "post_image")
             .await
-            .unwrap();
+            .as_taskerr()?;
 
         let mut post_boot_waiter = Mailbox::set_endpoint_hook(self.using_instance, "post_boot")
             .await
-            .unwrap();
+            .as_taskerr()?;
 
         let mut post_provision_waiter =
             Mailbox::set_endpoint_hook(self.using_instance, "post_provision")
                 .await
-                .unwrap();
+            .as_taskerr()?;
 
-        let mut client = new_client().await.unwrap();
-        let mut transaction = client.easy_transaction().await.unwrap();
+        let mut client = new_client().await.as_taskerr()?;
+        let mut transaction = client.easy_transaction().await.as_taskerr()?;
 
         let aggregate = self
             .aggregate_id
