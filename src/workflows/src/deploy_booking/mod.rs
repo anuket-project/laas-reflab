@@ -1270,15 +1270,19 @@ async fn ci_serialize_runcmds(
     };
 
     // first bring up mgmt networking
-    if let Some(p) = host.ports(transaction).await.unwrap().into_iter().next() {
-        let pn = &p.name;
-        command(val(format!("sudo dhclient {pn} || true")));
-    } else {
-        let host_name = &host.server_name;
-        tracing::error!(
-            "Network config for {image_name} on {host_name} may fail, host had no ports"
-        );
-    }
+    // if let Some(p) = host.ports(transaction).await.unwrap().into_iter().next() {
+    //     let pn = &p.name;
+    //     command(val(format!("sudo dhclient {pn} || true")));
+    // } else {
+    //     let host_name = &host.server_name;
+    //     tracing::error!(
+    //         "Network config for {image_name} on {host_name} may fail, host had no ports"
+    //     );
+    // }
+
+    command(val(format!("echo 'trying to run dhclient'")));
+    command(val(format!("sudo dhclient")));
+    command(val(format!("echo 'tried to run dhclient'")));
 
     let base_host = url::Url::parse(&config::settings().mailbox.external_url).ok();
     if let Some(v) = base_host.as_ref().map(|v| v.host()).flatten() {
@@ -1288,9 +1292,24 @@ async fn ci_serialize_runcmds(
 
     // on ubuntu, we need to install NetworkManager first
     if let ImageVariant::Ubuntu = variant {
+        command(val(format!("echo 'Running apt -y update'")));
+        command(val(format!("sleep 2")));
         command(val("sudo apt -y update"));
-        command(val("sudo apt -y upgrade"));
-        command(val("sudo apt -y install network-manager"));
+
+        // command(val(format!("echo 'Running apt -y upgrade'")));
+        // command(val(format!("sleep 2")));
+        // command(val("sudo apt -y upgrade"));
+
+        command(val(format!("echo 'Running apt -y --fix-missing install network-manager'")));
+        command(val(format!("sleep 2")));
+        command(val("sudo apt -y --fix-missing install network-manager"));
+
+        command(val(format!("echo 'Verifying nmcli install...'")));
+        command(val(format!("nmcli --version")));
+        command(val(format!("sleep 2")));
+
+        command(val(format!("echo 'Running apt -y install curl'")));
+        command(val(format!("sleep 2")));
         command(val("sudo apt -y install curl || true"));
     }
 
@@ -1316,13 +1335,19 @@ async fn ci_serialize_runcmds(
 
     // now go dark
     if let ImageVariant::Ubuntu = variant {
+        command(val(format!("echo 'Going dark...'")));
+        command(val(format!("sleep 3")));
         command(val("sudo systemctl disable systemd-networkd || true"));
         command(val("sudo systemctl stop systemd-networkd || true"));
-        command(val("sudo rm -r /etc/netplan || true"));
+        command(val("sudo rm -rf /etc/netplan || true"));
     }
 
+    command(val(format!("echo 'Killing dhclient'")));
+    command(val(format!("sleep 5")));
     command(val("sudo killall dhclient || true"));
 
+    command(val(format!("echo 'Attempting to start NetworkManager'")));
+    command(val(format!("sleep 5")));
     command(val("sudo systemctl enable NetworkManager || true"));
     command(val("sudo systemctl start NetworkManager || true"));
 
@@ -1357,7 +1382,7 @@ async fn ci_serialize_runcmds(
 
     // disable the auto-default dev creation, configure other parts of NM
     command(val(format!(
-        "rm /etc/NetworkManager/NetworkManager.conf || true"
+        "rm -rf /etc/NetworkManager/NetworkManager.conf || true"
     )));
     let append = |file, content| {
         command(val(format!("echo '{content}' >> {file}")));

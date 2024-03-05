@@ -2,7 +2,7 @@
 //! SPDX-License-Identifier: MIT
 
 use common::prelude::{aide::axum::routing::post, itertools::Itertools, *};
-use models::dashboard::{AggregateConfiguration, Instance, StatusSentiment};
+use models::dashboard::{AggregateConfiguration, Instance, StatusSentiment, Template};
 
 use super::{api, AppState, WebError};
 use crate::{booking, booking::make_aggregate};
@@ -87,6 +87,7 @@ struct BookingStatus {
     // map from <assigned hostname> to <list of status objects>
     instances: HashMap<FKey<Instance>, InstanceStatus>,
     config: AggregateConfiguration,
+    template: Template,
 }
 
 async fn booking_status(Path(agg_id): Path<LLID>) -> Result<Json<BookingStatus>, WebError> {
@@ -164,11 +165,14 @@ async fn booking_status(Path(agg_id): Path<LLID>) -> Result<Json<BookingStatus>,
         statuses.insert(instance.id, inst_stat);
     }
 
+    let template = agg.template.get(&mut transaction).await.expect("Expected to find template").into_inner().clone();
+
     transaction.commit().await.log_db_client_error()?;
 
     Ok(Json(BookingStatus {
         instances: statuses,
         config: agg.configuration.clone(),
+        template: template
     }))
 }
 

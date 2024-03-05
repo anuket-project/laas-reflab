@@ -69,6 +69,7 @@ impl SonicSwitch {
     }
     
     pub fn push_config(&mut self) {
+        tracing::warn!("Inside push config function...");
         let mut channel = self.session.channel_session().unwrap();
         let sftp = self.session.sftp().unwrap();
         let filename = "config_db.json";
@@ -91,7 +92,7 @@ impl SonicSwitch {
         
         let mut channel = self.session.channel_session().unwrap();
         
-        channel.exec("config load").expect("Failed to run config load cmd");
+        channel.exec("sudo config reload --yes").expect("Failed to run config load cmd");
     }
 
     // Userauth-password.
@@ -208,7 +209,7 @@ impl SonicSwitch {
     }
 
     // Queue a command to run.
-    pub fn queue<S>(mut self, input: S) -> Self
+    pub fn queue<S>(&mut self, input: S) -> &mut Self
     where S: Into<String> {
         self.commands.push(input.into());
         self
@@ -222,13 +223,21 @@ impl SonicSwitch {
             self.commands.push("config save".to_owned());
         }
 
+        tracing::warn!("Commands to run {:?}", self.commands);
+
         for cmd in self.commands.iter() {
-            let cmd = format!("sudo {}", cmd);
-            if let Err(why) = channel.exec(cmd.as_str()) {
-                return Err(format!("Could not run command \"{}\": {}", cmd, why.to_string()))
-            }
+            // let cmd = format!("sudo {}", cmd);
+            // if let Err(why) = channel.exec(cmd.as_str()) {
+            //     return Err(format!("Could not run command \"{}\": {}", cmd, why.to_string()))
+            // }
+
+            channel.write_all(cmd.as_bytes()).expect("Expected to write command as bytes to channel!");
+            channel.write_all(b"\n").expect("Expected to write new line to channel!");
         }
 
+        channel.send_eof().expect("Expected to send eof to channel!");
+        let mut info: String = String::default();
+        channel.read_to_string(&mut info).expect("Expected to read info!");
         self.commands.clear();
 
         Ok(())
@@ -250,8 +259,9 @@ pub async fn sonic_run_network_task(ncfg: NetworkConfig) {
     // Place to store a relation of switches to SONiC sessions.
     let mut switches: HashMap<FKey<Switch>, SonicSwitch> = HashMap::new();
 
-    
+    tracing::warn!("Printing BGS");
     for bg in ncfg.bondgroups.iter() {
+        tracing::warn!("{bg:?}");
         let mut native_vlan = None;
         let mut vlans = Vec::new();
 
@@ -282,7 +292,6 @@ pub async fn sonic_run_network_task(ncfg: NetworkConfig) {
                     .unwrap()
                     .into_inner();
 
-                // TODO: Check if switch is SONiC. If not, continue.
                 if  switch.switch_os.unwrap().get(&mut transaction).await.expect("Expected to get OS").os_type == "SONiC".to_string() {
                     let sanic = switches.entry(*for_switch).or_insert_with(|| {
                         // TODO: Use kex authentication
@@ -290,16 +299,41 @@ pub async fn sonic_run_network_task(ncfg: NetworkConfig) {
                         SonicSwitch::with_user_pass_auth(&switch.ip, &switch.user, &switch.pass)
                     });
                     
-                    sanic.set_interface_vlans(native_vlan, vlans.clone(), switch_port.name.clone());
+                    sanic.set_interface_vlans(native_vlan, vlans.clone(), adams_law(switch_port.name.clone()));
                 }
             }
         }
     }
 
+    tracing::warn!("Iterating through switches...");
+    tracing::warn!("{:?}",switches.keys());
     for switch in switches.values_mut() {
-        switch.run_commands(ncfg.persist).unwrap();
+        tracing::warn!("Going to push configs and run commands for the switch");
+        tracing::warn!("Config: {:?}", switch.config);
+        switch.push_config();
+        // running the commands as persistent may overwrite the new config
+        switch.run_commands(false).unwrap();
     }
 
+}
+
+fn adams_law(iface: String) -> String {
+    match iface {
+        _ if iface.contains("GigE") && iface.contains("b") => {
+            let mut nums = iface.split(&['E', 'b']);
+            nums.next();
+            let e = i32::from_str_radix(nums.next().expect("Expected digit"), 10).expect("Expected to find a digit");
+            let b = i32::from_str_radix(nums.next().expect("Expected digit"), 10).expect("Expected to find a digit");
+            format!("Ethernet{}", ((e-1)*4)+b)
+        },
+        _ if iface.contains("GigE") => {
+            let mut nums = iface.split('E');
+            nums.next();
+            let e = i32::from_str_radix(nums.next().expect("Expected digit"), 10).expect("Expected to find a digit");
+            format!("Ethernet{}", (e-1)*4)
+        },
+        _ => {iface}
+    }
 }
 
 mod test {
@@ -308,8 +342,40 @@ mod test {
     use serde_json::json;
     use ssh2::Session;
 
-    use super::{SonicSwitch, SonicConfig};
+    use super::{SonicSwitch, SonicConfig, adams_law};
     
+    #[test]
+    fn adams_law_correct_single_digit_input() {
+        adams_law_test(String::from("Ethernet1"), String::from("Ethernet1"))
+    }
+
+    #[test]
+    fn adams_law_correct_input_eth255() {
+        adams_law_test(String::from("Ethernet255"), String::from("Ethernet255"))
+    }
+
+    #[test]
+    fn adams_law_hundred_gig_e4() {
+        adams_law_test(String::from("hundredGigE4"), String::from("Ethernet12"))
+    }
+
+    #[test]
+    fn adams_law_hundred_gig_e10() {
+        adams_law_test(String::from("hundredGigE10"), String::from("Ethernet36"))
+    }
+
+    #[test]
+    fn adams_law_hundred_gig_e5b1() {
+        adams_law_test(String::from("hundredGigE5b1"), String::from("Ethernet17"))
+    }
+
+    fn adams_law_test(input: String, expected: String) {
+        let result = adams_law(input.clone());
+        assert_eq!(expected, result, "Output is incorrect. Returned \"{}\" instead of \"{}\"", result, expected);
+    }
+
+
+
     /*
     Instantiate a dummy switch for testing configuration edits.
     */

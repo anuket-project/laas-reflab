@@ -15,6 +15,8 @@ use std::{
     net::{Ipv4Addr, Ipv6Addr}, str::Split, cmp::Ordering,
 };
 
+use crate::{allocation::ResourceHandle, dashboard::Image};
+
 #[derive(Serialize, Deserialize, Debug, Default, Clone, Hash, Copy, JsonSchema)]
 pub struct DataValue {
     pub value: u64,
@@ -641,6 +643,24 @@ impl DBTable for Lab {
             description: "Import labs",
             depends_on: vec!["create_labs_0001"],
             apply: Apply::Operation(Box::new(UpsertLabs())),
+        }, 
+        Migration {
+            unique_name: "create_labs_0003",
+            description: "Updates vlan configs in preparation for multiple lab support",
+            depends_on: vec!["create_labs_0002"],
+            apply: Apply::Operation(Box::new(MultipleLabMigration())),
+        },
+        Migration {
+            unique_name: "create_labs_0004",
+            description: "Updates flavor images in preparation for multiple lab support",
+            depends_on: vec!["create_labs_0003"],
+            apply: Apply::Operation(Box::new(FixFlavorsMigration())),
+        },
+        Migration {
+            unique_name: "create_labs_0005",
+            description: "Updates hostports and interface flavors in preparation for multiple lab support",
+            depends_on: vec!["create_labs_0004"],
+            apply: Apply::Operation(Box::new(FixHostportMigration())),
         }
         ]
     }
@@ -699,6 +719,157 @@ impl ComplexMigration for UpsertLabs {
             },
         }
     }
+        Ok(())
+    }
+}
+
+pub struct FixFlavorsMigration();
+
+#[async_trait]
+impl ComplexMigration for FixFlavorsMigration {
+    async fn run(&self, transaction: &mut EasyTransaction<'_>) -> Result<(), anyhow::Error> {
+
+        // Add ampere flavors to aarch images
+        let mut aarch_image = Image::select()
+        .where_field("name")
+        .equals("Ubuntu 20.04 LTS (aarch64)")
+        .run(transaction)
+        .await
+        .unwrap()
+        .get(0)
+        .cloned()
+        .expect("Expected to get aarch image for migration!");
+
+        let ampere_flavors = Flavor::select()
+        .where_field("name")
+        .like("ampere%")
+        .run(transaction)
+        .await
+        .unwrap();
+
+
+        for flavor in ampere_flavors {
+            aarch_image.flavors.push(flavor.id);
+        }
+
+        aarch_image.update(transaction).await.unwrap();
+
+        Ok(())
+    }
+}
+
+pub struct FixHostportMigration();
+
+#[async_trait]
+impl ComplexMigration for FixHostportMigration {
+    async fn run(&self, transaction: &mut EasyTransaction<'_>) -> Result<(), anyhow::Error> {
+
+        let ampere4_hosts = Host::select()
+        .where_field("server_name")
+        .like("ampere4%")
+        .run(transaction)
+        .await
+        .unwrap();
+
+        // Update hostport name for ampere4
+        for ampere in ampere4_hosts {
+
+            let host_ports = HostPort::select()
+            .where_field("on_host")
+            .equals(ampere.id)
+            .run(transaction)
+            .await
+            .unwrap();
+
+            for mut hp in host_ports {
+                let new_name = hp.name[0..hp.name.len() - 3].to_string();
+                println!("Changing {:?} to {new_name}", hp.name);
+                hp.name = new_name;
+                hp.update(transaction).await.unwrap();
+            }
+        }
+
+        // Update inferface flavors for ampere4
+        let ampere4_flavors = Flavor::select()
+        .where_field("name")
+        .like("ampere4%")
+        .run(transaction)
+        .await
+        .unwrap();
+
+        for flavor in ampere4_flavors {
+            let ifs = InterfaceFlavor::select()
+            .where_field("on_flavor")
+            .equals(flavor.id)
+            .run(transaction)
+            .await
+            .unwrap();
+
+            for mut entry in ifs {
+                let new_name = entry.name[0..entry.name.len() - 3].to_string();
+                println!("Interface Flavor {:?} to {new_name}", entry.name);
+                entry.name = new_name;
+                entry.update(transaction).await.unwrap();
+            }
+        }
+
+        Ok(())
+    }
+}
+
+pub struct MultipleLabMigration();
+
+#[async_trait]
+impl ComplexMigration for MultipleLabMigration {
+    async fn run(&self, transaction: &mut EasyTransaction<'_>) -> Result<(), anyhow::Error> {
+
+        let lfedge_lab = Lab::select()
+        .where_field("name")
+        .equals("lfedge")
+        .run(transaction)
+        .await
+        .unwrap()
+        .get(0)
+        .cloned()
+        .expect("Expected to find the anuket lab");
+
+
+        // Set public config for lfedge vlans (3001 - 3025 evens only)
+        let lfedge_vlan_ids = [3002, 3004, 3006, 3008, 3010, 3012, 3014, 3016, 3018, 3020, 3022];
+
+        let mut count = 1;
+
+        for vlan_id in lfedge_vlan_ids {
+
+            let mut vlan = Vlan::select()
+            .where_field("vlan_id")
+            .equals(vlan_id as i16)
+            .run(transaction)
+            .await
+            .unwrap()
+            .get(0)
+            .cloned()
+            .unwrap();
+
+            vlan.public_config = Some(IPNetwork { v4: Some(IPInfo { subnet: Ipv4Addr::from([10,11,2 * count,0]), netmask: 24, gateway: Some(Ipv4Addr::from([10,11,2 * count,1])), provides_dhcp: true }), v6: None });
+            count = count + 1;
+            vlan.update(transaction).await.unwrap();
+
+            // Set lfedge lab for resource handle
+            let mut resource_handle = ResourceHandle::select()
+            .where_field("tracks_resource")
+            .equals(vlan.id)
+            .run(transaction)
+            .await
+            .unwrap()
+            .get(0)
+            .cloned()
+            .expect("expected to get resource handle for vlan.");
+
+            resource_handle.lab = Some(lfedge_lab.id);
+            resource_handle.update(transaction).await.unwrap();
+        }
+
         Ok(())
     }
 }

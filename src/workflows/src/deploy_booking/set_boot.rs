@@ -15,6 +15,7 @@ use models::dal::{new_client, AsEasyTransaction, FKey, ID};
 use crate::deploy_booking::reachable::WaitReachable;
 type BootDevice = (String, String);
 
+#[derive(Debug)]
 pub enum ILOCommand {
     GetPersistentBoot,
     SetPersistentBoot(String),
@@ -63,7 +64,7 @@ pub struct SetBoot {
 
 tascii::mark_task!(SetBoot);
 impl AsyncRunnable for SetBoot {
-    type Output = bool;
+    type Output = ();
 
     async fn run(
         &mut self,
@@ -96,15 +97,15 @@ impl AsyncRunnable for SetBoot {
         let arch = host.arch;
 
         let result = match arch {
-            Arch::Aarch64 => set_arm_boot(&host_url, host, self.persistent, self.boot_to).await,
+            Arch::Aarch64 => set_ipmi_boot(&host_url, host, self.persistent, self.boot_to).await,
             Arch::X86 => set_hpe_boot(&host_url, host, self.persistent, self.boot_to).await,
             Arch::X86_64 => set_hpe_boot(&host_url, host, self.persistent, self.boot_to).await,
         };
 
-        return match result {
-            true => Ok(true),
-            false => Err(TaskError::Reason("Failed to set boot device.".to_owned())),
-        };
+        match result {
+            Ok(_) => Ok(()),
+            Err(_) => Err(TaskError::Reason("Failed to set boot device.".to_owned())),
+        }
     }
 
     fn identifier() -> tascii::task_trait::TaskIdentifier {
@@ -126,35 +127,17 @@ impl AsyncRunnable for SetBoot {
 
 // Helper functions
 
-// use xmlrpc script and http request to configure the ilo
-// Todo - test and add useful return type
-async fn set_hpe_boot(host_url: &str, host: Host, persistent: bool, boot_to: BootTo) -> bool {
-    if !persistent {
-        let res = run_ilo_command(
-            host_url,
-            &host,
-            ILOCommand::SetOneTimeBoot(
-                match boot_to {
-                    BootTo::Network => "NETWORK",
-                    BootTo::Disk => "HDD",
-                }
-                .to_owned(),
-            ),
-        )
-        .await;
 
-        return match res {
-            Err(_) => false,
-            Ok(_) => true,
-        };
-    }
-
+async fn ilo_persistent_boot(host_url: &str, host: Host, boot_to: BootTo) -> Result<(), ()> {
+    tracing::info!("Attempting to set persistent boot through the ILO.");
     // Get all boot devices for a given host, then set the persistent boot order
     let mut boot_device_list: Vec<BootDevice> = xml_to_boot_device_list(
         run_ilo_command(host_url, &host, ILOCommand::GetPersistentBoot)
             .await
             .unwrap(),
-    );
+    )?;
+
+    tracing::warn!("Boot device list is {boot_device_list:?}");
     match boot_to {
         BootTo::Network => boot_device_list = network_first_order(boot_device_list),
         BootTo::Disk => boot_device_list = network_last_order(boot_device_list),
@@ -166,15 +149,58 @@ async fn set_hpe_boot(host_url: &str, host: Host, persistent: bool, boot_to: Boo
 
     tracing::info!("Sends command with boot order to host:\n{boot_order}");
 
-    let res = run_ilo_command(host_url, &host, ILOCommand::SetPersistentBoot(boot_order)).await;
+    let res = run_ilo_command(host_url, &host, ILOCommand::SetPersistentBoot(boot_order)).await?;
 
-    return match res {
-        Err(_) => false,
-        Ok(_) => true,
-    };
+    tracing::info!("Result of set persistent boot is {res:?}");
+
+    Ok(())
 }
 
-async fn set_arm_boot(host_url: &str, host: Host, persistent: bool, boot_to: BootTo) -> bool {
+async fn ilo_one_time_boot(host_url: &str, host: Host, boot_to: BootTo) -> Result<(), ()> {
+    tracing::info!("Attempting to set one time boot through the ILO.");
+
+    let res = run_ilo_command(
+        host_url,
+        &host,
+        ILOCommand::SetOneTimeBoot(
+            match boot_to {
+                BootTo::Network => "NETWORK",
+                BootTo::Disk => "HDD",
+            }
+            .to_owned(),
+        ),
+    )
+    .await?;
+
+    tracing::info!("Result of set one time boot is {res:?}");
+
+    Ok(())
+}
+
+/**
+ * Try to set the boot using xmlrpc and RIBCL
+ * If this fails, the host probably isn't an HPE host so just switch over to using ipmitool commands instead
+ */
+async fn set_hpe_boot(host_url: &str, host: Host, persistent: bool, boot_to: BootTo) -> Result<(), ()> {
+
+    let result: Result<(), ()>;
+    if persistent {
+        result = ilo_persistent_boot(host_url, host.clone(), boot_to).await;
+    } else {
+        result = ilo_one_time_boot(host_url, host.clone(), boot_to).await;
+    }
+
+    match result {
+        Ok(_) => Ok(()),
+        Err(_) => {
+            tracing::warn!("Failed to set hpe boot for {host:?}. Trying ipmi instead.");
+            set_ipmi_boot(host_url, host, persistent, boot_to).await
+        },
+    }
+}
+
+async fn set_ipmi_boot(host_url: &str, host: Host, persistent: bool, boot_to: BootTo) -> Result<(), ()> {
+    tracing::info!("Setting IPMI boot for {host:?} with persistent {persistent} and boot_to {boot_to}");
     let bdev = match boot_to {
         BootTo::Network => "pxe",
         BootTo::Disk => "disk",
@@ -227,14 +253,15 @@ async fn set_arm_boot(host_url: &str, host: Host, persistent: bool, boot_to: Boo
     // todo - extract error code from output. If error, then fail task
     // if output1.error_code != 0 return
 
-    true
+    Ok(())
 }
 
 async fn run_ilo_command(
     host_url: &str,
     host: &Host,
     command: ILOCommand,
-) -> Result<String, reqwest::Error> {
+) -> Result<String, ()> {
+    tracing::info!("Attempting to run ILO command {command:?}");
     // Runs a command on the ilo using ribcl scripts
     // Returns command output
 
@@ -271,10 +298,11 @@ async fn run_ilo_command(
         .unwrap();
 
     let response = client.post(url).body(ribcl_script).send().await;
+    tracing::info!("RIBCL response is {response:?}");
 
     match response {
-        Ok(_) => response.unwrap().text().await,
-        Err(_) => Err(response.err().expect("Expected error.")),
+        Ok(r) => Ok(r.text().await.unwrap()),
+        Err(_) => Err(()),
     }
 }
 
@@ -284,7 +312,16 @@ fn order(a: &(String, String), b: &(String, String), net_first: bool) -> cmp::Or
     let b_d = b.1.to_ascii_lowercase();
 
     let f = |_a: &String, _b: &String| match (a_d.contains("pxe"), b_d.contains("pxe")) {
-        (false, false) => cmp::Ordering::Equal,
+        (false, false) => match (a_d.contains("network"), b_d.contains("network")) {
+            (false, false) => cmp::Ordering::Equal,
+            (true, false) => cmp::Ordering::Greater,
+            (false, true) => cmp::Ordering::Less,
+            (true, true) => match (a_d.contains("v4"), b_d.contains("v4")) {
+                (false, false) | (true, true) => cmp::Ordering::Equal,
+                (true, false) => cmp::Ordering::Greater,
+                (false, true) => cmp::Ordering::Less,
+            },
+        },
         (true, false) => cmp::Ordering::Greater,
         (false, true) => cmp::Ordering::Less,
         (true, true) => match (a_d.contains("v4"), b_d.contains("v4")) {
@@ -330,23 +367,25 @@ fn network_last_order(mut devices: Vec<BootDevice>) -> Vec<BootDevice> {
     devices
 }
 
-fn xml_to_boot_device_list(xml: String) -> Vec<BootDevice> {
+fn xml_to_boot_device_list(xml: String) -> Result<Vec<BootDevice>, ()> {
     let mut devices: Vec<BootDevice> = Vec::new();
-
+    tracing::info!("xml to boot device list: xml is {xml:?}");
     let ribcl: RIBCL;
     let res = from_str(&xml);
+    tracing::info!("res is {res:?}");
     match res {
-        Ok(_) => ribcl = res.unwrap(),
+        Ok(r) => ribcl = r,
         Err(msg) => {
-            tracing::error!("Failed to set boot got: {:?}", msg);
-            panic!()
+            tracing::warn!("Failed to get boot device list. Is host an HPE? {:?}", msg);
+            return Err(());
         }
     }
 
     for device in ribcl.PERSISTENT_BOOT.DEVICE {
         devices.push((device.value, device.DESCRIPTION));
     }
-    devices
+
+    Ok(devices)
 }
 
 fn boot_device_list_to_string(devices: Vec<BootDevice>) -> String {

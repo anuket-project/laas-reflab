@@ -132,6 +132,13 @@ impl AsyncRunnable for DeployHost {
             .server_name
             .clone();
 
+        let lab = aggregate
+            .lab
+            .get(&mut transaction)
+            .await
+            .unwrap()
+            .into_inner();
+
         let preimage_endpoint = preimage_waiter.endpoint();
         let postimage_endpoint = imaging_waiter.endpoint();
 
@@ -160,19 +167,6 @@ impl AsyncRunnable for DeployHost {
             endpoint: postimage_endpoint,
         });
 
-        self.using_instance
-            .log(
-                "Powering Host Off",
-                "power host off to configure boot devices",
-                StatusSentiment::in_progress,
-            )
-            .await;
-
-        retry_for(SetPower::off(self.host_id), context, 5, 10)?; // make sure host is off before we
-                                                                 // set boot dev
-
-        common::prelude::tokio::time::sleep(Duration::from_secs(2)).await;
-
         tracing::warn!("setting boot dev for {host_name} to network boot");
 
         self.using_instance
@@ -194,7 +188,18 @@ impl AsyncRunnable for DeployHost {
             10,
         );
 
+        // Setting boot dev before powering host off as that seems to matter to the intels.
         tracing::info!("set boot res: {res:?}");
+        common::prelude::tokio::time::sleep(Duration::from_secs(2)).await;
+        self.using_instance
+            .log(
+                "Powering Host Off",
+                "power host off to configure boot devices",
+                StatusSentiment::in_progress,
+            )
+            .await;
+
+        retry_for(SetPower::off(self.host_id), context, 5, 10)?;
 
         tracing::info!("Making sure cobbler config is done");
 
@@ -222,7 +227,8 @@ impl AsyncRunnable for DeployHost {
             "set power on, now adding pxe nets so host can pxe (in time it takes for host to post)"
         );
 
-        self.using_instance
+        if lab.is_dynamic {
+            self.using_instance
             .log(
                 "Network Backplane Configuration",
                 "configuring the network backplane to allow the host to network boot",
@@ -235,23 +241,22 @@ impl AsyncRunnable for DeployHost {
                 net_config: mgmt_network_config(self.host_id, &mut transaction).await,
             })
             .join()?; // need mgmt nets set before we can try ipmi managing the host
-
-        /*context.spawn(StashSOLOutput {
-            host: self.host_id,
-            instance: Some(self.using_instance),
-            aggregate: Some(self.aggregate_id),
-            wait: Duration::from_secs(10), // wait 2 minutes once we've applied mgmt nets so
-                                            // hopefully this works
-        }); // don't join, this is intentionally fallible */
-
-        //tracing::info!("Set mgmt nets, sleeping for a bit to allow nets to stabilize before we try managing the host");
+        } else {
+            self.using_instance
+            .log(
+                "Network Boot Configuration",
+                "attempting to network boot to install image.",
+                StatusSentiment::in_progress,
+            )
+            .await;
+        }
 
         tracing::info!(
             "successfully configured pxe networking for {:?}",
             self.host_id
         );
 
-        tracing::warn!("wait for imaging of {host_name} to complete and mailbox to get hit"); // made it to here
+        tracing::warn!("wait for imaging of {host_name} to complete and mailbox to get hit");
 
         self.using_instance
             .log(
@@ -382,7 +387,8 @@ impl AsyncRunnable for DeployHost {
             }
         }
 
-        self.using_instance
+        if lab.is_dynamic {
+            self.using_instance
             .log(
                 "Host Configure",
                 "host completed pre-configuration, and is now applying production network config",
@@ -410,6 +416,7 @@ impl AsyncRunnable for DeployHost {
                 .await,
             })
             .join()?;
+        }
 
         self.using_instance
             .log(
