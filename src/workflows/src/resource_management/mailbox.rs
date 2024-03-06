@@ -463,7 +463,7 @@ async fn get_ci_file(
     .into_iter()
     .chain(ci_files.into_iter().enumerate().map(|(i, c)| Cifile {
         id: c.id,
-        priority: i as i8 + 1,
+        priority: i as i16 + 1,
         data: c.data,
     }))
     .collect_vec();

@@ -239,7 +239,7 @@ impl Aggregate {
 }
 
 inventory::submit! { Migrate::new(Template::migrations) }
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema)]
 pub struct Template {
     pub id: FKey<Template>,
     pub name: String,
@@ -457,7 +457,7 @@ impl Template {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema)]
 pub struct HostConfig {
     pub hostname: String, // Hostname that the user would like
 
@@ -468,13 +468,13 @@ pub struct HostConfig {
     pub connections: Vec<BondGroupConfig>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, Hash, PartialEq, Eq, JsonSchema)]
 pub struct VlanConnectionConfig {
     pub network: FKey<Network>,
     pub tagged: bool,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default, JsonSchema)]
 pub struct BondGroupConfig {
     pub connects_to: HashSet<VlanConnectionConfig>,
     pub member_interfaces: HashSet<String>,
@@ -984,7 +984,7 @@ impl ProvisionLogEvent {
 }
 
 inventory::submit! { Migrate::new(Network::migrations) }
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema)]
 pub struct Network {
     pub id: FKey<Network>,
     pub name: String,
@@ -1054,7 +1054,7 @@ inventory::submit! { Migrate::new(Cifile::migrations) }
 #[derive(Serialize, Deserialize, Debug, Hash, Clone, JsonSchema)]
 pub struct Cifile {
     pub id: FKey<Cifile>,
-    pub priority: i8,
+    pub priority: i16,
     pub data: String,
 }
 
@@ -1063,7 +1063,7 @@ impl Cifile {
         t: &mut EasyTransaction<'_>,
         strings: Vec<String>,
     ) -> Result<Vec<FKey<Cifile>>, anyhow::Error> {
-        let mut priority: i8 = 1;
+        let mut priority: i16 = 1;
         let mut cifiles: Vec<FKey<Cifile>> = Vec::new();
         for data in strings {
             if data != "" {
