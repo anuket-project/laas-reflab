@@ -1054,7 +1054,7 @@ inventory::submit! { Migrate::new(Cifile::migrations) }
 #[derive(Serialize, Deserialize, Debug, Hash, Clone, JsonSchema)]
 pub struct Cifile {
     pub id: FKey<Cifile>,
-    pub priority: i8,
+    pub priority: i16,
     pub data: String,
 }
 
@@ -1063,7 +1063,7 @@ impl Cifile {
         t: &mut EasyTransaction<'_>,
         strings: Vec<String>,
     ) -> Result<Vec<FKey<Cifile>>, anyhow::Error> {
-        let mut priority: i8 = 1;
+        let mut priority: i16 = 1;
         let mut cifiles: Vec<FKey<Cifile>> = Vec::new();
         for data in strings {
             if data != "" {
