@@ -220,6 +220,8 @@ async fn set_ipmi_boot(host_url: &str, host: Host, persistent: bool, boot_to: Bo
         let mut ipmi_cmd = ipmi_cmd.args([
             "-I",
             "lanplus",
+            "-C",
+            "3",
             "-H",
             &host_url,
             "-U",
