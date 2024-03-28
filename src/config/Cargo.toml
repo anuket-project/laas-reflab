@@ -6,10 +6,12 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+once_cell = { workspace = true }
+strum_macros = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# TODO: rename config here to something else because this workspace has the same name
 config = { version = "0.13.1", features = ["yaml"] }
-serde = "1.0.136" # serializing and deserializing
-serde_json = "1.0.78" # serializing and deserializing
-once_cell = "1.18.0"
-strum_macros = "0.24.3" # axum dependency
-tracing = "0.1"
-tracing-subscriber = "0.3"

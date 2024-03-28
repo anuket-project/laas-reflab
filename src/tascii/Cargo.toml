@@ -4,7 +4,6 @@ cargo-features = ["profile-rustflags"]
 name = "tascii"
 version = "0.1.0"
 edition = "2021"
-license = "MIT"
 
 #[lib]
 #name = "liblaas"
@@ -30,13 +29,21 @@ execute = "0.2.11"
 derive_more = "0.99.17"
 itertools = "0.10.5"
 
-tokio = { version = "1", features = ["full", "rt", "rt-multi-thread"] } # async stuff
+tokio = { version = "1", features = [
+  "full",
+  "rt",
+  "rt-multi-thread",
+] } # async stuff
+tokio-postgres = "0.7.10"
 futures = "0.3.28"
 futures-util = "*"
 anyhow = "*"
 
 inventory = "0.3.6"
 parking_lot = { version = "0.12.1", features = ["send_guard"] }
+
+llid = { path = "../llid/" }
+dal = { path = "../dal/" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 linux-futex = "0.1.2"
@@ -45,16 +52,6 @@ linux-futex = "0.1.2"
 panic = 'abort'
 rustflags = ["-Cpanic=abort", "-Zpanic_abort_tests"]
 
-[dependencies.llid]
-path = "../llid/"
-
 [dependencies.pyo3]
 version = "0.18.1"
 features = ["auto-initialize"]
-
-[dependencies.dal]
-path = "../dal/"
-
-[dependencies.tokio-postgres]
-version = "0.7.8"
-features = ["with-serde_json-1", "with-uuid-1", "with-chrono-0_4", "with-eui48-1"]

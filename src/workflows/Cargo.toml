@@ -3,52 +3,25 @@ name = "workflows"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 
-serde = { version = "1.0", features = ["derive", "rc"] }
-serde_json = { version = "1.0" }
+serde = { workspace = true, features = ["derive", "rc"] }
+thiserror = { workspace = true }
+serde_json = { workspace = true }
+maplit = { workspace = true }
+serde-xml-rs = { workspace = true }
+base64 = { workspace = true }
+ureq = { workspace = true }
+pyo3 = { workspace = true }
+inventory = { workspace = true }
+url = { workspace = true }
+ssh2 = { workspace = true }
+tokio = { workspace = true }
 
-tokio = { version = "1.35.1", features = ["full"] }
-thiserror = "1.0.56"
-
-maplit = "1.0.2"
-serde-xml-rs = "0.6.0"
-
-base64 = "0.21.0"
-inventory = "0.3.6"
-tar = "*"
-url = "*"
-ssh2 = "0.9.4"
-
-[dependencies.ureq]
-version = "2.6"
-features = ["json"]
-
-
-[dependencies.common]
-path = "../common/"
-
-[dependencies.pyo3]
-version = "0.18.1"
-features = ["auto-initialize"]
-
-
-[dependencies.tascii]
-path = "../tascii/"
-
-[dependencies.models]
-path = "../models/"
-
-[dependencies.notifications]
-path = "../notifications/"
-
-[dependencies.llid]
-path = "../llid/"
-
-[dependencies.users]
-path = "../users"
-
-[dependencies.config]
-path = "../config"
+tascii = { path = "../tascii/" }
+models = { path = "../models/" }
+notifications = { path = "../notifications/" }
+llid = { path = "../llid/" }
+users = { path = "../users/" }
+config = { path = "../config/" }
+common = { path = "../common/" }

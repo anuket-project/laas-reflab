@@ -6,17 +6,14 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-serde = "*" # serde_derive misbehaves when reexported
-serde_with = "*"
-derive_more = "0.99.17"
-uuid = "1.3.3"
-sha2 = "0.10"
-base16ct = { version = "0.2", features = ["alloc"] }
-inventory = "0.3.6"
-backtrace = "*"
+serde = { workspace = true }
+serde_with = { workspace = true }
+derive_more = { workspace = true }
+uuid = { workspace = true }
+sha2 = { workspace = true }
+base16ct = { workspace = true }
+inventory = { workspace = true }
+backtrace = { workspace = true }
 
-[dependencies.llid]
-path = "../llid/"
-
-[dependencies.common]
-path = "../common/"
+llid = { path = "../llid" }
+common = { path = "../common" }
