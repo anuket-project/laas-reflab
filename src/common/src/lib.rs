@@ -1,6 +1,7 @@
-//! Copyright (c) 2023 University of New Hampshire
-//! SPDX-License-Identifier: MIT
+// Copyright (c) 2023 University of New Hampshire
+// SPDX-License-Identifier: MIT
 
+#![doc = include_str!("../README.md")]
 #![allow(dead_code, unused_variables)]
 
 use crossbeam_channel::Sender;
@@ -11,10 +12,12 @@ use std::{
     thread::JoinHandle,
 };
 
+/// This is a convenience re-export of all the most commonly used dependencies
 pub mod prelude {
     pub use aide;
     pub use anyhow;
     pub use async_recursion;
+    pub use async_trait;
     pub use axum;
     pub use axum_extra;
     pub use axum_jsonschema;
@@ -49,7 +52,6 @@ pub mod prelude {
     pub use tower;
     pub use tower_http;
     pub use tracing;
-    pub use async_trait;
 
     pub use serde::{Deserialize, Serialize};
 }
@@ -76,6 +78,7 @@ impl<A, B, C> PhantomSendParams<A, B, C> {
 unsafe impl<A, B, C> Send for PhantomSendParams<A, B, C> {}
 unsafe impl<A, B, C> Sync for PhantomSendParams<A, B, C> {}
 
+/// A service wrapper. Contains methods for controlling services.
 pub struct ServiceWrapper<Req: Send, Resp: Send, Handler: Service<Req, Resp>> {
     /// the handler that responds to messages
     //handler: Mutex<Option<Handler>>,
@@ -246,11 +249,13 @@ impl<Req: Send, Resp: Send, Handler: Service<Req, Resp>> ServiceWrapper<Req, Res
     }
 }
 
+/// A request that can be sent to a service
 pub struct RequestParcel<Req, Resp> {
     request: Req,
     respond: Sender<Resp>,
 }
 
+/// Trait for a service
 pub trait Service<Req, Resp> {
     /// Constructor for the service
     fn init() -> Self;

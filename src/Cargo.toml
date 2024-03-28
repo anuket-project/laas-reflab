@@ -14,43 +14,29 @@ tracing-subscriber = "0.3"
 backtrace-on-stack-overflow = "*"
 clap = "*"
 
-[dependencies.common]
-path = "common/"
-
-[dependencies.liblaas]
-path = "liblaas/"
-
-[dependencies.workflows]
-path = "workflows/"
-
-[dependencies.tascii]
-path = "tascii/"
-
-[dependencies.models]
-path = "models/"
-
-[dependencies.client]
-path = "client/"
-
-[dependencies.users]
-path = "users/"
-
-[dependencies.config]
-path = "config/"
-
-[dependencies.notifications]
-path = "notifications/"
+liblaas = { path = "liblaas" }
+users = { path = "users" }
+common = { path = "common" }
+models = { path = "models" }
+tascii = { path = "tascii" }
+workflows = { path = "workflows" }
+config = { path = "config" }
+notifications = { path = "notifications" }
+dal = { path = "dal" }
+llid = { path = "llid" }
+client = { path = "client" }
 
 [workspace]
 members = [
-    "liblaas",
-    "users",
-    "common",
-    "models",
-    "tascii",
-    "workflows",
-    "config",
-    "notifications",
-    "dal",
+  "client",
+  "liblaas",
+  "llid",
+  "users",
+  "common",
+  "models",
+  "tascii",
+  "workflows",
+  "config",
+  "notifications",
+  "dal",
 ]
-

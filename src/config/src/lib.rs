@@ -1,5 +1,10 @@
-//! Copyright (c) 2023 University of New Hampshire
-//! SPDX-License-Identifier: MIT
+// Copyright (c) 2023 University of New Hampshire
+// SPDX-License-Identifier: MIT
+#![doc = include_str!("../README.md")]
+//! # Sample Config
+//! ```yaml
+#![doc = include_str!("../../../sample_config.yaml")]
+//! ```
 
 use std::{collections::HashMap, path::PathBuf};
 
@@ -160,7 +165,7 @@ pub struct ProjectConfig {
     pub location: String,
     pub email: String,
     pub phone: String,
-    pub is_dynamic: bool
+    pub is_dynamic: bool,
 }
 
 #[derive(Debug, Deserialize, Clone)]

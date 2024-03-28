@@ -1,5 +1,5 @@
-//! Copyright (c) 2023 University of New Hampshire
-//! SPDX-License-Identifier: MIT
+// Copyright (c) 2023 University of New Hampshire
+// SPDX-License-Identifier: MIT
 
 use ::serde::{Deserialize, Serialize};
 use axum::http::HeaderValue;
@@ -19,11 +19,7 @@ use schemars::{
     _serde_json::{json, Value},
 };
 
-use std::{
-    collections::HashMap,
-    fs::read,
-    path::PathBuf,
-};
+use std::{collections::HashMap, fs::read, path::PathBuf};
 
 pub struct IPA {
     client: reqwest::Client,

@@ -1,6 +1,6 @@
-//! Copyright (c) 2023 University of New Hampshire
-//! SPDX-License-Identifier: MIT
-
+// Copyright (c) 2023 University of New Hampshire
+// SPDX-License-Identifier: MIT
+#![doc = include_str!("../README.md")]
 #![allow(dead_code, unused_variables)]
 
 pub mod ipa;

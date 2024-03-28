@@ -1,6 +1,3 @@
-//! Copyright (c) 2023 University of New Hampshire
-//! SPDX-License-Identifier: MIT
-
 use std::{
     io::{stdout, Write},
     mem::swap,

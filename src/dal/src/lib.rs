@@ -1,6 +1,6 @@
-//! Copyright (c) 2023 University of New Hampshire
-//! SPDX-License-Identifier: MIT
-
+// Copyright (c) 2023 University of New Hampshire
+// SPDX-License-Identifier: MIT
+#![doc = include_str!("../README.md")]
 #![allow(dead_code, unused_variables)]
 #![feature(
     min_specialization,
@@ -9,30 +9,21 @@
     generic_arg_infer,
     negative_impls,
     result_flattening,
-    trait_alias,
+    trait_alias
 )]
 
 pub mod web;
 
-use common::prelude::{tokio_postgres::types::FromSql, axum::async_trait};
+use common::prelude::{axum::async_trait, tokio_postgres::types::FromSql};
 use sha2::Digest;
 use std::{
-    any::type_name,
-    backtrace::Backtrace,
-    collections::{HashMap, VecDeque},
-    hash::Hash,
-    marker::PhantomData,
+    any::type_name, backtrace::Backtrace, collections::HashMap, hash::Hash, marker::PhantomData,
     str::FromStr,
 };
 
 use common::prelude::{config::*, itertools::Itertools, schemars::JsonSchema, *};
 use serde::de::DeserializeOwned;
-use tokio_postgres::{
-    types::ToSql,
-    Client,
-    NoTls,
-    Transaction,
-};
+use tokio_postgres::{types::ToSql, Client, NoTls, Transaction};
 
 use crate::web::{AnyWay, AnyWaySpecStr};
 
@@ -54,6 +45,7 @@ pub struct ID(uuid::Uuid);
 
 pub use tokio_postgres::Row;
 
+/// UUID impl
 impl ID {
     pub fn new() -> Self {
         Self(uuid::Uuid::new_v4())
@@ -92,7 +84,9 @@ impl ToSql for ID {
     }
 
     fn accepts(ty: &tokio_postgres::types::Type) -> bool
-    where Self: Sized {
+    where
+        Self: Sized,
+    {
         <uuid::Uuid as ToSql>::accepts(ty)
     }
 
@@ -106,7 +100,10 @@ impl ToSql for ID {
 }
 
 impl FromSql<'_> for ID {
-    fn from_sql<'a>(ty: &tokio_postgres::types::Type, raw: &'a [u8]) -> Result<Self, Box<dyn std::error::Error + Sync + Send>> {
+    fn from_sql<'a>(
+        ty: &tokio_postgres::types::Type,
+        raw: &'a [u8],
+    ) -> Result<Self, Box<dyn std::error::Error + Sync + Send>> {
         match uuid::Uuid::from_sql(ty, raw) {
             Ok(u) => return Ok(ID(u)),
             Err(e) => return Err(e),
@@ -134,14 +131,18 @@ impl JsonSchema for ID {
 
 impl<T: DBTable> Serialize for FKey<T> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where S: serde::Serializer {
+    where
+        S: serde::Serializer,
+    {
         self.id.serialize(serializer)
     }
 }
 
 impl<'de, T: DBTable> Deserialize<'de> for FKey<T> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where D: serde::Deserializer<'de> {
+    where
+        D: serde::Deserializer<'de>,
+    {
         let id = ID::deserialize(deserializer)?;
 
         Ok(Self {
@@ -226,7 +227,9 @@ impl<T: DBTable + std::fmt::Debug> ToSql for FKey<T> {
     }
 
     fn accepts(ty: &tokio_postgres::types::Type) -> bool
-    where Self: Sized {
+    where
+        Self: Sized,
+    {
         <ID as ToSql>::accepts(ty)
         //<&Self as ToSql>::accepts(ty)
     }
@@ -393,7 +396,9 @@ impl<T: DBTable> Gotten<T> for Vec<FKey<T>> {
 
 impl<T: DBTable> WhereBuilder<T> {
     fn with_operation<U>(self, value: U, operation: FilterOperation) -> SelectBuilder<T>
-    where U: ToSqlObject {
+    where
+        U: ToSqlObject,
+    {
         let mut select = self.select;
         select.filters.push(Filter {
             field_name: self.field_name,
@@ -405,12 +410,16 @@ impl<T: DBTable> WhereBuilder<T> {
     }
 
     pub fn equals<U>(self, value: U) -> SelectBuilder<T>
-    where U: ToSqlObject {
+    where
+        U: ToSqlObject,
+    {
         self.with_operation(value, FilterOperation::EQ)
     }
 
     pub fn not_equals<U>(self, value: U) -> SelectBuilder<T>
-    where U: ToSqlObject {
+    where
+        U: ToSqlObject,
+    {
         self.with_operation(value, FilterOperation::NE)
     }
 
@@ -419,7 +428,9 @@ impl<T: DBTable> WhereBuilder<T> {
     }
 
     pub fn within<U, const S: usize>(self, list: [U; S]) -> SelectBuilder<T>
-    where U: ToSqlObject {
+    where
+        U: ToSqlObject,
+    {
         self.with_operation(Vec::from(list), FilterOperation::IN)
     }
 }
@@ -537,11 +548,10 @@ pub trait DBTable: Sized + 'static + Send + Sync {
         SelectBuilder::new()
     }
 
-    #[doc(hidden)]
-    /// For inserting into the database, shhould usually not be implemented
-    /// directly!
-    ///
-    /// This would be called by NewRow internally
+    // For inserting into the database, should usually not be implemented
+    // directly!
+    //
+    // This would be called by NewRow internally
     async fn insert(
         &self,
         client: &mut EasyTransaction<'_>,
@@ -576,9 +586,8 @@ pub trait DBTable: Sized + 'static + Send + Sync {
         Ok(FKey::from_id(self.id()))
     }
 
-    #[doc(hidden)]
-    /// Called by SchrodingerRow<T>, should not be implemented by
-    /// DBTable consumer directly--use the default impl!
+    // Called by SchrodingerRow<T>, should not be implemented by
+    // DBTable consumer directly--use the default impl!
     async fn upsert(
         &self,
         client: &mut EasyTransaction<'_>,
@@ -633,9 +642,8 @@ pub trait DBTable: Sized + 'static + Send + Sync {
         Ok(FKey::from_id(self.id()))
     }
 
-    #[doc(hidden)]
-    /// Called by ExistingRow<T>, should not be implemented by
-    /// DBTable consumer directly--use the default impl!
+    // Called by ExistingRow<T>, should not be implemented by
+    // DBTable consumer directly--use the default impl!
     async fn update(
         &self,
         client: &mut EasyTransaction<'_>,
@@ -649,7 +657,7 @@ pub trait DBTable: Sized + 'static + Send + Sync {
 
         let mut args = vec![];
 
-        for (_i, (k, v)) in row.iter().enumerate() {
+        for (k, v) in row.iter() {
             columns.push(k);
             args.push(&**v);
         }
@@ -679,9 +687,8 @@ pub trait DBTable: Sized + 'static + Send + Sync {
         Ok(())
     }
 
-    #[doc(hidden)]
-    /// Called by ExistingRow<T>, should not be implemented by
-    /// DBTable consumer directly--use the default impl!
+    // Called by ExistingRow<T>, should not be implemented by
+    // DBTable consumer directly--use the default impl!
     async fn delete(
         self,
         client: &mut EasyTransaction<'_>,
@@ -782,7 +789,7 @@ impl DBTable for MigrationRecord {
         let c: [(&str, Box<dyn tokio_postgres::types::ToSql + Sync + Send>); _] = [
             ("id", Box::new(self.id)),
             ("unique_name", Box::new(self.unique_name.clone())),
-            ("apply_date", Box::new(self.apply_date.clone())),
+            ("apply_date", Box::new(self.apply_date)),
             ("payload_hash", Box::new(self.payload_hash.clone())),
         ];
 
@@ -811,15 +818,14 @@ pub struct Migration {
 }
 
 impl Migration {
-    /// Lets us have reasonable confidence that
-    /// the action performed by a migration has
-    /// not been erroniously changed "underneath" us
-    ///
-    /// If you want to add a field to a schema, *make a new migration!*
-    /// Editing an existing one *will not work!* Migrations should only
-    /// ever be applied once to any given database, they are not idempotent
-    /// nor rerunnable!
-    #[doc(hidden)]
+    // Lets us have reasonable confidence that
+    // the action performed by a migration has
+    // not been erroniously changed "underneath" us
+    //
+    // If you want to add a field to a schema, *make a new migration!*
+    // Editing an existing one *will not work!* Migrations should only
+    // ever be applied once to any given database, they are not idempotent
+    // nor rerunnable!
     pub fn payload_hash(&self) -> String {
         let payload_str = match &self.apply {
             Apply::NOOP() => format!("_NOOP"),
@@ -863,7 +869,7 @@ impl Migration {
             panic!("Migration by same unique name applied multiple times");
         }
 
-        res.len() >= 1
+        !res.is_empty()
     }
 
     /// Apply this migration, returning any errors in application
@@ -948,7 +954,7 @@ impl Migration {
                     .insert(transaction)
                     .await
                     .expect("Couldn't insert record that migration applied");
-                },
+                }
             };
         } else {
             tracing::info!("Tried to reapply {}", self.unique_name);
@@ -956,6 +962,105 @@ impl Migration {
     }
 }
 
+pub trait JsonModel: Sized + Serialize + Send + Sync {
+    fn table_name() -> &'static str;
+
+    fn id(&self) -> ID;
+
+    /// Users of this trait should not override
+    /// this method after the initial creation of the model,
+    /// this only simplifies the default "table creation"
+    /// part of things
+    fn _default_migrations() -> Vec<Migration> {
+        let table_name = Self::table_name();
+
+        let make_table = Migration {
+            unique_name: format!("create_{table_name}_0001").leak(),
+            description: "default json model table creation migration",
+            depends_on: vec![],
+            apply: Apply::SQL(format!(
+                "CREATE TABLE IF NOT EXISTS {table_name} (
+                id UUID PRIMARY KEY NOT NULL,
+                data jsonb NOT NULL
+            );"
+            )),
+        };
+
+        let index_name = format!("json_index_{table_name}");
+        let index_json = Migration {
+            unique_name: format!("json_index_{table_name}_0002").leak(),
+            description: "create an index on the json field so that it can be efficiently queried based on subfields later",
+            depends_on: vec![make_table.unique_name],
+            apply: Apply::SQL(format!("CREATE INDEX {index_name} ON {table_name} USING GIN (data jsonb_path_ops);"))
+        };
+
+        let additional_deps = [make_table.unique_name, index_json.unique_name];
+        let mut migs = vec![make_table, index_json];
+
+        for mut migration in Self::override_migrations() {
+            for dep in additional_deps {
+                migration.depends_on.push(dep);
+            }
+
+            migs.push(migration);
+        }
+
+        migs
+    }
+
+    fn override_migrations() -> Vec<Migration> {
+        Vec::new()
+    }
+}
+
+impl<T> DBTable for T
+where
+    T: JsonModel + 'static + DeserializeOwned,
+{
+    fn id(&self) -> ID {
+        self.id()
+    }
+
+    fn table_name() -> &'static str {
+        <Self as JsonModel>::table_name()
+    }
+
+    fn migrations() -> Vec<Migration> {
+        Self::_default_migrations()
+    }
+
+    fn from_row(
+        row: tokio_postgres::Row,
+    ) -> Result<ExistingRow<T>, common::prelude::anyhow::Error> {
+        tracing::trace!("Converting a row to a {}", std::any::type_name::<T>());
+        let _id: uuid::Uuid = row.try_get("id").anyway()?;
+        let data: serde_json::Value = row.try_get("data").anyway()?;
+
+        Ok(ExistingRow::from_existing(
+            serde_json::value::from_value(data).anyway()?,
+        ))
+    }
+
+    fn to_rowlike(
+        &self,
+    ) -> Result<HashMap<&str, Box<dyn ToSql + Sync + Send>>, common::prelude::anyhow::Error> {
+        tracing::trace!(
+            "Converting a {} to its rowlike form",
+            std::any::type_name::<T>()
+        );
+        let s: String = serde_json::to_string(self).anyway()?;
+        let v = serde_json::Value::from_str(&s).anyway()?;
+
+        let id = self.id();
+
+        let mut hm: HashMap<&str, Box<dyn ToSql + Sync + Send + 'static>> = HashMap::new();
+
+        hm.insert("id", Box::new(id));
+        hm.insert("data", Box::new(v));
+
+        Ok(hm)
+    }
+}
 
 pub struct ClientPair {
     client: Client,
@@ -1261,10 +1366,12 @@ pub fn col(name: &'static str, v: impl ToSqlObject) -> (&'static str, Box<dyn To
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SqlAsJson<T>(pub T)
-where T: std::fmt::Debug + Clone;
+where
+    T: std::fmt::Debug + Clone;
 
 impl<T> SqlAsJson<T>
-where T: std::fmt::Debug + Clone
+where
+    T: std::fmt::Debug + Clone,
 {
     pub fn extract(self) -> T {
         self.0
@@ -1276,7 +1383,8 @@ where T: std::fmt::Debug + Clone
 }
 
 impl<T> ToSql for SqlAsJson<T>
-where T: Serialize + DeserializeOwned + std::fmt::Debug + Clone
+where
+    T: Serialize + DeserializeOwned + std::fmt::Debug + Clone,
 {
     fn to_sql(
         &self,
@@ -1290,7 +1398,9 @@ where T: Serialize + DeserializeOwned + std::fmt::Debug + Clone
     }
 
     fn accepts(ty: &tokio_postgres::types::Type) -> bool
-    where Self: Sized {
+    where
+        Self: Sized,
+    {
         <serde_json::Value as ToSql>::accepts(ty)
     }
 
@@ -1304,10 +1414,13 @@ where T: Serialize + DeserializeOwned + std::fmt::Debug + Clone
 }
 
 impl<'a, T> FromSql<'a> for SqlAsJson<T>
-where T: Serialize + DeserializeOwned + std::fmt::Debug + Clone
+where
+    T: Serialize + DeserializeOwned + std::fmt::Debug + Clone,
 {
     fn accepts(ty: &tokio_postgres::types::Type) -> bool
-    where Self: Sized {
+    where
+        Self: Sized,
+    {
         <serde_json::Value as FromSql>::accepts(ty)
     }
 

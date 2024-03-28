@@ -1,13 +1,8 @@
-//! Copyright (c) 2023 University of New Hampshire
-//! SPDX-License-Identifier: MIT
+//! Functions to pull data from [laas-hosts](https://bitbucket.iol.unh.edu/projects/OPNFV/repos/laas-hosts/) repo
+//! and import them as rows into the database. These functions are run on command as an option in the CLI.
 
 use common::prelude::{
-    chrono::Utc,
-    config::settings,
-    itertools::Itertools,
-    macaddr::MacAddr6,
-    serde_json::Value,
-    *,
+    chrono::Utc, config::settings, itertools::Itertools, macaddr::MacAddr6, serde_json::Value, *,
 };
 
 use std::io::Write;
@@ -16,42 +11,13 @@ use models::{
     allocation::{Allocation, AllocationReason, ResourceHandle, ResourceHandleInner},
     dal::{new_client, AsEasyTransaction, DBTable, EasyTransaction, FKey, NewRow},
     dashboard::{
-        self,
-        Aggregate,
-        AggregateConfiguration,
-        BondGroupConfig,
-        BookingMetadata,
-        Cifile,
-        HostConfig,
-        Image,
-        Instance,
-        LifeCycleState,
-        Network,
-        NetworkAssignmentMap,
-        ProvisionLogEvent,
-        Template,
-        VlanConnectionConfig,
+        self, Aggregate, AggregateConfiguration, BondGroupConfig, BookingMetadata, Cifile,
+        HostConfig, Image, Instance, LifeCycleState, Network, NetworkAssignmentMap,
+        ProvisionLogEvent, Template, VlanConnectionConfig,
     },
     inventory::{
-        self,
-        Arch,
-        CardType,
-        DataUnit,
-        DataValue,
-        Flavor,
-        Host,
-        HostPort,
-        IPInfo,
-        IPNetwork,
-        InterfaceFlavor,
-        Switch,
-        SwitchOS,
-        Version,
-        NxosVersion,
-        SonicVersion,
-        SwitchPort,
-        Vlan,
-        Lab
+        self, Arch, CardType, DataUnit, DataValue, Flavor, Host, HostPort, IPInfo, IPNetwork,
+        InterfaceFlavor, Switch, SwitchPort, Vlan,
     },
 };
 use serde::{Deserialize, Serialize};

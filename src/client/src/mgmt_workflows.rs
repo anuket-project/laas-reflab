@@ -1,5 +1,5 @@
-//! Copyright (c) 2023 University of New Hampshire
-//! SPDX-License-Identifier: MIT
+//! Management utility functions consumed by the CLI.
+//! Includes functionality like booting booked hosts, setting host power states etc.
 
 use models::{
     allocation::ResourceHandle,

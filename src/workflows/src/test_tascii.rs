@@ -1,5 +1,5 @@
-//! Copyright (c) 2023 University of New Hampshire
-//! SPDX-License-Identifier: MIT
+// Copyright (c) 2023 University of New Hampshire
+// SPDX-License-Identifier: MIT
 
 use std::{env::args, time::Duration};
 
