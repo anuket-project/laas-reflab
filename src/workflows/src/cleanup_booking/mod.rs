@@ -101,17 +101,16 @@ impl AsyncRunnable for CleanupAggregate {
                 .await;
         }
 
-        // VPNs are now revoked, so run a cleanup task for those
-        let _ignore = context
-            .spawn(SyncVPN {
-                aggregate: self.agg_id,
-            })
-            .join();
-
         agg.state = LifeCycleState::Done;
         agg.update(&mut transaction).await.unwrap();
-
         transaction.commit().await.unwrap();
+
+        // LifeCycleState is now Done, sync vpn and remove groups from user if needed
+        let _ignore = context
+        .spawn(SyncVPN {
+            users: agg.users.to_owned(),
+        })
+        .join();
 
         Ok(())
     }

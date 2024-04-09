@@ -57,7 +57,7 @@ use workflows::{
         },
     },
     entry::DISPATCH,
-    resource_management::{allocator, mailbox::Mailbox},
+    resource_management::{allocator, mailbox::Mailbox, vpn::{single_vpn_sync_for_user}},
 };
 
 /// Runs the cli
@@ -1854,7 +1854,7 @@ async fn use_ipa(mut session: &Server) -> Result<(), common::prelude::anyhow::Er
 
                 let username = Text::new("Enter uid:").prompt(session)?;
 
-                let res = ipa_instance.group_add_user(groupname, username).await;
+                let res = ipa_instance.group_add_user(&groupname, &username).await;
                 match res {
                     Ok(u) => writeln!(
                         session,
@@ -1869,7 +1869,7 @@ async fn use_ipa(mut session: &Server) -> Result<(), common::prelude::anyhow::Er
 
                 let username = Text::new("Enter uid:").prompt(session)?;
 
-                let res = ipa_instance.group_remove_user(groupname, username).await;
+                let res = ipa_instance.group_remove_user(&groupname, &username).await;
                 match res {
                     Ok(u) => writeln!(
                         session,
@@ -1877,6 +1877,32 @@ async fn use_ipa(mut session: &Server) -> Result<(), common::prelude::anyhow::Er
                         serde_json::to_string_pretty(&u).expect("Expected to serialize")
                     )?,
                     Err(e) => writeln!(session, "Failed to remove user with error: {e}")?,
+                }
+            }
+            "Get groups for user" => {
+                let username = Text::new("Enter username:").prompt(session)?;
+                let groups = ipa_instance.group_find_user(&username).await;
+
+                match groups {
+                    Ok(u) => writeln!(
+                        session,
+                        "IPA groups for {username}: {u:?}"
+                    )?,
+                    Err(e) => writeln!(session, "Failed to get groups for user {username} with error: {e}")?,
+                }
+            }
+            "Sync VPN for user" => {
+                let username = Text::new("Enter username:").prompt(session)?;
+
+                match single_vpn_sync_for_user(&username).await {
+                    Ok(results) => {
+                        writeln!(session, "Successfully updated VPN groups for {username}\nGroups added: {:?}\nGroups removed: {:?}", results.0, results.1)?;
+                    },
+                    Err(error) => {
+                        writeln!(
+                            session,
+                            "Failed to sync vpn for {username}: {error}")?;
+                    }
                 }
             }
             &_ => {}
@@ -2119,6 +2145,8 @@ fn get_ipa_interactions() -> Vec<&'static str> {
         "Update user",
         "Add user to group",
         "Remove user from group",
+        "Get groups for user",
+        "Sync VPN for user",
     ]
 }
 

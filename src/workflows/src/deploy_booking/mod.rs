@@ -122,7 +122,7 @@ impl AsyncRunnable for BookingTask {
         // synchronize which VPNs they should be able to access
         let vpn_succeeded = context
             .spawn(SyncVPN {
-                aggregate: self.aggregate_id,
+                users: agg.users.to_owned(),
             })
             .join();
 
