@@ -12,7 +12,7 @@ use rand::Rng;
 
 pub async fn create_vpn_user(username: String, group: String) -> Result<bool, anyhow::Error> {
     let mut ipa = IPA::init().await.expect("Expected to initialize ipa");
-    match ipa.group_add_user(group, username).await {
+    match ipa.group_add_user(&group, &username).await {
         Ok(b) => return Ok(b),
         Err(e) => return Err(anyhow::Error::msg(e.to_string())),
     }
@@ -40,7 +40,7 @@ pub async fn reset_vpn_user(username: String) -> Result<bool, anyhow::Error> {
 
 pub async fn delete_vpn_user(username: String, group: String) -> Result<bool, anyhow::Error> {
     let mut ipa = IPA::init().await.expect("Expected to initialize ipa");
-    match ipa.group_remove_user(group, username).await {
+    match ipa.group_remove_user(&group, &username).await {
         Ok(b) => return Ok(b),
         Err(e) => return Err(anyhow::Error::msg(e.to_string())),
     }

@@ -19,6 +19,8 @@ use schemars::{
     _serde_json::{json, Value},
 };
 
+use crate::anyhow::anyhow;
+
 use std::{collections::HashMap, fs::read, path::PathBuf};
 
 pub struct IPA {
@@ -895,8 +897,8 @@ impl IPA {
 
     pub async fn group_add_user(
         &mut self,
-        group_name: String,
-        user: String,
+        group_name: &String,
+        user: &String,
     ) -> Result<bool, anyhow::Error> {
         return self
             .group_mod_user("group_add_member", group_name, user, true)
@@ -905,20 +907,81 @@ impl IPA {
 
     pub async fn group_remove_user(
         &mut self,
-        group_name: String,
-        user: String,
+        group_name: &String,
+        user: &String,
     ) -> Result<bool, anyhow::Error> {
         return self
             .group_mod_user("group_remove_member", group_name, user, true)
             .await;
     }
 
+    /**
+     * Finds groups for a given user
+     * Returns ALL groups, not just managed ones
+     * Make sure to only add / remove groups that are managed by liblaas
+     */
+    pub async fn group_find_user(
+        &mut self,
+        username: &String
+    ) -> Result<Vec<String>, anyhow::Error> {
+        let mut user_groups: Vec<String> = vec![];
+
+        // ipa group-find --user=username
+        let json = json!({
+            "method": "group_find",
+            "params": [
+                [],
+                {
+                    "user": username
+                }
+            ],
+            "id": self.id,
+        });
+
+        self.id += 1;
+
+        let res = self
+            .client
+            .post(format!("{}/ipa/session/json", self.url))
+            .header("Accept", "application/json")
+            .header("Content-Type", "application/json")
+            .json(&json)
+            .send()
+            .await;
+
+        let text = match res {
+            Ok(r) => r.text().await?,
+            Err(e) => return Err(anyhow::Error::msg(e.to_string())),
+        };
+
+        let text_json: serde_json::Value  = serde_json::from_str(text.as_str())?;
+        let error = text_json.get("error").unwrap();
+
+        if !error.is_null() {
+            return Err(anyhow!("IPA returned an error! {error:?}"));
+        }
+
+        let result = text_json.get("result").unwrap().get("result").unwrap();
+
+        if !result.is_array() {
+            return Err(anyhow!("groups_find_user did not return an array!"));
+        }
+
+        for r in result.as_array().unwrap() {
+            // "cn" is the field that contains the name of the group. It is represented as an array of strings.
+            let group_name = r.get("cn").unwrap().as_array().unwrap().get(0).unwrap().as_str().unwrap().to_owned();
+            user_groups.push(group_name);
+        }
+
+        Ok(user_groups)
+    }
+
     #[async_recursion]
     pub async fn group_mod_user(
         &mut self,
         action: &str,
-        group_name: String,
-        user: String,
+        group_name: &String,
+        user: &String,
         run_once: bool,
     ) -> Result<bool, anyhow::Error> {
         let json = json!({
