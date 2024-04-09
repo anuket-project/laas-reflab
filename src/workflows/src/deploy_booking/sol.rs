@@ -47,6 +47,8 @@ impl AsyncRunnable for StashSOLOutput {
             .args([
                 "-I",
                 "lanplus",
+                "-C",
+                "3",
                 "-H",
                 &host.ipmi_fqdn,
                 "-U",
@@ -76,6 +78,8 @@ impl AsyncRunnable for StashSOLOutput {
                 .args([
                     "-I",
                     "lanplus",
+                    "-C",
+                    "3",
                     "-H",
                     &host.ipmi_fqdn,
                     "-U",

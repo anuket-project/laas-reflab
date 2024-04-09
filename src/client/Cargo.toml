@@ -3,33 +3,17 @@ name = "client"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_with = { workspace = true }
+remoc = { workspace = true, features = ['rtc'] }
+uuid = { workspace = true }
 
-[dependencies] # make sure to inherit versions here from liblaas for now
-serde = "*" # serde_derive misbehaves when reexported
-serde_with = "*"
-remoc = {version = "*", features=['rtc']}
-
-[dependencies.common]
-path = "../common/"
-
-[dependencies.tascii]
-path = "../tascii/"
-
-[dependencies.models]
-path = "../models/"
-
-[dependencies.workflows]
-path = "../workflows/"
-
-[dependencies.notifications]
-path = "../notifications/"
-
-[dependencies.llid]
-path = "../llid/"
-
-[dependencies.liblaas]
-path = "../liblaas/"
-
-[dependencies.users]
-path = "../users/"
+common = { path = "../common/" }
+tascii = { path = "../tascii/" }
+models = { path = "../models/" }
+workflows = { path = "../workflows/" }
+notifications = { path = "../notifications/" }
+llid = { path = "../llid/" }
+liblaas = { path = "../liblaas/" }
+users = { path = "../users/" }

@@ -1,6 +1,7 @@
-//! Copyright (c) 2023 University of New Hampshire
-//! SPDX-License-Identifier: MIT
+// Copyright (c) 2023 University of New Hampshire
+// SPDX-License-Identifier: MIT
 
+#![doc = include_str!("../README.md")]
 #![feature(
     result_flattening,
     let_chains,
@@ -37,7 +38,7 @@ use models::{
     dashboard::{
         Aggregate, BookingMetadata, Instance, LifeCycleState, Network, ProvisionLogEvent, Template,
     },
-    inventory::{BootTo, Host, Vlan, Lab},
+    inventory::{BootTo, Host, Lab, Vlan},
 };
 use notifications::{
     email::{send_to_admins_email, send_to_admins_gchat},
@@ -56,7 +57,7 @@ use workflows::{
         },
     },
     entry::DISPATCH,
-    resource_management::{allocator, mailbox::Mailbox},
+    resource_management::{allocator, mailbox::Mailbox, vpn::{single_vpn_sync_for_user}},
 };
 
 /// Runs the cli
@@ -427,7 +428,7 @@ async fn query(mut session: &Server) {
                 Ok(l) => l,
                 Err(e) => panic!("Unable to get lab: {e}"),
             };
-            
+
             let mut vlans = allocator::Allocator::instance()
                 .get_free_vlans(&mut transaction, lab)
                 .await
@@ -617,24 +618,38 @@ fn areyousure(session: &Server) -> Result<(), anyhow::Error> {
     }
 }
 
-async fn get_lab(session: &Server, transaction: &mut EasyTransaction<'_>) -> Result<FKey<Lab>, anyhow::Error>{
+async fn get_lab(
+    session: &Server,
+    transaction: &mut EasyTransaction<'_>,
+) -> Result<FKey<Lab>, anyhow::Error> {
     match Lab::select().run(transaction).await {
         Ok(lab_list) => {
-            let name = Select::new("Select a Lab: ", lab_list.iter().map(|lab| lab.name.clone()).collect_vec())
-            .prompt(session).unwrap();
+            let name = Select::new(
+                "Select a Lab: ",
+                lab_list.iter().map(|lab| lab.name.clone()).collect_vec(),
+            )
+            .prompt(session)
+            .unwrap();
             return match Lab::get_by_name(transaction, name).await {
                 Ok(opt_lab) => match opt_lab {
                     Some(l) => Ok(l.id),
                     None => Err(anyhow::Error::msg(format!("Error Lab does not exist"))),
                 },
                 Err(e) => Err(anyhow::Error::msg(format!("Error finding lab: {e}"))),
-            }
-        },
-        Err(e) => return Err(anyhow::Error::msg(format!("Failed to retrieve lab list: {e}"))),
+            };
+        }
+        Err(e) => {
+            return Err(anyhow::Error::msg(format!(
+                "Failed to retrieve lab list: {e}"
+            )))
+        }
     }
 }
 
-async fn select_host(session: &Server, transaction: &mut EasyTransaction<'_>) -> Result<FKey<Host>, anyhow::Error> {
+async fn select_host(
+    session: &Server,
+    transaction: &mut EasyTransaction<'_>,
+) -> Result<FKey<Host>, anyhow::Error> {
     let hosts = Host::select().run(transaction).await?;
 
     let mut disps = Vec::new();
@@ -1839,7 +1854,7 @@ async fn use_ipa(mut session: &Server) -> Result<(), common::prelude::anyhow::Er
 
                 let username = Text::new("Enter uid:").prompt(session)?;
 
-                let res = ipa_instance.group_add_user(groupname, username).await;
+                let res = ipa_instance.group_add_user(&groupname, &username).await;
                 match res {
                     Ok(u) => writeln!(
                         session,
@@ -1854,7 +1869,7 @@ async fn use_ipa(mut session: &Server) -> Result<(), common::prelude::anyhow::Er
 
                 let username = Text::new("Enter uid:").prompt(session)?;
 
-                let res = ipa_instance.group_remove_user(groupname, username).await;
+                let res = ipa_instance.group_remove_user(&groupname, &username).await;
                 match res {
                     Ok(u) => writeln!(
                         session,
@@ -1862,6 +1877,32 @@ async fn use_ipa(mut session: &Server) -> Result<(), common::prelude::anyhow::Er
                         serde_json::to_string_pretty(&u).expect("Expected to serialize")
                     )?,
                     Err(e) => writeln!(session, "Failed to remove user with error: {e}")?,
+                }
+            }
+            "Get groups for user" => {
+                let username = Text::new("Enter username:").prompt(session)?;
+                let groups = ipa_instance.group_find_user(&username).await;
+
+                match groups {
+                    Ok(u) => writeln!(
+                        session,
+                        "IPA groups for {username}: {u:?}"
+                    )?,
+                    Err(e) => writeln!(session, "Failed to get groups for user {username} with error: {e}")?,
+                }
+            }
+            "Sync VPN for user" => {
+                let username = Text::new("Enter username:").prompt(session)?;
+
+                match single_vpn_sync_for_user(&username).await {
+                    Ok(results) => {
+                        writeln!(session, "Successfully updated VPN groups for {username}\nGroups added: {:?}\nGroups removed: {:?}", results.0, results.1)?;
+                    },
+                    Err(error) => {
+                        writeln!(
+                            session,
+                            "Failed to sync vpn for {username}: {error}")?;
+                    }
                 }
             }
             &_ => {}
@@ -2104,6 +2145,8 @@ fn get_ipa_interactions() -> Vec<&'static str> {
         "Update user",
         "Add user to group",
         "Remove user from group",
+        "Get groups for user",
+        "Sync VPN for user",
     ]
 }
 

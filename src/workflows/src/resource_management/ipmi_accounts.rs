@@ -52,6 +52,8 @@ impl AsyncRunnable for DeleteIPMIAccount {
             .args([
                 "-I",
                 "lanplus",
+                "-C",
+                "3",
                 "-H",
                 &ipmi_url,
                 "-U",
@@ -106,6 +108,8 @@ impl AsyncRunnable for CreateIPMIAccount {
             .args([
                 "-I",
                 "lanplus",
+                "-C",
+                "3",
                 "-H",
                 &ipmi_url,
                 "-U",
@@ -125,6 +129,8 @@ impl AsyncRunnable for CreateIPMIAccount {
             .args([
                 "-I",
                 "lanplus",
+                "-C",
+                "3",
                 "-H",
                 &ipmi_url,
                 "-U",

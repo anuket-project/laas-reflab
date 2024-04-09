@@ -1,6 +1,5 @@
-//! Copyright (c) 2023 University of New Hampshire
-//! SPDX-License-Identifier: MIT
-
+// Copyright (c) 2023 University of New Hampshire
+// SPDX-License-Identifier: MIT
 #![allow(dead_code, unused_variables)]
 #![feature(
     async_closure,
@@ -15,16 +14,16 @@
     generic_arg_infer
 )]
 
-pub mod task_trait;
 pub mod executors;
+pub mod task_trait;
 
 mod oneshot;
 mod runtime;
 mod scheduler;
 mod workflows;
 
-mod task_shim;
 mod task_runtime;
+mod task_shim;
 
 use std::{
     cell::RefCell,
@@ -63,7 +62,9 @@ fn panic_hook(info: &PanicInfo<'_>) {
 
         if let Some(lh) = g.as_ref() {
             lh(info)
-        } else if let false = CAPTURED_CONTEXT.with_borrow(|b| *b) && let Some(hook) = &*DEFAULT_HOOK.read() {
+        } else if let false = CAPTURED_CONTEXT.with_borrow(|b| *b)
+            && let Some(hook) = &*DEFAULT_HOOK.read()
+        {
             hook(info)
         } else {
             let style = if !info.can_unwind() {
@@ -75,7 +76,6 @@ fn panic_hook(info: &PanicInfo<'_>) {
             // The current implementation always returns `Some`.
             let location = info.location();
             if let Some(location) = location {
-
                 let msg = match info.payload().downcast_ref::<&'static str>() {
                     Some(s) => *s,
                     None => match info.payload().downcast_ref::<String>() {
@@ -121,7 +121,9 @@ thread_local! {
 }
 
 pub fn set_local_hook<F>(f: Option<Box<F>>)
-where F: Fn(&PanicInfo<'_>) + Sync + Send + 'static {
+where
+    F: Fn(&PanicInfo<'_>) + Sync + Send + 'static,
+{
     LOCAL_HOOK.with(|v| {
         let mut g = v.lock();
         if let Some(v) = f {

@@ -122,7 +122,7 @@ impl AsyncRunnable for BookingTask {
         // synchronize which VPNs they should be able to access
         let vpn_succeeded = context
             .spawn(SyncVPN {
-                aggregate: self.aggregate_id,
+                users: agg.users.to_owned(),
             })
             .join();
 
@@ -1270,19 +1270,22 @@ async fn ci_serialize_runcmds(
     };
 
     // first bring up mgmt networking
-    // if let Some(p) = host.ports(transaction).await.unwrap().into_iter().next() {
-    //     let pn = &p.name;
-    //     command(val(format!("sudo dhclient {pn} || true")));
-    // } else {
-    //     let host_name = &host.server_name;
-    //     tracing::error!(
-    //         "Network config for {image_name} on {host_name} may fail, host had no ports"
-    //     );
-    // }
+    command(val(format!("echo 'Running dhclient on ports'")));
+    if let Some(p) = host.ports(transaction).await.unwrap().into_iter().next() {
+        let pn = &p.name;
+        command(val(format!("echo 'doing dhclient {pn}'")));
+        command(val(format!("sudo dhclient {pn} || true")));
+    } else {
+        let host_name = &host.server_name;
+        command(val(format!("echo 'There are no ports to run dhclient on!'")));
+        tracing::error!(
+            "Network config for {image_name} on {host_name} may fail, host had no ports"
+        );
+    }
 
-    command(val(format!("echo 'trying to run dhclient'")));
-    command(val(format!("sudo dhclient")));
-    command(val(format!("echo 'tried to run dhclient'")));
+    // command(val(format!("echo 'trying to run dhclient'")));
+    // command(val(format!("sudo dhclient")));
+    // command(val(format!("echo 'tried to run dhclient'")));
 
     let base_host = url::Url::parse(&config::settings().mailbox.external_url).ok();
     if let Some(v) = base_host.as_ref().map(|v| v.host()).flatten() {

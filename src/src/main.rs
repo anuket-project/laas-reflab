@@ -1,10 +1,14 @@
+// Copyright (c) 2023 University of New Hampshire
+// SPDX-License-Identifier: MIT
+#![doc = include_str!("../../README.md")]
+//! # LICENSE
+//!
+//! This software is licensed under the MIT license.
 //! Copyright (c) 2023 University of New Hampshire
-//! SPDX-License-Identifier: MIT
-
 use client::remote::{cli_client_entry, cli_server_entry};
 use common::prelude::{
-    axum::{Json, self},
-    chrono::{Days, Utc, self},
+    axum::{self, Json},
+    chrono::{self, Days, Utc},
     itertools::Itertools,
     tokio,
     tokio::{sync::mpsc, task::LocalSet},
@@ -68,16 +72,21 @@ pub async fn allocate_unreserved_hosts() {
         .log_db_client_error()
         .unwrap();
 
-    let template = make_template(axum::extract::path::Path::from(common::prelude::axum::extract::Path("reserved".to_string())), Json(TemplateBlob {
-        id: None,
-        owner: format!("root"),
-        pod_name: format!("reserved"),
-        pod_desc: format!("reserved"),
-        public: false,
-        host_list: vec![],
-        networks: vec![],
-        lab_name: format!("reserved"),
-    }))
+    let template = make_template(
+        axum::extract::path::Path::from(common::prelude::axum::extract::Path(
+            "reserved".to_string(),
+        )),
+        Json(TemplateBlob {
+            id: None,
+            owner: format!("root"),
+            pod_name: format!("reserved"),
+            pod_desc: format!("reserved"),
+            public: false,
+            host_list: vec![],
+            networks: vec![],
+            lab_name: format!("reserved"),
+        }),
+    )
     .await
     .expect("couldn't make default allocation template");
 
@@ -146,7 +155,6 @@ pub async fn allocate_unreserved_hosts() {
     }
 }
 
-
 pub fn clear_tasks() {
     std::fs::remove_file("primary-targets.json").ok();
 }
@@ -183,7 +191,6 @@ async fn main() {
     let subscriber = subscriber.with_max_level(config::settings().logging.max_level);
 
     if let Some(output_file) = config::settings().logging.log_file.clone() {
-
         let file = std::fs::File::create(&output_file).expect("couldn't open log file");
         let file = std::sync::Mutex::new(file);
 

@@ -47,6 +47,7 @@ pub enum ResourceClass {
 
 inventory::submit! { Migrate::new(VPNToken::migrations) }
 #[derive(Serialize, Deserialize, Debug, Clone, Hash)]
+// todo - delete this entirely
 pub struct VPNToken {
     id: FKey<VPNToken>,
     username: String,

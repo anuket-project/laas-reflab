@@ -89,7 +89,7 @@ impl ToSql for LifeCycleState {
 
 impl std::fmt::Display for LifeCycleState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        <Self as std::fmt::Debug>::fmt(&self, f)
+        <Self as std::fmt::Debug>::fmt(self, f)
     }
 }
 

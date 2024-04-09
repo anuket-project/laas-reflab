@@ -1,6 +1,6 @@
-//! Copyright (c) 2023 University of New Hampshire
-//! SPDX-License-Identifier: MIT
-
+// Copyright (c) 2023 University of New Hampshire
+// SPDX-License-Identifier: MIT
+#![doc = include_str!("../README.md")]
 #![allow(unused_attributes, unused_variables, dead_code, unused, unused_imports)]
 
 use email::send;

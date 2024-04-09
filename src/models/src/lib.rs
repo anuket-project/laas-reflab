@@ -1,6 +1,6 @@
-//! Copyright (c) 2023 University of New Hampshire
-//! SPDX-License-Identifier: MIT
-
+// Copyright (c) 2023 University of New Hampshire
+// SPDX-License-Identifier: MIT
+#![doc = include_str!("../README.md")]
 #![allow(dead_code, unused_variables, unused_imports, incomplete_features)]
 #![feature(
     min_specialization,
@@ -11,7 +11,7 @@
     generic_arg_infer,
     negative_impls,
     result_flattening,
-    trait_alias,
+    trait_alias
 )]
 
 use common::prelude::*;
@@ -32,12 +32,4 @@ pub mod postgres {
 
 pub mod macaddr {
     pub use eui48::*;
-}
-
-mod tests {
-    #[test]
-    fn it_works() {
-        let result = 2 + 2;
-        assert_eq!(result, 4);
-    }
 }

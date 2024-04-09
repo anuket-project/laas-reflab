@@ -1,13 +1,8 @@
-//! Copyright (c) 2023 University of New Hampshire
-//! SPDX-License-Identifier: MIT
+//! Functions to pull data from [laas-hosts](https://bitbucket.iol.unh.edu/projects/OPNFV/repos/laas-hosts/) repo
+//! and import them as rows into the database. These functions are run on command as an option in the CLI.
 
 use common::prelude::{
-    chrono::Utc,
-    config::settings,
-    itertools::Itertools,
-    macaddr::MacAddr6,
-    serde_json::Value,
-    *,
+    chrono::Utc, config::settings, itertools::Itertools, macaddr::MacAddr6, serde_json::Value, *,
 };
 
 use std::io::Write;
@@ -16,47 +11,18 @@ use models::{
     allocation::{Allocation, AllocationReason, ResourceHandle, ResourceHandleInner},
     dal::{new_client, AsEasyTransaction, DBTable, EasyTransaction, FKey, NewRow},
     dashboard::{
-        self,
-        Aggregate,
-        AggregateConfiguration,
-        BondGroupConfig,
-        BookingMetadata,
-        Cifile,
-        HostConfig,
-        Image,
-        Instance,
-        LifeCycleState,
-        Network,
-        NetworkAssignmentMap,
-        ProvisionLogEvent,
-        Template,
-        VlanConnectionConfig,
+        self, Aggregate, AggregateConfiguration, BondGroupConfig, BookingMetadata, Cifile,
+        HostConfig, Image, Instance, LifeCycleState, Network, NetworkAssignmentMap,
+        ProvisionLogEvent, Template, VlanConnectionConfig,
     },
     inventory::{
-        self,
-        Arch,
-        CardType,
-        DataUnit,
-        DataValue,
-        Flavor,
-        Host,
-        HostPort,
-        IPInfo,
-        IPNetwork,
-        InterfaceFlavor,
-        Switch,
-        SwitchOS,
-        Version,
-        NxosVersion,
-        SonicVersion,
-        SwitchPort,
-        Vlan,
-        Lab
+        self, Arch, CardType, DataUnit, DataValue, Flavor, Host, HostPort, IPInfo, IPNetwork,
+        InterfaceFlavor, Lab, Switch, SwitchOS, SwitchPort, Version, Vlan,
     },
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fs, net::Ipv4Addr, path::PathBuf, str::FromStr};
-use workflows::resource_management::allocator::{Allocator};
+use workflows::resource_management::allocator::Allocator;
 
 use crate::remote::{Select, Server};
 
@@ -682,12 +648,12 @@ pub async fn import_switches(mut session: &Server, path: PathBuf) -> Result<(), 
             pass: switch_data["pass"].as_str().unwrap().to_owned(),
             switch_os: {
                 let res = SwitchOS::select()
-                .where_field("os_type")
-                .equals(switch_data["type"]["name"].as_str().unwrap().to_owned())
-                .where_field("version")
-                .equals(switch_data["type"]["version"].as_str().unwrap().to_owned())
-                .run(&mut t)
-                .await;
+                    .where_field("os_type")
+                    .equals(switch_data["type"]["name"].as_str().unwrap().to_owned())
+                    .where_field("version")
+                    .equals(switch_data["type"]["version"].as_str().unwrap().to_owned())
+                    .run(&mut t)
+                    .await;
 
                 match res {
                     Ok(r) => {
@@ -698,22 +664,52 @@ pub async fn import_switches(mut session: &Server, path: PathBuf) -> Result<(), 
                         } else {
                             match create_switch_os(switch_data, &mut t).await {
                                 Ok(f) => Some(f),
-                                Err(e) => return Err(anyhow::Error::msg(format!("Error creating switch: {}", e.to_string()))),
+                                Err(e) => {
+                                    return Err(anyhow::Error::msg(format!(
+                                        "Error creating switch: {}",
+                                        e.to_string()
+                                    )))
+                                }
                             }
                         }
-                    },
+                    }
                     Err(e) => {
-                        println!("PSQL Error: {}" ,e.to_string());
+                        println!("PSQL Error: {}", e.to_string());
                         match create_switch_os(switch_data, &mut t).await {
                             Ok(f) => Some(f),
-                            Err(e) => return Err(anyhow::Error::msg(format!("Error creating switch: {}", e.to_string()))),
+                            Err(e) => {
+                                return Err(anyhow::Error::msg(format!(
+                                    "Error creating switch: {}",
+                                    e.to_string()
+                                )))
+                            }
                         }
-                    },
+                    }
                 }
             },
-            management_vlans: switch_data["mgmt_vlans"].as_array().expect("Expected management vlan array to exist").into_iter().map(|f|f.as_i64().expect("Expected management vlan array to contain an integer") as i16).collect_vec(),
-            ipmi_vlan: switch_data["ipmi_vlan"].as_i64().expect("Expected ipmi vlan to be an integer") as i16,
-            public_vlans: switch_data["public_vlans"].as_array().expect("Expected public vlan array to exist").into_iter().map(|f|f.as_i64().expect("Expected public vlan array to contain an integer") as i16).collect_vec(),
+            management_vlans: switch_data["mgmt_vlans"]
+                .as_array()
+                .expect("Expected management vlan array to exist")
+                .into_iter()
+                .map(|f| {
+                    f.as_i64()
+                        .expect("Expected management vlan array to contain an integer")
+                        as i16
+                })
+                .collect_vec(),
+            ipmi_vlan: switch_data["ipmi_vlan"]
+                .as_i64()
+                .expect("Expected ipmi vlan to be an integer") as i16,
+            public_vlans: switch_data["public_vlans"]
+                .as_array()
+                .expect("Expected public vlan array to exist")
+                .into_iter()
+                .map(|f| {
+                    f.as_i64()
+                        .expect("Expected public vlan array to contain an integer")
+                        as i16
+                })
+                .collect_vec(),
         };
 
         let res =
@@ -749,27 +745,35 @@ pub async fn import_switches(mut session: &Server, path: PathBuf) -> Result<(), 
     }
     match transaction.commit().await {
         Ok(r) => Ok(r),
-        Err(e) => Err(anyhow::Error::msg(format!("Failed to import or update switches: {}", e.to_string()))),
+        Err(e) => Err(anyhow::Error::msg(format!(
+            "Failed to import or update switches: {}",
+            e.to_string()
+        ))),
     }
 }
 
-async fn create_switch_os(switch_data: &Value, t: &mut EasyTransaction<'_>) -> Result<FKey<SwitchOS>, anyhow::Error> {
+async fn create_switch_os(
+    switch_data: &Value,
+    t: &mut EasyTransaction<'_>,
+) -> Result<FKey<SwitchOS>, anyhow::Error> {
     let s_os_id = FKey::new_id_dangling();
     let s_os = SwitchOS {
         id: s_os_id.clone(),
         os_type: switch_data["type"]["name"].as_str().unwrap().to_owned(),
-        version: match Version::from_string(switch_data["type"]["version"].as_str().unwrap().to_owned()) {
+        version: match Version::from_string(
+            switch_data["type"]["version"].as_str().unwrap().to_owned(),
+        ) {
             Ok(v) => v,
-            Err(e) => return Err(anyhow::Error::msg(e.to_string()))
+            Err(e) => return Err(anyhow::Error::msg(e.to_string())),
         },
     };
     println!("{:?}", s_os);
     println!("{}", s_os.version.to_string());
 
     Ok(NewRow::new(s_os)
-            .insert(t)
-            .await
-            .expect("couldn't insert switch_os"))
+        .insert(t)
+        .await
+        .expect("couldn't insert switch_os"))
 }
 
 pub async fn import_proj(mut session: &Server, t: &mut EasyTransaction<'_>, proj: PathBuf) {

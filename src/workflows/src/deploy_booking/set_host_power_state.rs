@@ -102,6 +102,8 @@ impl AsyncRunnable for SetPower {
             .args([
                 "-I",
                 "lanplus",
+                "-C",
+                "3",
                 "-H",
                 &ipmi_url,
                 "-U",
@@ -653,6 +655,8 @@ pub async fn execute_power_command(
         .args([
             "-I",
             "lanplus",
+            "-C",
+            "3",
             "-H",
             &config.fqdn,
             "-U",
@@ -803,6 +807,8 @@ pub async fn get_host_power_state(config: &HostConfig) -> Result<PowerState, Pow
         .args([
             "-I",
             "lanplus",
+            "-C",
+            "3",
             "-H",
             &config.fqdn,
             "-U",

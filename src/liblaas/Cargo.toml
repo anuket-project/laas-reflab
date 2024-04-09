@@ -4,35 +4,19 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-serde = "*"      # serde_derive misbehaves when reexported
-serde_with = "*"
+axum-macros = { workspace = true }
+axum-extra = { workspace = true }
+axum = { workspace = true }
+serde = { workspace = true }
+serde_with = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
 
-tracing = "*"
-thiserror = "*"
-strum = "0.24.1"
-strum_macros = "0.24.3"
-
-axum-macros = "*"                                            # also misbehaves
-axum-extra = "*"                                             # avoid misbehavior
-axum = { version = "0.6.1", features = ["http2", "macros"] } # avoid misbehavior
-
-[dependencies.common]
-path = "../common/"
-
-[dependencies.tascii]
-path = "../tascii/"
-
-[dependencies.models]
-path = "../models/"
-
-[dependencies.workflows]
-path = "../workflows/"
-
-[dependencies.llid]
-path = "../llid/"
-
-[dependencies.users]
-path = "../users/"
-
-[dependencies.notifications]
-path = "../notifications/"
+# local workspaces
+common = { path = "../common/" }
+tascii = { path = "../tascii/" }
+models = { path = "../models/" }
+workflows = { path = "../workflows/" }
+llid = { path = "../llid/" }
+users = { path = "../users/" }
+notifications = { path = "../notifications/" }
