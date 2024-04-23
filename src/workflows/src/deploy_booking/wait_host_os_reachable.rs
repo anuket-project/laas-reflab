@@ -61,9 +61,7 @@ impl AsyncRunnable for WaitHostOSReachable {
             tracing::info!("Host {hostname} wasn't reachable yet, retrying...");
         }
 
-        Err(tascii::prelude::TaskError::Reason(format!(
-            "waiting for host to be reachable timed out"
-        )))
+        Err(tascii::prelude::TaskError::Reason("waiting for host to be reachable timed out".to_string()))
     }
 
     fn variable_timeout(&self) -> Duration {

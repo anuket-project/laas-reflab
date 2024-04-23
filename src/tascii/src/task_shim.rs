@@ -2,11 +2,7 @@
 //! SPDX-License-Identifier: MIT
 
 use std::{
-    any::type_name,
-    collections::HashMap,
-    panic::AssertUnwindSafe,
-    sync::OnceLock,
-    time::Duration,
+    any::type_name, collections::HashMap, panic::AssertUnwindSafe, sync::OnceLock, time::Duration,
 };
 
 use dal::ID;
@@ -16,12 +12,13 @@ use std::sync::Arc;
 use tracing::{debug, info};
 
 use crate::{
+    executors,
     oneshot::{OneShot, OneShotRegistry, SimpleOneshotHandle, StrongUntypedOneshotHandle},
     runtime::Runtime,
-    executors,
-    task_trait::{AsyncRunnable, TaskIdentifier, TaskMarker, TaskSafe},
+    scheduler,
     task_runtime::TaskState,
-    workflows::{Context, TaskError}, scheduler,
+    task_trait::{AsyncRunnable, TaskIdentifier, TaskMarker, TaskSafe},
+    workflows::{Context, TaskError},
 };
 
 #[derive(Debug)]
@@ -82,7 +79,8 @@ pub(crate) trait DynRunnable: Send + std::fmt::Debug + Sync {
 }
 
 impl<R> DynRunnable for DynRunnableShim<R>
-where R: AsyncRunnable
+where
+    R: AsyncRunnable,
 {
     fn run(
         &mut self,
@@ -234,7 +232,6 @@ where R: AsyncRunnable
     fn unmarshal(&self, h: SimpleOneshotHandle) -> StrongUntypedOneshotHandle {
         tracing::debug!("Unmarshalls a task of type {}", self.summarize(ID::nil()));
         executors::spawn_on_tascii_tokio("oneshot", async move {
-            let h = h;
             OneShotRegistry::get_as_any::<Result<R::Output, TaskError>>(h.id).await
         })
     }
@@ -325,7 +322,9 @@ pub struct SerializedTask {
 
 impl<'de> Deserialize<'de> for RunnableHandle {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where D: serde::Deserializer<'de> {
+    where
+        D: serde::Deserializer<'de>,
+    {
         let st = SerializedTask::deserialize(deserializer)?;
 
         let tm = collect_tasks()
@@ -341,7 +340,9 @@ impl<'de> Deserialize<'de> for RunnableHandle {
 
 impl Serialize for RunnableHandle {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where S: serde::Serializer {
+    where
+        S: serde::Serializer,
+    {
         let tm = collect_tasks()
             .get(&self.task.identifier())
             .cloned()

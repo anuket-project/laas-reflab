@@ -1,0 +1,4 @@
+services:
+  liblaas:
+    ports:
+      - "${LAAS_PORT}:${LAAS_PORT}"

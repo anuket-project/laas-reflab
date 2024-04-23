@@ -24,7 +24,7 @@ where Module: ModuleInitializer
 /// the (basically) Box<dyn IntoPy<Py<PyAny>>> that this tries to do
 /// here
 pub trait DynIntoPy {
-    fn into_py<'py>(&mut self, py: Python<'py>) -> Py<PyAny>;
+    fn into_py(&mut self, py: Python<'_>) -> Py<PyAny>;
 }
 
 struct DynIntoPyHolder<T>
@@ -36,7 +36,7 @@ where T: IntoPy<Py<PyAny>>
 impl<T> DynIntoPy for DynIntoPyHolder<T>
 where T: IntoPy<Py<PyAny>>
 {
-    fn into_py<'py>(&mut self, py: Python<'py>) -> Py<PyAny> {
+    fn into_py(&mut self, py: Python<'_>) -> Py<PyAny> {
         //self.content.into_py(py)
         self.content.take().unwrap().into_py(py)
     }
@@ -61,7 +61,7 @@ where Module: ModuleInitializer
             func: s.into(),
             args: Vec::new(),
             kwargs: HashMap::new(),
-            base: PhantomData::default(),
+            base: PhantomData,
         }
     }
 
@@ -97,7 +97,7 @@ where Module: ModuleInitializer
                 .collect();
             let res = Module::init(py).call_method(psn, args, Some(kwargs.into_py_dict(py)));
 
-            res.map(|pa| extractor(pa))
+            res.map(extractor)
         });
 
         o

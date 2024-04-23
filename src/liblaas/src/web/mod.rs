@@ -1,10 +1,10 @@
-//! Copyright (c) 2023 University of New Hampshire
-//! SPDX-License-Identifier: MIT
+// Copyright (c) 2023 University of New Hampshire
+// SPDX-License-Identifier: MIT
 
 use common::prelude::*;
 
 use aide::transform::TransformOpenApi;
-use axum::{extract::Json, http::StatusCode, Extension};
+use axum::{extract::Json, http::StatusCode, Extension, ServiceExt};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -24,6 +24,7 @@ pub mod api;
 pub mod booking;
 mod docs;
 mod flavor;
+mod metrics;
 pub mod template;
 pub mod users;
 
@@ -68,6 +69,7 @@ pub async fn entry(rt: &'static Runtime) {
         .nest_api_service("/template", template::routes(state.clone()))
         .nest_api_service("/user", users::routes(state.clone()))
         .nest_api_service("/docs", docs_routes(state.clone()))
+        .nest_api_service("/metrics", metrics::routes(state.clone()))
         .finish_api_with(&mut api, api_docs)
         .layer(Extension(Arc::new(api)))
         .with_state(state);

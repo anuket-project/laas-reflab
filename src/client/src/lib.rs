@@ -1012,6 +1012,28 @@ async fn overrides(mut session: &Server, tascii_rt: &'static Runtime) -> Result<
                 panic!()
             };
 
+            let lifecycle_state = agg.get(&mut transaction).await.unwrap().into_inner().state;
+
+            match lifecycle_state {
+                LifeCycleState::New => {
+                    let _ = writeln!(session, "Cannot rerun host deployment while aggregate is still provisioning!");
+                    return Ok(());
+                },
+                _ => {},
+            }
+
+            // Don't need to actually process this vec, just check the length. If its 0, then theres no active allocation. If its 1, there is an active allocation and we can continue. If > 1, something is seriously wrong
+            let allocation = Allocation::find_for_aggregate_and_host(&mut transaction, agg, host_id, false).await?;
+
+            if allocation.len() == 0 {
+                let _ = writeln!(session, "No active allocation for {:?} and {:?} found! Cannot rerun.", &host_id, &agg);
+                return Ok(());
+            }
+
+            if allocation.len() > 1 {
+                let _ = writeln!(session, "Multiple active allocations for {:?} and {:?} found! Refusing to rerun.", &host_id, &agg);
+                return Ok(());
+            }
             areyousure(session)?;
 
             let task = DeployHost {

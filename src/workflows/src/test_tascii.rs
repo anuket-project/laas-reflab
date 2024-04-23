@@ -60,7 +60,7 @@ impl Runnable for Waiter {
     }
 
     fn summarize(&self, _id: models::dal::ID) -> String {
-        format!("dfsjl")
+        "dfsjl".to_string()
     }
 }
 
@@ -90,7 +90,7 @@ impl Runnable for Printer {
     }
 
     fn summarize(&self, _id: models::dal::ID) -> String {
-        format!("jfalsdfk")
+        "jfalsdfk".to_string()
     }
 }
 

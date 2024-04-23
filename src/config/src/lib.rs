@@ -23,25 +23,21 @@ pub struct LibLaaSConfig {
     pub cobbler: CobblerConfig,
     pub ipa: IPAConfig,
     pub projects: HashMap<String, ProjectConfig>,
-
+    #[serde(default)]
+    pub metrics: Option<MetricsConfig>,
     #[serde(default)]
     pub logging: LoggingConfig,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub enum LoggingLevel {
     ERROR,
     WARN,
+    #[default]
     INFO,
     DEBUG,
     TRACE,
     OFF,
-}
-
-impl std::default::Default for LoggingLevel {
-    fn default() -> Self {
-        Self::INFO
-    }
 }
 
 impl<'de> Deserialize<'de> for LoggingLevel {
@@ -154,6 +150,14 @@ pub struct IPAConfig {
     pub password: String,
     pub certificate_path: PathBuf,
 }
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct MetricsConfig {
+    pub max_failover: u8,
+    pub client_retries: u8,
+    pub url: String,
+}
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct ProjectConfig {
     pub vpn: VPNConfig,

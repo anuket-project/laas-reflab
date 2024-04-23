@@ -25,3 +25,4 @@ llid = { path = "../llid/" }
 users = { path = "../users/" }
 config = { path = "../config/" }
 common = { path = "../common/" }
+metrics = { path = "../metrics/" }

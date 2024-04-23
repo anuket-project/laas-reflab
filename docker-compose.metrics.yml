@@ -1,0 +1,72 @@
+services:
+  influxdb:
+    image: influxdb:latest
+    restart: always
+    container_name: influxdb
+    ports:
+      - "${INFLUXDB_PORT}:8086"
+    volumes:
+      - ./influx:/var/lib/influxdb2
+      - .influxdb2:/etc/influxdb2
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=${INFLUXDB_INIT_USERNAME}
+      - DOCKER_INFLUXDB_INIT_PASSWORD=${INFLUXDB_INIT_PASSWORD}
+      - DOCKER_INFLUXDB_INIT_ORG=${INFLUXDB_INIT_ORG}
+      - DOCKER_INFLUXDB_INIT_BUCKET=${INFLUXDB_INIT_BUCKET}
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=${INFLUXDB_INIT_ADMIN_TOKEN} 
+    networks:
+      - laasctl_network
+  influxdb-backup:
+    build:
+      context: ./influxdb_backup 
+    container_name: influxdb-backup
+    volumes:
+      - ./influx_backups:/backups
+    environment:
+      - INFLUX_TOKEN=${INFLUXDB_INIT_ADMIN_TOKEN}
+      - INFLUX_HOST=http://influxdb:8086
+      - INFLUX_ORG=${INFLUXDB_INIT_ORG}
+      - INFLUXDB_INIT_BUCKET
+    depends_on:
+      - influxdb
+    networks:
+      - laasctl_network
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "${GRAFANA_PORT}:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+    volumes:
+      - ./grafana:/var/lib/grafana
+    # THIS IS USER THAT WILL ATTEMPT TO ACCESS ./grafana, APPROPRIATE PERMISSIONS MUST BE SET OR THE CONTAINER WILL FAIL.
+    # YOU MUST COMPLETELY RESTART THE CONTAINER FOR CHANGES TO TAKE EFFECT.
+    user: '$USERID'
+    networks:
+      - laasctl_network
+    depends_on:
+      - influxdb
+  telegraf:
+    image: telegraf
+    container_name: telegraf
+    restart: always
+    environment:
+      - TELEGRAF_PORT
+      - TELEGRAF_TOKEN=${INFLUXDB_INIT_ADMIN_TOKEN}
+      - INFLUXDB_PORT
+      - INFLUXDB_INIT_ORG
+      - INFLUXDB_INIT_BUCKET
+    ports:
+      - "${TELEGRAF_PORT}:${TELEGRAF_PORT}"
+    volumes:
+      - ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf
+    networks:
+      - laasctl_network
+    depends_on:
+      - influxdb
+
+
+

@@ -132,7 +132,7 @@ pub async fn nx_run_network_task(nc: NetworkConfig) {
             if let Some(sp) = hp.switchport {
                 let sp = sp.get(&mut transaction).await.unwrap();
                 // As all hostports must be connected to the same cisco switch we can safely return without doing anything if any hostport is connected to an edgecore
-                if sp.for_switch.get(&mut transaction).await.unwrap().switch_os.unwrap().get(&mut transaction).await.expect("Expected to get OS").os_type != "NXOS".to_string() {
+                if sp.for_switch.get(&mut transaction).await.unwrap().switch_os.unwrap().get(&mut transaction).await.expect("Expected to get OS").os_type != *"NXOS" {
                     return;
                 }
 

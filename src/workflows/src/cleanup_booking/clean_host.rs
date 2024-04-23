@@ -11,8 +11,7 @@ use tascii::prelude::*;
 
 use crate::{
     deploy_booking::{
-        configure_networking::ConfigureNetworking,
-        deploy_host::{empty_network_config},
+        configure_networking::ConfigureNetworking, net_config::empty_network_config,
         set_host_power_state::SetPower,
     },
     resource_management::ipmi_accounts::DeleteIPMIAccount,

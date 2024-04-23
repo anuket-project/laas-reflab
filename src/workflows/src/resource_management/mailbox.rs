@@ -190,6 +190,12 @@ impl std::ops::Drop for MailboxMessageReceiver {
     }
 }
 
+impl Default for Mailbox {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Mailbox {
     pub fn new() -> Self {
         Self {
@@ -231,7 +237,7 @@ impl Mailbox {
         //so it can notify waits for the prior endpoint
         let endpoint = Endpoint::from_parts(instance, llid);
         info!("Created endpoint");
-        mailbox.messages.insert(endpoint.clone(), VecDeque::new());
+        mailbox.messages.insert(endpoint, VecDeque::new());
         let msg = Message {
             id: ID::new(),
             expired: false,
@@ -329,13 +335,13 @@ impl Mailbox {
             .1
             .clone();
 
-        let mbr = MailboxMessageReceiver {
+        
+
+        MailboxMessageReceiver {
             recv: r,
             for_endpoint: endpoint,
             received: Vec::new(),
-        };
-
-        mbr
+        }
     }
 
     pub fn endpoint_for(inst: FKey<Instance>) -> MailboxMessageReceiver {

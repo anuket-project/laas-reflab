@@ -5,28 +5,16 @@ use common::prelude::*;
 
 use chrono::Utc;
 use common::prelude::chrono::Days;
+use metrics::prelude::*;
 use models::{
-    dal::{
-        new_client,
-        AsEasyTransaction,
-        EasyTransaction,
-        FKey,
-        NewRow,
-    },
+    dal::{new_client, AsEasyTransaction, EasyTransaction, FKey, NewRow},
     dashboard,
     dashboard::{
-        Aggregate,
-        AggregateConfiguration,
-        BookingMetadata,
-        HostConfig,
-        Instance,
-        InstanceProvData,
-        NetworkAssignmentMap,
-        ProvEvent,
-        StatusSentiment,
-    }, inventory::Lab,
+        Aggregate, AggregateConfiguration, BookingMetadata, HostConfig, Instance, InstanceProvData,
+        NetworkAssignmentMap, ProvEvent, StatusSentiment,
+    },
+    inventory::Lab,
 };
-
 
 use models::allocation::{self, *};
 
@@ -37,7 +25,6 @@ use workflows::resource_management::{
 }; //, ResourceHandle, AggregateID, ResourceHandleInner};
 
 use axum::extract::Json;
-
 
 use workflows::entry::*;
 
@@ -69,9 +56,35 @@ pub async fn make_aggregate(
         )))?;
 
     let now = Utc::now();
+
+    let booking = BookingMetric {
+        booking_length_days: blob.metadata.length.unwrap_or_default() as i32,
+        num_hosts: template.hosts.len() as i32,
+        // This is because the owner is also in the allowed_users list
+        num_collaborators: blob.allowed_users.len() as i32 - 1,
+        // Option type requires unwrapping
+        owner: blob.metadata.owner.clone().unwrap_or("None".to_string()),
+        project: blob.metadata.project.clone().unwrap_or("None".to_string()),
+        // defaults to current time.
+        ..Default::default()
+    };
+
+    match MetricHandler::send(booking) {
+        Ok(_) => {
+            tracing::info!("Sent booking metric");
+        }
+        Err(e) => {
+            tracing::error!("Failed to send booking metric with error {}", e)
+        }
+    }
+
     let agg = NewRow::new(Aggregate {
         state: dashboard::LifeCycleState::New,
-        lab: Lab::get_by_name(&mut transaction, blob.origin.clone()).await.expect("Expected to find lab").expect("Expected lab to exist").id,
+        lab: Lab::get_by_name(&mut transaction, blob.origin.clone())
+            .await
+            .expect("Expected to find lab")
+            .expect("Expected lab to exist")
+            .id,
         id: FKey::new_id_dangling(),
         users: blob.allowed_users,
         vlans: netmap,
@@ -144,8 +157,8 @@ pub async fn make_aggregate(
     }
 
     allocator
-    .allocate_vlans_for(&mut transaction, agg.id, template.networks.clone(), netmap)
-    .await?;
+        .allocate_vlans_for(&mut transaction, agg.id, template.networks.clone(), netmap)
+        .await?;
 
     for host_config in template.hosts.clone() {
         // create instance from config

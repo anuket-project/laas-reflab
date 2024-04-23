@@ -3,7 +3,7 @@
 
 use config::{settings, Situation};
 use models::{
-    dal::{new_client, AsEasyTransaction, FKey, ID},
+    dal::{new_client, AsEasyTransaction, FKey},
     dashboard::Aggregate,
 };
 use notifications::{booking_ended, booking_ending, booking_started, BookingInfo, Env};
@@ -40,9 +40,7 @@ impl AsyncRunnable for Notify {
             owner: agg.metadata.owner.clone().unwrap_or("None".to_owned()),
             collaborators: agg
             .users
-            .iter()
-            .cloned()
-            .filter(|username| *username != agg.metadata.owner.as_deref().unwrap_or_default())
+            .iter().filter(|&username| *username != agg.metadata.owner.as_deref().unwrap_or_default()).cloned()
             .collect(),
             lab: agg.metadata.lab.clone().unwrap_or("None".to_owned()),
             id: agg.metadata.booking_id.clone().unwrap_or("None".to_owned()),
@@ -56,7 +54,7 @@ impl AsyncRunnable for Notify {
             purpose: agg.metadata.purpose.clone().unwrap_or("None".to_owned()),
             start_date: agg.metadata.start,
             end_date: agg.metadata.end,
-            dashboard_url: match Some(agg.lab.clone()) {
+            dashboard_url: match Some(agg.lab) {
                 Some(p) => settings()
                     .projects
                     .get(p.get(&mut transaction).await.expect("Expected to find lab").name.clone().as_str())

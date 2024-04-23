@@ -51,6 +51,12 @@ pub struct Aggregate {
     pub lab: FKey<Lab>,
 }
 
+impl std::fmt::Display for Aggregate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.id.into_id())
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LifeCycleState {
     New,    // signals this booking has not yet been fully provisioned

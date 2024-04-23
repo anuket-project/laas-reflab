@@ -303,6 +303,29 @@ impl Allocation {
         let rows = t.query(&q, &[&Some(agg)]).await.anyway()?;
         Self::from_rows(rows)
     }
+
+    /// selects for the given aggregate and host
+    pub async fn find_for_aggregate_and_host(
+        t: &mut EasyTransaction<'_>,
+        agg: FKey<Aggregate>,
+        host: FKey<Host>,
+        completed: bool
+    ) -> Result<Vec<ExistingRow<Allocation>>, anyhow::Error> {
+        let allocation_tn = Self::table_name();
+        let rh_tn = ResourceHandle::table_name();
+
+        let rh_id = format!("select {rh_tn}.id from {rh_tn} where tracks_resource = $2");
+        let is_null = match completed {
+            true => "is null",
+            false => "is not null",
+        };
+
+        let q = format!("select * from {allocation_tn} where for_aggregate = $1 and ended {is_null} and for_resource = ({rh_id})");
+        
+        let rows = t.query(&q, &[&agg, &host]).await.anyway()?;
+
+        Allocation::from_rows(rows)
+    }
 }
 
 /// This struct is intentionally not constructable outside this module,

@@ -3,7 +3,7 @@
 
 use common::prelude::tracing;
 use models::{
-    dal::{FKey, ID},
+    dal::{FKey},
     inventory::Host,
 };
 use serde::{Deserialize, Serialize};
