@@ -1,18 +1,13 @@
-version: '3'
+version: "3"
 services:
   liblaas:
-    depends_on: 
+    build: .
+    depends_on:
       - db
-    volumes:
-      - config_data:/usr/src/liblaas/config_data
     networks:
       - laasctl_network
     ports:
-      - target: 3001
-        published: 3001
-        protocol: tcp
-        mode: host
-
+      - "${LAAS_MAILBOX_PORT}:${LAAS_MAILBOX_PORT}"
   db:
     image: postgres
     restart: always
@@ -24,7 +19,6 @@ services:
       - pgdata:/var/lib/postgresql/data
     networks:
       - laasctl_network
-
 volumes:
   pgdata:
   config_data:

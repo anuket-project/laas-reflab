@@ -5,7 +5,6 @@ use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
     mem::swap,
-    net::{IpAddr, Ipv4Addr, Ipv6Addr},
     sync::atomic::{AtomicBool, AtomicU32},
     time::Duration,
 };
@@ -16,6 +15,7 @@ pub mod cobbler_set_config;
 pub mod cobbler_start_provision;
 pub mod configure_networking;
 pub mod deploy_host;
+pub mod net_config;
 pub mod notify;
 pub mod reachable;
 pub mod set_boot;
@@ -33,18 +33,8 @@ use models::{
     allocation::{AllocationReason, ResourceHandle, ResourceHandleInner},
     dal::{new_client, FKey, NewRow},
     dashboard::{
-        self,
-        Aggregate,
-        BondGroupConfig,
-        BookingMetadata,
-        EasyLog,
-        HostConfig,
-        Instance,
-        LifeCycleState,
-        Network,
-        NetworkAssignmentMap,
-        StatusSentiment,
-        Template,
+        self, Aggregate, BondGroupConfig, BookingMetadata, EasyLog, HostConfig, Instance,
+        LifeCycleState, Network, NetworkAssignmentMap, StatusSentiment, Template,
         VlanConnectionConfig,
     },
     inventory::{Flavor, Host, IPInfo, IPNetwork, Vlan},
@@ -109,7 +99,13 @@ impl AsyncRunnable for BookingTask {
 
         // now need to set up things like vpn, notify booking done, etc
         // give each user a VPN token
-        let project = agg.lab.get(&mut transaction).await.expect("Expected to get lab").name.clone();
+        let project = agg
+            .lab
+            .get(&mut transaction)
+            .await
+            .expect("Expected to get lab")
+            .name
+            .clone();
         tracing::info!("Processing a booking for project {project}");
         for user in agg.users.clone() {
             tracing::info!("Adding user {user} to have vpn access");
@@ -140,7 +136,7 @@ impl AsyncRunnable for BookingTask {
 
         tracing::info!("VPN config succeeded, hosts have all provisioned, now notify users their booking is done");
 
-        if results.iter().find(|one| one.is_err()).is_none() {
+        if !results.iter().any(|one| one.is_err()) {
             // notify booking done, since everything is committed and saved
             let notify = context.spawn(Notify {
                 aggregate: self.aggregate_id,
@@ -175,7 +171,9 @@ impl AsyncRunnable for BookingTask {
 
             transaction.commit().await.unwrap();
 
-            Err(TaskError::Reason(format!("Failed to provision some host")))
+            Err(TaskError::Reason(
+                "Failed to provision some host".to_string(),
+            ))
         }
     }
 
@@ -245,7 +243,7 @@ impl AsyncRunnable for AllocateHostTask {
                 self.instance
                     .log(
                         "Allocation Failed",
-                        format!("No resource was presently available to perform this role"),
+                        "No resource was presently available to perform this role".to_string(),
                         StatusSentiment::degraded,
                     )
                     .await;
@@ -442,9 +440,9 @@ impl AsyncRunnable for SingleHostDeploy {
             )
             .await;
 
-        return Err(TaskError::Reason(
+        Err(TaskError::Reason(
             "failed to provision too many times".to_owned(),
-        ));
+        ))
     }
 
     fn identifier() -> TaskIdentifier {
@@ -491,7 +489,11 @@ async fn mark_not_working(hosts: Vec<ResourceHandle>, original_agg: FKey<Aggrega
     let mut client = new_client().await.unwrap();
     let mut transaction = client.easy_transaction().await.unwrap();
     let allocator = allocator::Allocator::instance();
-    let lab = original_agg.get(&mut transaction).await.expect("Expected to get original aggregate").lab;
+    let lab = original_agg
+        .get(&mut transaction)
+        .await
+        .expect("Expected to get original aggregate")
+        .lab;
 
     if !hosts.is_empty() {
         let agg = Aggregate {
@@ -533,7 +535,10 @@ async fn mark_not_working(hosts: Vec<ResourceHandle>, original_agg: FKey<Aggrega
             lab,
         };
 
-        let agg_id = NewRow::new(agg).insert(&mut transaction).await.unwrap();
+        let agg_id = NewRow::new(agg.clone())
+            .insert(&mut transaction)
+            .await
+            .unwrap();
 
         let mut host_names = Vec::new();
 
@@ -574,9 +579,9 @@ async fn mark_not_working(hosts: Vec<ResourceHandle>, original_agg: FKey<Aggrega
         transaction.commit().await.unwrap();
 
         send_to_admins(format!(
-            "Hosts failed to provision, added to notworking agg.
-            Notworking agg ID is {agg_id:?},
-            Hosts added to it are {host_names:?}"
+            "Host(s) {} failed to provision. Added to maintenance booking, Aggregate ID is {}",
+            host_names.join(", "),
+            agg,
         ))
         .await;
     }
@@ -702,22 +707,22 @@ async fn ci_serialize_users(
 }
 
 async fn render_nmcli_commands(
-    mut transaction: &mut EasyTransaction<'_>,
+    transaction: &mut EasyTransaction<'_>,
     conf: HostConfig,
     nm: NetworkAssignmentMap,
     host_id: FKey<Host>,
     aggregate_id: FKey<Aggregate>,
 ) -> Vec<String> {
-    let host = host_id.get(&mut transaction).await.unwrap();
-    let _aggregate = aggregate_id.get(&mut transaction).await.unwrap();
+    let host = host_id.get(transaction).await.unwrap();
+    let _aggregate = aggregate_id.get(transaction).await.unwrap();
 
     let connections = conf.connections.clone();
 
     let mut sync_nm = HashMap::new();
 
     for (n, vl) in nm.networks.iter() {
-        let vl = vl.get(&mut transaction).await.unwrap().into_inner();
-        let net = n.get(&mut transaction).await.unwrap().into_inner();
+        let vl = vl.get(transaction).await.unwrap().into_inner();
+        let net = n.get(transaction).await.unwrap().into_inner();
         sync_nm.insert(n, (net, vl));
     }
 
@@ -784,16 +789,15 @@ async fn render_nmcli_commands(
 
     default_iface_candidates.sort();
 
-    let created_default_interface = AtomicBool::new(false);
+    let _created_default_interface = AtomicBool::new(false);
 
     // take care of hostname setting so `sudo` doesn't take forever:
-    let hostname = &conf.hostname;
+    let _hostname = &conf.hostname;
     let host_ident = host.server_name.clone();
 
-    let public_config = |cfg: Option<IPNetwork>, interface: &str| {
+    let public_config = |cfg: Option<IPNetwork>, _interface: &str| {
         let cfg = cfg.unwrap_or(IPNetwork { v4: None, v6: None });
         let v4 = if let Some(v) = cfg.v4 {
-
             let IPInfo {
                 subnet: _,
                 netmask: _,
@@ -814,13 +818,13 @@ async fn render_nmcli_commands(
                 todo!("manual address assignment")
             }
         } else {
-            format!("ipv4.method disabled")
+            "ipv4.method disabled".to_string()
         };
 
         let v6 = if let Some(_v) = cfg.v6 {
             todo!("ipv6 support")
         } else {
-            format!("ipv6.method disabled")
+            "ipv6.method disabled".to_string()
         };
 
         format!("{v4} {v6}")
@@ -957,8 +961,8 @@ async fn render_nmcli_commands(
                 // make a bridge for the vlan iface to live under
                 let br_vif_id = next_vif_id();
 
-                let br_ifname = format!("br{br_vif_id}");
-                let br_nmid = format!("tagged-{}-{}.{}", b, net.name, vlan.vlan_id);
+                let _br_ifname = format!("br{br_vif_id}");
+                let _br_nmid = format!("tagged-{}-{}.{}", b, net.name, vlan.vlan_id);
 
                 /*command(format!(
                     "nmcli con add type bridge connection.id {br_nmid} \
@@ -967,7 +971,7 @@ async fn render_nmcli_commands(
 
                 let pc = public_config(vlan.public_config.clone(), &name);
 
-                let vlan_nmid = render_vlan(&tagged_vl, &vlan, &net, &name, &short_name);
+                let vlan_nmid = render_vlan(&tagged_vl, vlan, net, &name, &short_name);
 
                 command(format!("nmcli con mod {vlan_nmid} {pc}"));
             }
@@ -982,13 +986,13 @@ async fn render_nmcli_commands(
         command(format!("nmcli con del {pn}"));
     }
 
-    command(format!("sleep 10"));
+    command("sleep 10".to_string());
 
     // clear entire routing table
-    command(format!("ip route flush default"));
-    command(format!("ip route flush 0/0"));
+    command("ip route flush default".to_string());
+    command("ip route flush 0/0".to_string());
 
-    command(format!("sleep 5"));
+    command("sleep 5".to_string());
 
     // emit vdev configuration commands
     for bg in connections.iter() {
@@ -996,17 +1000,17 @@ async fn render_nmcli_commands(
     }
 
     // initial try bringup, gets everything mostly in place
-    command(format!("systemctl restart NetworkManager"));
+    command("systemctl restart NetworkManager".to_string());
 
-    command(format!("sleep 10"));
+    command("sleep 10".to_string());
 
     // flush the defroutes that got created during the initial apply (these do not persist)
-    command(format!("ip route flush default"));
+    command("ip route flush default".to_string());
 
-    command(format!("sleep 5"));
+    command("sleep 5".to_string());
 
     // re-apply the necessary defroutes
-    command(format!("systemctl restart NetworkManager"));
+    command("systemctl restart NetworkManager".to_string());
 
     commands.into_inner()
 }
@@ -1016,17 +1020,26 @@ fn val<V: Serialize>(v: V) -> serde_yaml::Value {
 }
 
 async fn ci_serialize_netconf(
-    mut transaction: &mut EasyTransaction<'_>,
+    transaction: &mut EasyTransaction<'_>,
     conf: HostConfig,
     nm: NetworkAssignmentMap,
     host_id: FKey<Host>,
     aggregate_id: FKey<Aggregate>,
 ) -> Value {
     // Generate network configs
-    let host = host_id.get(&mut transaction).await.unwrap();
-    let aggregate = aggregate_id.get(&mut transaction).await.unwrap();
-    let project = aggregate.lab.clone();
-    let project_config = config::settings().projects.get(&project.get(&mut transaction).await.expect("Expected to find agg").name).expect("no matching project for aggregate");
+    let host = host_id.get(transaction).await.unwrap();
+    let aggregate = aggregate_id.get(transaction).await.unwrap();
+    let project = aggregate.lab;
+    let project_config = config::settings()
+        .projects
+        .get(
+            &project
+                .get(transaction)
+                .await
+                .expect("Expected to find agg")
+                .name,
+        )
+        .expect("no matching project for aggregate");
     let search_domains = project_config.search_domains.clone();
     let nameservers = project_config.nameservers.clone();
 
@@ -1040,8 +1053,8 @@ async fn ci_serialize_netconf(
     let mut sync_nm = HashMap::new();
 
     for (n, vl) in nm.networks.iter() {
-        let vl = vl.get(&mut transaction).await.unwrap().into_inner();
-        let net = n.get(&mut transaction).await.unwrap().into_inner();
+        let vl = vl.get(transaction).await.unwrap().into_inner();
+        let net = n.get(transaction).await.unwrap().into_inner();
         sync_nm.insert(n, (net, vl));
     }
 
@@ -1084,7 +1097,7 @@ async fn ci_serialize_netconf(
 
             // TODO: we could actually do static IP assignment instead
             // of relying on DHCP here, eval whether this would be desired
-            let _public_config = match vlan.public_config {
+            match vlan.public_config {
                 Some(cfg) => {
                     if let Some(cfgv4) = cfg.v4 {
                         let IPInfo {
@@ -1095,10 +1108,13 @@ async fn ci_serialize_netconf(
                         } = cfgv4;
                         config.insert(val("dhcp4"), val(provides_dhcp));
                         //config.insert(val("gateway4"), val(gateway.unwrap()));
-                        config.insert(val("nameservers"), val(hashmap! {
-                            val("search") => val(search_domains.clone()),
-                            val("addresses") => val(nameservers.clone()),
-                        }));
+                        config.insert(
+                            val("nameservers"),
+                            val(hashmap! {
+                                val("search") => val(search_domains.clone()),
+                                val("addresses") => val(nameservers.clone()),
+                            }),
+                        );
                     } else {
                         info!("No v4 config for {vlan_conn_cfg:?}");
                     }
@@ -1288,31 +1304,33 @@ async fn ci_serialize_runcmds(
     // command(val(format!("echo 'tried to run dhclient'")));
 
     let base_host = url::Url::parse(&config::settings().mailbox.external_url).ok();
-    if let Some(v) = base_host.as_ref().map(|v| v.host()).flatten() {
+    if let Some(v) = base_host.as_ref().and_then(|v| v.host()) {
         tracing::info!("Going to hit host at to check up {v}");
         command(val(format!("while ! ping -c 1 -W 1 {v}; do echo 'waiting for networking to come up before installing packages' && sleep 10; done")));
     }
 
     // on ubuntu, we need to install NetworkManager first
     if let ImageVariant::Ubuntu = variant {
-        command(val(format!("echo 'Running apt -y update'")));
-        command(val(format!("sleep 2")));
+        command(val("echo 'Running apt -y update'".to_string()));
+        command(val("sleep 2".to_string()));
         command(val("sudo apt -y update"));
 
         // command(val(format!("echo 'Running apt -y upgrade'")));
         // command(val(format!("sleep 2")));
         // command(val("sudo apt -y upgrade"));
 
-        command(val(format!("echo 'Running apt -y --fix-missing install network-manager'")));
-        command(val(format!("sleep 2")));
+        command(val(
+            "echo 'Running apt -y --fix-missing install network-manager'".to_string(),
+        ));
+        command(val("sleep 2".to_string()));
         command(val("sudo apt -y --fix-missing install network-manager"));
 
-        command(val(format!("echo 'Verifying nmcli install...'")));
-        command(val(format!("nmcli --version")));
-        command(val(format!("sleep 2")));
+        command(val("echo 'Verifying nmcli install...'".to_string()));
+        command(val("nmcli --version".to_string()));
+        command(val("sleep 2".to_string()));
 
-        command(val(format!("echo 'Running apt -y install curl'")));
-        command(val(format!("sleep 2")));
+        command(val("echo 'Running apt -y install curl'".to_string()));
+        command(val("sleep 2".to_string()));
         command(val("sudo apt -y install curl || true"));
     }
 
@@ -1338,19 +1356,19 @@ async fn ci_serialize_runcmds(
 
     // now go dark
     if let ImageVariant::Ubuntu = variant {
-        command(val(format!("echo 'Going dark...'")));
-        command(val(format!("sleep 3")));
+        command(val("echo 'Going dark...'".to_string()));
+        command(val("sleep 3".to_string()));
         command(val("sudo systemctl disable systemd-networkd || true"));
         command(val("sudo systemctl stop systemd-networkd || true"));
         command(val("sudo rm -rf /etc/netplan || true"));
     }
 
-    command(val(format!("echo 'Killing dhclient'")));
-    command(val(format!("sleep 5")));
+    command(val("echo 'Killing dhclient'".to_string()));
+    command(val("sleep 5".to_string()));
     command(val("sudo killall dhclient || true"));
 
-    command(val(format!("echo 'Attempting to start NetworkManager'")));
-    command(val(format!("sleep 5")));
+    command(val("echo 'Attempting to start NetworkManager'".to_string()));
+    command(val("sleep 5".to_string()));
     command(val("sudo systemctl enable NetworkManager || true"));
     command(val("sudo systemctl start NetworkManager || true"));
 
@@ -1358,40 +1376,38 @@ async fn ci_serialize_runcmds(
     command(val(format!("echo '127.0.0.1 {hostname}' >> /etc/hosts")));
 
     // clear out the existing configs from NM
-    command(val(format!(
-        r#"nmcli --terse --fields=name connection show | while read name; do nmcli connection delete "$name"; done || true"#
-    )));
+    command(val(r#"nmcli --terse --fields=name connection show | while read name; do nmcli connection delete "$name"; done || true"#.to_string()));
 
     // tell ubuntu we want to manage all interfaces
-    command(val(format!(
-        "touch /etc/NetworkManager/conf.d/10-globally-managed-devices.conf || true"
-    )));
+    command(val(
+        "touch /etc/NetworkManager/conf.d/10-globally-managed-devices.conf || true".to_string(),
+    ));
 
     if let ImageVariant::Ubuntu = variant {
         // fully turn off systemd-networkd
-        command(val(format!(
-            "systemctl stop systemd-networkd.socket systemd-networkd || true"
-        )));
+        command(val(
+            "systemctl stop systemd-networkd.socket systemd-networkd || true".to_string(),
+        ));
         /*command(val(format!(
             "networkd-dispatcher systemd-networkd-wait-online || true"
         )));*/
-        command(val(format!(
-            "systemctl disable systemd-networkd.socket systemd-networkd ||true"
-        )));
+        command(val(
+            "systemctl disable systemd-networkd.socket systemd-networkd ||true".to_string(),
+        ));
         /*command(val(format!(
             "networkd-dispatcher systemd-networkd-wait-online || true"
         )));*/
     }
 
     // disable the auto-default dev creation, configure other parts of NM
-    command(val(format!(
-        "rm -rf /etc/NetworkManager/NetworkManager.conf || true"
-    )));
+    command(val(
+        "rm -rf /etc/NetworkManager/NetworkManager.conf || true".to_string(),
+    ));
     let append = |file, content| {
         command(val(format!("echo '{content}' >> {file}")));
     };
 
-    for line in vec![
+    for line in [
         "[main]",
         "plugins=ifupdown,keyfile",
         "no-auto-default=*",
@@ -1402,7 +1418,7 @@ async fn ci_serialize_runcmds(
         append("/etc/NetworkManager/NetworkManager.conf", line);
     }
 
-    command(val(format!("systemctl restart NetworkManager")));
+    command(val("systemctl restart NetworkManager".to_string()));
 
     // now do platform-agnostic (ish) nmcli commands
     for cmd in render_nmcli_commands(transaction, conf, nm, host_id, aggregate_id).await {
@@ -1410,7 +1426,7 @@ async fn ci_serialize_runcmds(
     }
 
     // wait for networking to come up after that
-    if let Some(v) = base_host.as_ref().map(|v| v.host()).flatten() {
+    if let Some(v) = base_host.as_ref().and_then(|v| v.host()) {
         tracing::info!("Going to hit host at to check up {v}");
         command(val("sleep 30"));
         command(val(format!("while ! ping -c 1 -W 1 {v}; do echo 'waiting for networking to come up after configuring production networks' && sleep 10; done || true")));
@@ -1449,8 +1465,7 @@ fn ci_serialize_sysinfo(
     _host_id: FKey<Host>,
     _aggregate_id: FKey<Aggregate>,
 ) -> Value {
-    let m: HashMap<usize, Value> = hashmap! {
-    };
+    let m: HashMap<usize, Value> = hashmap! {};
 
     to_value(m).unwrap()
 }

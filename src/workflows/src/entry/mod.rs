@@ -64,7 +64,7 @@ impl Dispatcher {
         DISPATCH.set(s).expect("dispatcher was already initialized");
     }
 
-    pub fn handler(self, recv: Receiver<Action>) -> () {
+    pub fn handler(self, recv: Receiver<Action>) {
         while let Ok(v) = recv.recv() {
             match v {
                 Action::DeployBooking { agg_id } => {

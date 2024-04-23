@@ -292,7 +292,7 @@ async fn run_ilo_command(
     </RIBCL>"#
     );
 
-    let url = String::from(format!("http://{fqdn}/ribcl"));
+    let url = format!("http://{fqdn}/ribcl");
 
     let client = reqwest::Client::builder()
         .danger_accept_invalid_certs(true)
@@ -372,16 +372,16 @@ fn network_last_order(mut devices: Vec<BootDevice>) -> Vec<BootDevice> {
 fn xml_to_boot_device_list(xml: String) -> Result<Vec<BootDevice>, ()> {
     let mut devices: Vec<BootDevice> = Vec::new();
     tracing::info!("xml to boot device list: xml is {xml:?}");
-    let ribcl: RIBCL;
+    
     let res = from_str(&xml);
     tracing::info!("res is {res:?}");
-    match res {
-        Ok(r) => ribcl = r,
+    let ribcl: RIBCL = match res {
+        Ok(r) => r,
         Err(msg) => {
             tracing::warn!("Failed to get boot device list. Is host an HPE? {:?}", msg);
             return Err(());
         }
-    }
+    };
 
     for device in ribcl.PERSISTENT_BOOT.DEVICE {
         devices.push((device.value, device.DESCRIPTION));

@@ -1,9 +1,9 @@
 //! Copyright (c) 2023 University of New Hampshire
 //! SPDX-License-Identifier: MIT
 
-use common::prelude::macaddr;
 
-use macaddr::MacAddr6;
+
+
 use models::{
     dal::{DBTable, EasyTransaction, FKey},
     inventory,
@@ -30,6 +30,12 @@ impl std::fmt::Debug for NetworkConfig {
 
 pub struct NetworkConfigBuilder {
     based_on: NetworkConfig,
+}
+
+impl Default for NetworkConfigBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl NetworkConfigBuilder {
@@ -68,6 +74,12 @@ impl NetworkConfig {}
 pub struct BondGroup {
     pub member_host_ports: Vec<FKey<inventory::HostPort>>,
     pub vlans: Vec<VlanConnection>,
+}
+
+impl Default for BondGroup {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl BondGroup {
@@ -120,11 +132,10 @@ impl VlanConnection {
         Self {
             vlan: Vlan::select()
                 .where_field("vlan_id")
-                .equals(vlan_id as i16)
+                .equals(vlan_id)
                 .run(t)
                 .await
-                .expect("need at least the ipmi vlan, hardcode requirement")
-                .get(0)
+                .expect("need at least the ipmi vlan, hardcode requirement").first()
                 .unwrap()
                 .id,
             tagged,

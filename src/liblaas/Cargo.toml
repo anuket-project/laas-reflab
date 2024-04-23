@@ -8,6 +8,7 @@ axum-macros = { workspace = true }
 axum-extra = { workspace = true }
 axum = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 serde_with = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
@@ -15,6 +16,7 @@ tracing = { workspace = true }
 # local workspaces
 common = { path = "../common/" }
 tascii = { path = "../tascii/" }
+metrics = { path = "../metrics/" }
 models = { path = "../models/" }
 workflows = { path = "../workflows/" }
 llid = { path = "../llid/" }

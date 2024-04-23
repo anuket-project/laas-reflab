@@ -11,6 +11,11 @@ web:
   bind_addr: 0.0.0.0:3000
   external_url: http://tascii.example.com:3000
 
+metrics:
+  url: tcp://telegraf:8094
+  max_failover: 5
+  client_retries: 10
+
 mailbox:
   bind_addr: 0.0.0.0:3001
   external_url: http://tascii.example.com:3001

@@ -33,11 +33,11 @@ impl AsyncRunnable for WaitReachable {
                 .await;
 
             if let Ok(res) = res {
-                let stdout = String::from_utf8(res.stdout).unwrap_or(String::new());
+                let stdout = String::from_utf8(res.stdout).unwrap_or_default();
                 let responder: Option<String> = (|| {
                     let first = stdout.lines().next()?;
-                    let (_, rest) = first.split_once("(")?;
-                    let (ip, _) = rest.split_once(")")?;
+                    let (_, rest) = first.split_once('(')?;
+                    let (ip, _) = rest.split_once(')')?;
 
                     tracing::info!("Identified that host is reachable at {ip}");
 

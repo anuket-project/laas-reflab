@@ -140,7 +140,7 @@ impl Allocator {
                             ))
                         }
                     },
-                    Err(e) => {
+                    Err(_e) => {
                         return Err(anyhow::Error::msg("Error finding lab, unable to allocate"))
                     }
                 },
@@ -164,7 +164,7 @@ impl Allocator {
         .map(|v| v.into_inner());
 
         match res {
-            Ok(handle @ ResourceHandle { id, tracks, lab })
+            Ok(handle @ ResourceHandle { id: _, tracks, lab: _ })
                 if let ResourceHandleInner::Host(h) = tracks =>
             {
                 t.commit().await.map_err(|e| {
@@ -203,7 +203,7 @@ impl Allocator {
         let _lock = self.lock.lock().await;
         let mut t = t.easy_transaction().await?;
 
-        let lab = match ResourceHandle::handle_for_host(&mut t, host.clone()).await {
+        let lab = match ResourceHandle::handle_for_host(&mut t, host).await {
             Ok(res) => res.lab,
             Err(e) => return Err(e),
         };
@@ -220,7 +220,7 @@ impl Allocator {
         .map(|v| v.into_inner());
 
         match res {
-            Ok(handle @ ResourceHandle { id, tracks, lab })
+            Ok(handle @ ResourceHandle { id: _, tracks, lab: _ })
                 if let ResourceHandleInner::Host(h) = tracks =>
             {
                 t.commit().await.map_err(|e| {
@@ -264,7 +264,7 @@ impl Allocator {
         //let mut map = NetworkAssignmentMap::empty();
         let lab = match agg.get(&mut t).await {
             Ok(a) => a.lab,
-            Err(e) => return Err(anyhow::Error::msg("Error getting aggregate: {e}")),
+            Err(_e) => return Err(anyhow::Error::msg("Error getting aggregate: {e}")),
         };
 
         tracing::warn!("Lab is {:?}", lab);
@@ -311,10 +311,7 @@ impl Allocator {
             }
         }
 
-        let _nam = map.update(&mut t).await.map_err(|e| {
-            /* t automatically rolls back on drop */
-            e
-        })?;
+        map.update(&mut t).await?;
 
         t.commit().await?;
 
@@ -333,7 +330,7 @@ impl Allocator {
         // jump!
 
         let network_number = network_number.parse::<i16>().expect("expected to convert &str to i16");
-        let vlan = Vlan::select().where_field("vlan_id").equals(network_number).run(t).await.unwrap().get(0).expect("Expected to find a vlan from id").id;
+        let vlan = Vlan::select().where_field("vlan_id").equals(network_number).run(t).await.unwrap().first().expect("Expected to find a vlan from id").id;
         vlan
     }
 
@@ -349,7 +346,7 @@ impl Allocator {
         let mut t = t.easy_transaction().await?;
         let lab = match for_agg.expect("Expected to have an agg").get(&mut t).await {
             Ok(a) => a.lab,
-            Err(e) => return Err(anyhow::Error::msg("Error getting aggregate: {e}")),
+            Err(_e) => return Err(anyhow::Error::msg("Error getting aggregate: {e}")),
         };
 
         let res = self
@@ -386,7 +383,7 @@ impl Allocator {
                 Some(l) => l.id,
                 None => return Err(anyhow::Error::msg("Lab does not exist")),
             },
-            Err(e) => return Err(anyhow::Error::msg("Failed to find lab: {e}")),
+            Err(_e) => return Err(anyhow::Error::msg("Failed to find lab: {e}")),
         };
 
         let _vpn = ResourceHandle::allocate_one(

@@ -50,7 +50,7 @@ impl CobblerConfig {
         let ci_url = format!(
             "{}/{}",
             config::settings().mailbox.external_url.clone(),
-            instance.id.into_id().to_string(),
+            instance.id.into_id(),
         );
 
         let msg_url = format!("{}/push", mailbox_endpoint.to_url());

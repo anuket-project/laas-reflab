@@ -20,7 +20,7 @@ use crate::{
     utils::net::{validate_fqdn, validate_ip},
 };
 
-use super::reachable;
+
 
 #[derive(Serialize, Deserialize, Debug, Hash, Clone, Eq, PartialEq)]
 pub struct SetPower {
@@ -511,7 +511,7 @@ pub async fn wait_for_reachable(
             .map_err(|e| PowerStateError::CommandExecutionFailed(e.to_string()))?;
 
         if res.status.success() {
-            ()
+            
         }
     }
     Err(PowerStateError::HostUnreachable(fqdn.into()))
