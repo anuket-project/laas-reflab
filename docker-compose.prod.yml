@@ -1,5 +1,0 @@
-# For use when images are stored in a registry instead of being built on the host
-# version: '1'
-# services:
-#   web:
-#     image: registry/image
