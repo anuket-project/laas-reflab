@@ -8,6 +8,9 @@ services:
       - laasctl_network
     ports:
       - "${LAAS_MAILBOX_PORT}:${LAAS_MAILBOX_PORT}"
+    volumes:
+      - config_data:/usr/src/liblaas/config_data
+
   db:
     image: postgres
     restart: always
