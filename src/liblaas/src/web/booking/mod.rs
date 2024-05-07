@@ -4,6 +4,8 @@
 use common::prelude::{aide::axum::routing::post, itertools::Itertools, *};
 use models::dashboard::{AggregateConfiguration, Instance, StatusSentiment, Template};
 
+use self::host::fetch_ipmi_fqdn;
+
 use super::{api, AppState, WebError};
 use crate::{booking, booking::make_aggregate};
 use aide::axum::{routing::get, ApiRouter};
@@ -185,6 +187,16 @@ pub fn routes(state: AppState) -> ApiRouter {
         // a handler need to implement FromRequest, and all outputs need to implement IntoResponse
         .route("/:agg_id/status", get(booking_status))
         .route("/create", post(create_booking))
-        .route("/ipmi/:instance_id/powerstatus", get(instance_power_state))
-        .route("/ipmi/:instance_id/setpower", post(instance_power_control))
+        .route(
+            "/ipmi/:instance_id/powerstatus",
+            get(instance_power_state),
+        )
+        .route(
+            "/ipmi/:instance_id/setpower",
+            post(instance_power_control),
+        )
+        .route(
+            "/ipmi/:instance_id/getfqdn",
+            get(fetch_ipmi_fqdn),
+        )
 }

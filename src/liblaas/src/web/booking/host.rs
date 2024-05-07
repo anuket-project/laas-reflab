@@ -43,6 +43,9 @@ pub enum ApiPowerStateError {
 
     #[error("IPMI operation failed: {0}")]
     IpmiOperationFailed(#[from] PowerStateError),
+
+    #[error("FQDN error: {0}")]
+    FQDNError(String),
 }
 
 /// Converts the errors into their respective HTTP responses.
@@ -51,6 +54,7 @@ impl IntoResponse for ApiPowerStateError {
         let (status, error_message) = match self {
             ApiPowerStateError::InvalidInstanceId
             | ApiPowerStateError::NoLinkedHosts
+            | ApiPowerStateError::FQDNError(_)
             | ApiPowerStateError::InactiveHost => (StatusCode::BAD_REQUEST, self.to_string()),
 
             ApiPowerStateError::DatabaseTransaction | ApiPowerStateError::DatabaseClient => {
@@ -293,4 +297,15 @@ async fn is_instance_active(instance: &Instance) -> Result<bool, ApiPowerStateEr
 
     // check if the aggregate's life cycle state is `Active`
     Ok(aggregate.into_inner().state == LifeCycleState::Active)
+}
+
+pub async fn fetch_ipmi_fqdn(
+    Path(instance_id): Path<LLID>,
+) -> Result<String, ApiPowerStateError> {
+    let host = fetch_host(
+        &fetch_instance(&instance_id)
+        .await?)
+    .await?
+    .unwrap();
+    Ok(host.ipmi_fqdn)
 }
