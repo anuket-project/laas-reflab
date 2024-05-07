@@ -6,6 +6,7 @@ use models::{
     dal::{new_client, AsEasyTransaction, FKey, ID},
     inventory::Host,
 };
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tascii::{prelude::*, task_trait::AsyncRunnable};
 
@@ -20,8 +21,6 @@ use crate::{
     utils::net::{validate_fqdn, validate_ip},
 };
 
-
-
 #[derive(Serialize, Deserialize, Debug, Hash, Clone, Eq, PartialEq)]
 pub struct SetPower {
     pub host: FKey<Host>,
@@ -29,7 +28,7 @@ pub struct SetPower {
 }
 
 /// All the possible power states of a host.
-#[derive(Serialize, Deserialize, Debug, Hash, Clone, Eq, PartialEq, Display)]
+#[derive(Serialize, Deserialize, Debug, Hash, Clone, Eq, PartialEq, Display, JsonSchema)]
 pub enum PowerState {
     On,
     Off,
@@ -187,7 +186,7 @@ impl AsyncRunnable for SetPower {
 }
 
 /// Errors that can occur while setting or getting the power state.
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Serialize, Deserialize, JsonSchema)]
 pub enum PowerStateError {
     #[error("Unknown power state cannot be set")]
     SetUnknown,
@@ -200,7 +199,7 @@ pub enum PowerStateError {
     #[error("Invalid input parameter: {0}")]
     InvalidInputParameter(String),
     #[error("UTF-8 decoding error: {0}")]
-    Utf8Error(#[from] Utf8Error),
+    Utf8Error(String),
     #[error("Unknown power state, can't infer from output: {0}")]
     UnknownPowerState(String),
     #[error("Host {0} is unreachable")]
@@ -253,7 +252,7 @@ pub struct HostConfig {
 ///
 /// assert_eq!(config, config_default);
 /// ```
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, JsonSchema)]
 pub struct TimeoutConfig {
     #[serde(default = "default_num_retries")]
     /// The maximum number of retries for IPMI operations.
@@ -502,7 +501,7 @@ pub async fn wait_for_reachable(
         tokio::time::Instant::now() + Duration::from_secs(timeout_config.timeout_duration as u64);
     let retry_count = 0;
     while tokio::time::Instant::now() < end && retry_count < timeout_config.max_retries {
-        tokio::time::sleep(Duration::from_secs(timeout_config.retry_interval as u64));
+        tokio::time::sleep(Duration::from_secs(timeout_config.retry_interval as u64)).await;
         let res = tokio::process::Command::new("ping")
             .args(["-c", "1", "-n", "-q", &fqdn])
             .kill_on_drop(true)
@@ -510,9 +509,7 @@ pub async fn wait_for_reachable(
             .await
             .map_err(|e| PowerStateError::CommandExecutionFailed(e.to_string()))?;
 
-        if res.status.success() {
-            
-        }
+        if res.status.success() {}
     }
     Err(PowerStateError::HostUnreachable(fqdn.into()))
 }
@@ -614,7 +611,6 @@ pub async fn set_host_power_state(
         PowerState::Unknown => return Err(PowerStateError::SetUnknown),
     };
 
-    wait_for_reachable(&config.fqdn, &timeout_config).await?;
     execute_power_command(config, power_command).await?;
     confirm_power_state(
         config,
@@ -673,7 +669,8 @@ pub async fn execute_power_command(
         .map_err(|e| PowerStateError::CommandExecutionFailed(e.to_string()))?;
 
     if !output.status.success() {
-        let stderr = str::from_utf8(&output.stderr)?;
+        let stderr = str::from_utf8(&output.stderr)
+            .map_err(|e| PowerStateError::Utf8Error(e.to_string()))?;
         error!("IPMI command failed to execute properly");
         return Err(PowerStateError::CommandNonZeroExitStatus(
             output.status.code().expect("Expected exit code"),
@@ -825,7 +822,8 @@ pub async fn get_host_power_state(config: &HostConfig) -> Result<PowerState, Pow
         .map_err(|e| PowerStateError::CommandExecutionFailed(e.to_string()))?;
 
     if !output.status.success() {
-        let stderr = str::from_utf8(&output.stderr)?;
+        let stderr = str::from_utf8(&output.stderr)
+            .map_err(|e| PowerStateError::Utf8Error(e.to_string()))?;
         error!("IPMI command failed to execute properly");
         return Err(PowerStateError::CommandNonZeroExitStatus(
             output.status.code().expect("Expected exit code"),
@@ -833,7 +831,8 @@ pub async fn get_host_power_state(config: &HostConfig) -> Result<PowerState, Pow
         ));
     }
 
-    let output_str = str::from_utf8(&output.stdout)?;
+    let output_str =
+        str::from_utf8(&output.stdout).map_err(|e| PowerStateError::Utf8Error(e.to_string()))?;
 
     debug!("Successfully got chassis power status: {}", output_str);
 

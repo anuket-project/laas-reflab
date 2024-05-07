@@ -348,6 +348,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c79fed4cdb43e993fcdadc7e58a09fd0e3e649c4436fa11da71c9f1f3ee7feb9"
 
 [[package]]
+name = "base64"
+version = "0.22.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
+
+[[package]]
 name = "bit-set"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1702,6 +1708,7 @@ checksum = "13e3bf6590cbc649f4d1a3eefc9d5d6eb746f5200ffb04e5e142700b8faa56e7"
 name = "liblaas"
 version = "0.1.0"
 dependencies = [
+ "aide",
  "axum",
  "axum-extra 0.5.0",
  "axum-macros",
@@ -1710,6 +1717,7 @@ dependencies = [
  "metrics",
  "models",
  "notifications",
+ "schemars",
  "serde",
  "serde_json",
  "serde_with",
@@ -1717,6 +1725,7 @@ dependencies = [
  "thiserror",
  "tracing",
  "users",
+ "uuid",
  "workflows",
 ]
 
@@ -4189,7 +4198,7 @@ dependencies = [
 name = "workflows"
 version = "0.1.0"
 dependencies = [
- "base64 0.21.6",
+ "base64 0.22.1",
  "common",
  "config 0.1.0",
  "inventory",
@@ -4199,6 +4208,7 @@ dependencies = [
  "models",
  "notifications",
  "pyo3",
+ "schemars",
  "serde",
  "serde-xml-rs",
  "serde_json",

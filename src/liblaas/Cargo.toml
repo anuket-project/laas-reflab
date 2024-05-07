@@ -5,13 +5,16 @@ edition = "2021"
 
 [dependencies]
 axum-macros = { workspace = true }
+aide = { workspace = true }
 axum-extra = { workspace = true }
 axum = { workspace = true }
+schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+uuid = { workspace = true }
 
 # local workspaces
 common = { path = "../common/" }

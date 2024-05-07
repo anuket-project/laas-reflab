@@ -67,13 +67,13 @@ tokio-postgres = { version = "0.7.8", features = [
   "with-serde_json-1",
 ] }
 
+schemars = { version = "0.8.16" }
 # serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.78"
 serde_with = { version = "*", features = ["json"] }
 serde_yaml = { version = "0.9.19" }
 serde-xml-rs = "0.6.0"
-schemars = { version = "0.8.16", features = ["uuid1"] }
 ssh2 = "0.9.4"
 
 # errors/logging
@@ -85,7 +85,7 @@ tracing-subscriber = "0.3.18"
 
 # types
 base16ct = { version = "0.2", features = ["alloc"] }
-base64 = "0.21.0"
+base64 = "0.22.1"
 chrono = { version = "0.4", features = ["serde", "clock"] }
 eui48 = { version = "1.1.0", features = ["serde", "serde_json"] }
 uuid = { version = "*", features = [

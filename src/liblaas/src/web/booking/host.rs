@@ -1,17 +1,19 @@
+use aide::OperationIo;
 use axum::{
     extract::{Json, Path},
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use common::prelude::{serde_json, tokio::time::Duration};
-
+use common::prelude::serde_json;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::{debug, error, info, warn};
 
 use llid::LLID;
+
 use models::{
-    dal::{new_client, web::*, AsEasyTransaction, DBTable, ExistingRow},
+    dal::{new_client, AsEasyTransaction, DBTable, ExistingRow},
     dashboard::{Aggregate, Instance, LifeCycleState},
     inventory::Host,
 };
@@ -22,7 +24,7 @@ use workflows::deploy_booking::set_host_power_state::{
 
 /// Respective error types for the handlers. All of these error messages will be converted into an
 /// HTTP response.
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Deserialize, Serialize, JsonSchema, OperationIo)]
 pub enum ApiPowerStateError {
     #[error("Invalid instance ID")]
     InvalidInstanceId,
@@ -68,7 +70,7 @@ impl IntoResponse for ApiPowerStateError {
 }
 
 /// All the possible power commands to send to a host.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub enum PowerCommand {
     PowerOff,
     PowerOn,
@@ -76,7 +78,7 @@ pub enum PowerCommand {
 }
 
 /// The request payload for the power control handler, sent as JSON.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct PowerCommandRequest {
     /// The power command to be executed.
     pub command: PowerCommand,
@@ -86,7 +88,7 @@ pub struct PowerCommandRequest {
 }
 
 /// The response payload for the power control handler, returned as JSON.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema, OperationIo)]
 pub struct PowerStateResponse {
     pub power_state: PowerState,
 }
@@ -107,11 +109,11 @@ pub struct PowerStateResponse {
 /// This function returns a [`Result`] that wraps [`PowerStateResponse`] as [`Json`] or an [`ApiPowerStateError`].
 ///
 pub async fn instance_power_state(
-    Path(instance_id): Path<LLID>,
+    Path(instance_llid): Path<LLID>,
 ) -> Result<Json<PowerStateResponse>, ApiPowerStateError> {
-    debug!("Fetching power state for instance ID: {:?}", instance_id);
+    info!("Fetching power state for instance ID: {:?}", instance_llid);
 
-    let instance = fetch_instance(&instance_id).await?;
+    let instance = fetch_instance(&instance_llid).await?;
 
     if !is_instance_active(&instance).await? {
         error!("Cannot perform operation on an inactive host");
@@ -124,7 +126,7 @@ pub async fn instance_power_state(
 
         Ok(Json(PowerStateResponse { power_state }))
     } else {
-        warn!("No host linked to instance ID: {}", instance_id);
+        warn!("No host linked to instance ID: {}", instance_llid);
         Err(ApiPowerStateError::NoLinkedHosts)
     }
 }
@@ -145,16 +147,16 @@ pub async fn instance_power_state(
 /// This function returns a [`Result`] that wraps [`PowerStateResponse`] as [`Json`] or an [`ApiPowerStateError`].
 #[axum::debug_handler]
 pub async fn instance_power_control(
-    Path(instance_id): Path<LLID>,
+    Path(instance_llid): Path<LLID>,
     Json(request): Json<PowerCommandRequest>,
 ) -> Result<Json<PowerStateResponse>, ApiPowerStateError> {
-    debug!(
+    info!(
         "Attempting {:?} command for instance ID: {:?}",
-        request.command, instance_id
+        request.command, instance_llid
     );
 
     // Fetch the instance from the database
-    let instance = fetch_instance(&instance_id).await?;
+    let instance = fetch_instance(&instance_llid).await?;
 
     if !is_instance_active(&instance).await? {
         error!("Cannot perform operation on an inactive host");
@@ -178,7 +180,7 @@ pub async fn instance_power_control(
 
         Ok(Json(PowerStateResponse { power_state }))
     } else {
-        error!("No host linked to instance ID: {}", instance_id);
+        error!("No host linked to instance ID: {}", instance_llid);
         Err(ApiPowerStateError::NoLinkedHosts)
     }
 }
