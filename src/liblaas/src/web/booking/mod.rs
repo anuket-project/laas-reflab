@@ -4,13 +4,13 @@
 use common::prelude::{aide::axum::routing::post, itertools::Itertools, *};
 use models::dashboard::{AggregateConfiguration, Instance, StatusSentiment, Template};
 
+use self::host::fetch_ipmi_fqdn;
+
 use super::{api, AppState, WebError};
 use crate::{booking, booking::make_aggregate};
-use aide::axum::{
-    routing::{delete, get},
-    ApiRouter,
-};
-// this is evil v  absolutely awful
+use aide::axum::{routing::get, ApiRouter};
+
+// this is evil v absolutely awful
 //use anyhow::Ok;
 use axum::{
     extract::{Json, Path},
@@ -165,29 +165,38 @@ async fn booking_status(Path(agg_id): Path<LLID>) -> Result<Json<BookingStatus>,
         statuses.insert(instance.id, inst_stat);
     }
 
-    let template = agg.template.get(&mut transaction).await.expect("Expected to find template").into_inner().clone();
+    let template = agg
+        .template
+        .get(&mut transaction)
+        .await
+        .expect("Expected to find template")
+        .into_inner()
+        .clone();
 
     transaction.commit().await.log_db_client_error()?;
 
     Ok(Json(BookingStatus {
         instances: statuses,
         config: agg.configuration.clone(),
-        template: template
+        template,
     }))
 }
 
 pub fn routes(state: AppState) -> ApiRouter {
     ApiRouter::new() // remember that in order to have the Handler trait, all inputs for
         // a handler need to implement FromRequest, and all outputs need to implement IntoResponse
-        .route("/:agg_id/end", delete(end_booking))
         .route("/:agg_id/status", get(booking_status))
         .route("/create", post(create_booking))
         .route(
             "/ipmi/:instance_id/powerstatus",
-            axum::routing::get(instance_power_state),
+            get(instance_power_state),
         )
         .route(
             "/ipmi/:instance_id/setpower",
-            axum::routing::post(instance_power_control),
+            post(instance_power_control),
+        )
+        .route(
+            "/ipmi/:instance_id/getfqdn",
+            get(fetch_ipmi_fqdn),
         )
 }
