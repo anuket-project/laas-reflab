@@ -1,35 +1,27 @@
 //! Copyright (c) 2023 University of New Hampshire
 //! SPDX-License-Identifier: MIT
 
-use common::prelude::{aide::axum::routing::post, itertools::Itertools, *};
-use models::dashboard::{AggregateConfiguration, Instance, StatusSentiment, Template};
-
 use self::host::fetch_ipmi_fqdn;
-
 use super::{api, AppState, WebError};
 use crate::{booking, booking::make_aggregate};
-use aide::axum::{routing::get, ApiRouter, routing::delete};
-
-// this is evil v absolutely awful
-//use anyhow::Ok;
+use aide::axum::{routing::delete, routing::get, ApiRouter};
 use axum::{
     extract::{Json, Path},
     http::StatusCode,
 };
-
-use llid::LLID;
+use common::prelude::{aide::axum::routing::post, itertools::Itertools, *};
+use host::{instance_power_control, instance_power_state};
+use models::dashboard::{AggregateConfiguration, Instance, StatusSentiment, Template};
 use models::{
     dal::{new_client, web::*, AsEasyTransaction, ExistingRow, FKey},
     dashboard::{self, Aggregate, ProvisionLogEvent},
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-
 use std::collections::HashMap;
+use uuid::Uuid;
 
 pub mod host;
-
-use host::{instance_power_control, instance_power_state};
 
 #[axum::debug_handler]
 async fn create_booking(
@@ -90,7 +82,7 @@ struct BookingStatus {
     template: Template,
 }
 
-async fn booking_status(Path(agg_id): Path<LLID>) -> Result<Json<BookingStatus>, WebError> {
+async fn booking_status(Path(agg_id): Path<Uuid>) -> Result<Json<BookingStatus>, WebError> {
     tracing::debug!("API call to booking_status()");
     let mut client = new_client().await.log_db_client_error()?;
     let mut transaction = client.easy_transaction().await.log_db_client_error()?;
@@ -188,16 +180,7 @@ pub fn routes(state: AppState) -> ApiRouter {
         .route("/:agg_id/status", get(booking_status))
         .route("/create", post(create_booking))
         .route("/:agg_id/end", delete(end_booking))
-        .route(
-            "/ipmi/:instance_id/powerstatus",
-            get(instance_power_state),
-        )
-        .route(
-            "/ipmi/:instance_id/setpower",
-            post(instance_power_control),
-        )
-        .route(
-            "/ipmi/:instance_id/getfqdn",
-            get(fetch_ipmi_fqdn),
-        )
+        .route("/ipmi/:instance_id/powerstatus", get(instance_power_state))
+        .route("/ipmi/:instance_id/setpower", post(instance_power_control))
+        .route("/ipmi/:instance_id/getfqdn", get(fetch_ipmi_fqdn))
 }

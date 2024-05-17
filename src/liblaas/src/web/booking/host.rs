@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::{debug, error, info, warn};
 
-use llid::LLID;
+use uuid::Uuid;
 
 use models::{
     dal::{new_client, AsEasyTransaction, DBTable, ExistingRow},
@@ -106,14 +106,14 @@ pub struct PowerStateResponse {
 ///
 /// # Arguments
 ///
-/// * `Path(instance_id)` - An [`LLID`] representing an instance id as a [`Path`] parameter.
+/// * `Path(instance_id)` - An [`Uuid`] representing an instance id as a [`Path`] parameter.
 ///
 /// # Returns
 ///
 /// This function returns a [`Result`] that wraps [`PowerStateResponse`] as [`Json`] or an [`ApiPowerStateError`].
 ///
 pub async fn instance_power_state(
-    Path(instance_llid): Path<LLID>,
+    Path(instance_llid): Path<Uuid>,
 ) -> Result<Json<PowerStateResponse>, ApiPowerStateError> {
     info!("Fetching power state for instance ID: {:?}", instance_llid);
 
@@ -151,7 +151,7 @@ pub async fn instance_power_state(
 /// This function returns a [`Result`] that wraps [`PowerStateResponse`] as [`Json`] or an [`ApiPowerStateError`].
 #[axum::debug_handler]
 pub async fn instance_power_control(
-    Path(instance_llid): Path<LLID>,
+    Path(instance_llid): Path<Uuid>,
     Json(request): Json<PowerCommandRequest>,
 ) -> Result<Json<PowerStateResponse>, ApiPowerStateError> {
     info!(
@@ -198,7 +198,7 @@ pub async fn instance_power_control(
 /// # Returns
 ///
 /// This function returns a [`Result`] of [`Instance`] or an [`ApiPowerStateError`].
-pub async fn fetch_instance(instance_id: &LLID) -> Result<Instance, ApiPowerStateError> {
+pub async fn fetch_instance(instance_id: &Uuid) -> Result<Instance, ApiPowerStateError> {
     debug!("Fetching instance from database, ID: {:?}", instance_id);
     let mut client = new_client()
         .await
@@ -299,13 +299,9 @@ async fn is_instance_active(instance: &Instance) -> Result<bool, ApiPowerStateEr
     Ok(aggregate.into_inner().state == LifeCycleState::Active)
 }
 
-pub async fn fetch_ipmi_fqdn(
-    Path(instance_id): Path<LLID>,
-) -> Result<String, ApiPowerStateError> {
-    let host = fetch_host(
-        &fetch_instance(&instance_id)
-        .await?)
-    .await?
-    .unwrap();
+pub async fn fetch_ipmi_fqdn(Path(instance_id): Path<Uuid>) -> Result<String, ApiPowerStateError> {
+    let host = fetch_host(&fetch_instance(&instance_id).await?)
+        .await?
+        .unwrap();
     Ok(host.ipmi_fqdn)
 }

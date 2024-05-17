@@ -22,6 +22,5 @@ tascii = { path = "../tascii/" }
 metrics = { path = "../metrics/" }
 models = { path = "../models/" }
 workflows = { path = "../workflows/" }
-llid = { path = "../llid/" }
 users = { path = "../users/" }
 notifications = { path = "../notifications/" }

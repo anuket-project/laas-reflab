@@ -12,14 +12,17 @@ use std::{backtrace::Backtrace, collections::HashMap};
 pub trait ErrorToResponse {
     type Output: IntoResponse;
     fn with_code<T>(self, code: T) -> Self::Output
-    where T: Into<axum::http::StatusCode>;
+    where
+        T: Into<axum::http::StatusCode>;
 }
 
 impl ErrorToResponse for anyhow::Error {
     type Output = (axum::http::StatusCode, String);
 
     fn with_code<T>(self, code: T) -> Self::Output
-    where T: Into<axum::http::StatusCode> {
+    where
+        T: Into<axum::http::StatusCode>,
+    {
         let code: axum::http::StatusCode = code.into();
         (code, format!("Error handling request: {self}"))
     }
@@ -162,7 +165,8 @@ pub trait AnyWaySpecStr<T> {
 }
 
 impl<T, E> AnyWay<T> for Result<T, E>
-where E: std::error::Error + Sync + Send + 'static
+where
+    E: std::error::Error + Sync + Send + 'static,
 {
     default fn anyway(self) -> Result<T, anyhow::Error> {
         self.map_err(|e| anyhow::Error::new(e))
@@ -183,9 +187,10 @@ impl<T> AnyWaySpecStr<T> for Result<T, String> {
 
 #[derive(Clone, Deserialize, Serialize, Debug)] //JsonSchema
 pub struct IDPayload<T>
-where T: JsonSchema
+where
+    T: JsonSchema,
 {
-    pub id: llid::LLID,
+    pub id: uuid::Uuid,
     pub payload: T,
 }
 

@@ -7,7 +7,6 @@ use common::prelude::{
     rand::{seq::SliceRandom, thread_rng},
     serde_json::Value,
 };
-use llid::*;
 use dal::{web::*, *};
 use tokio_postgres::types::ToSql;
 
@@ -309,7 +308,7 @@ impl Allocation {
         t: &mut EasyTransaction<'_>,
         agg: FKey<Aggregate>,
         host: FKey<Host>,
-        completed: bool
+        completed: bool,
     ) -> Result<Vec<ExistingRow<Allocation>>, anyhow::Error> {
         let allocation_tn = Self::table_name();
         let rh_tn = ResourceHandle::table_name();
@@ -321,7 +320,7 @@ impl Allocation {
         };
 
         let q = format!("select * from {allocation_tn} where for_aggregate = $1 and ended {is_null} and for_resource = ({rh_id})");
-        
+
         let rows = t.query(&q, &[&agg, &host]).await.anyway()?;
 
         Allocation::from_rows(rows)
@@ -479,7 +478,6 @@ pub struct UpsertResourceHandles();
 #[async_trait]
 impl ComplexMigration for UpsertResourceHandles {
     async fn run(&self, transaction: &mut EasyTransaction<'_>) -> Result<(), anyhow::Error> {
-
         let dir = PathBuf::from("./config_data/laas-hosts/inventory");
 
         let mut proj_vec = dir.read_dir().expect("Expected to read import dir");
@@ -492,7 +490,18 @@ impl ComplexMigration for UpsertResourceHandles {
             for h in proj.path().read_dir().unwrap() {
                 let mut t = transaction.easy_transaction().await.unwrap();
                 let host_file = h.unwrap();
-                println!("host {:?}", host_file.file_name().to_str().unwrap().split('.').collect_tuple::<(&str, &str)>().unwrap().0.to_owned());
+                println!(
+                    "host {:?}",
+                    host_file
+                        .file_name()
+                        .to_str()
+                        .unwrap()
+                        .split('.')
+                        .collect_tuple::<(&str, &str)>()
+                        .unwrap()
+                        .0
+                        .to_owned()
+                );
 
                 let host = Host::get_by_name(
                     &mut t,
@@ -518,11 +527,13 @@ impl ComplexMigration for UpsertResourceHandles {
 
                 let mut handle = binding.pop().unwrap();
 
-                handle.lab = Some(Lab::get_by_name(&mut t, lab_name.clone())
-                    .await
-                    .unwrap()
-                    .unwrap()
-                    .id);
+                handle.lab = Some(
+                    Lab::get_by_name(&mut t, lab_name.clone())
+                        .await
+                        .unwrap()
+                        .unwrap()
+                        .id,
+                );
                 match (handle.update(&mut t)).await {
                     Ok(_) => {
                         t.commit().await.unwrap();
@@ -619,31 +630,33 @@ impl ComplexMigration for UpsertResourceHandles {
 
         let lfedge_vlans = [3001, 3002, 3003, 3004, 3007, 3008, 3015, 3016];
 
+        for vlan_id in lfedge_vlans {
+            let lfedge_vlan = Vlan::select()
+                .where_field("vlan_id")
+                .equals(vlan_id as i16)
+                .run(transaction)
+                .await
+                .unwrap()
+                .get(0)
+                .cloned()
+                .expect("Can't find vlan with id");
 
-    for vlan_id in lfedge_vlans {
-        let lfedge_vlan = Vlan::select()
-            .where_field("vlan_id")
-            .equals(vlan_id as i16)
-            .run(transaction)
-            .await
-            .unwrap()
-            .get(0)
-            .cloned()
-            .expect("Can't find vlan with id");
+            let mut resource_handle = ResourceHandle::select()
+                .where_field("tracks_resource")
+                .equals(lfedge_vlan.id)
+                .run(transaction)
+                .await
+                .unwrap()
+                .get(0)
+                .cloned()
+                .expect("Expected to find resource handle for vlan!");
 
-        let mut resource_handle = ResourceHandle::select()
-            .where_field("tracks_resource")
-            .equals(lfedge_vlan.id)
-            .run(transaction)
-            .await
-            .unwrap()
-            .get(0)
-            .cloned()
-            .expect("Expected to find resource handle for vlan!");
-
-        resource_handle.lab = Some(lfedge_lab.id);
-        resource_handle.update(transaction).await.expect("Expected to update lab for resource handle!");
-    }
+            resource_handle.lab = Some(lfedge_lab.id);
+            resource_handle
+                .update(transaction)
+                .await
+                .expect("Expected to update lab for resource handle!");
+        }
 
         Ok(())
     }
@@ -832,7 +845,6 @@ impl ResourceHandle {
         let mut params: Vec<&(dyn ToSql + Sync)> = Vec::from_iter(params.iter().copied());
 
         params.push(&lab);
-
 
         let query = Self::make_query::<T>(free, params.len(), filter);
 

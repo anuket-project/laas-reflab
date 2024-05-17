@@ -506,7 +506,6 @@ version = "0.1.0"
 dependencies = [
  "common",
  "liblaas",
- "llid",
  "models",
  "notifications",
  "remoc",
@@ -749,7 +748,6 @@ dependencies = [
  "common",
  "derive_more",
  "inventory",
- "llid",
  "serde",
  "serde_with",
  "sha2",
@@ -1653,7 +1651,6 @@ dependencies = [
  "config 0.1.0",
  "dal",
  "liblaas",
- "llid",
  "models",
  "notifications",
  "tascii",
@@ -1706,7 +1703,6 @@ dependencies = [
  "axum-extra 0.5.0",
  "axum-macros",
  "common",
- "llid",
  "metrics",
  "models",
  "notifications",
@@ -1774,13 +1770,6 @@ name = "linux-raw-sys"
 version = "0.4.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "01cda141df6706de531b6c46c3a33ecca755538219bd484262fa09410c13539c"
-
-[[package]]
-name = "llid"
-version = "0.1.0"
-dependencies = [
- "uuid",
-]
 
 [[package]]
 name = "lock_api"
@@ -1958,12 +1947,12 @@ dependencies = [
  "eui48",
  "inventory",
  "lazy_static",
- "llid",
  "serde",
  "serde_with",
  "sha2",
  "strum_macros",
  "tokio-postgres",
+ "uuid",
 ]
 
 [[package]]
@@ -3343,7 +3332,6 @@ dependencies = [
  "itertools",
  "lazy_static",
  "linux-futex",
- "llid",
  "parking_lot 0.12.2",
  "pyo3",
  "rand",
@@ -3354,6 +3342,7 @@ dependencies = [
  "tokio",
  "tokio-postgres",
  "tracing",
+ "uuid",
  "write-to-file",
 ]
 
@@ -4238,7 +4227,6 @@ dependencies = [
  "common",
  "config 0.1.0",
  "inventory",
- "llid",
  "maplit",
  "metrics",
  "models",
