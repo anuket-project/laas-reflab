@@ -22,7 +22,6 @@ tokio = { workspace = true }
 tascii = { path = "../tascii/" }
 models = { path = "../models/" }
 notifications = { path = "../notifications/" }
-llid = { path = "../llid/" }
 users = { path = "../users/" }
 config = { path = "../config/" }
 common = { path = "../common/" }

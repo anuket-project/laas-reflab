@@ -310,7 +310,6 @@ impl Default for TimeoutConfig {
 /// ```rust,no_run
 /// use workflows::deploy_booking::set_host_power_state::HostConfig;
 /// use dal::inventory::Host;
-/// use dal::models::LLID;
 /// use dal::{
 ///     new_client,
 ///     web::*,

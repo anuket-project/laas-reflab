@@ -15,5 +15,4 @@ base16ct = { workspace = true }
 inventory = { workspace = true }
 backtrace = { workspace = true }
 
-llid = { path = "../llid" }
 common = { path = "../common" }

@@ -25,7 +25,7 @@ services:
       - ./influx_backups:/backups
     environment:
       - INFLUX_TOKEN=${INFLUXDB_INIT_ADMIN_TOKEN}
-      - INFLUX_HOST=http://influxdb:8086
+      - INFLUX_HOST=http://influxdb:${INFLUXDB_PORT}
       - INFLUX_ORG=${INFLUXDB_INIT_ORG}
       - INFLUXDB_INIT_BUCKET
     depends_on:
@@ -40,15 +40,20 @@ services:
     environment:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER}
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      - INFLUX_TOKEN=${INFLUXDB_INIT_ADMIN_TOKEN}
+      - INFLUX_HOST=http://influxdb:${INFLUXDB_PORT}
+      - INFLUX_ORG=${INFLUXDB_INIT_ORG}
+      - INFLUXDB_INIT_BUCKET
     volumes:
       - ./grafana:/var/lib/grafana
-    # THIS IS USER THAT WILL ATTEMPT TO ACCESS ./grafana, APPROPRIATE PERMISSIONS MUST BE SET OR THE CONTAINER WILL FAIL.
-    # YOU MUST COMPLETELY RESTART THE CONTAINER FOR CHANGES TO TAKE EFFECT.
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
     user: '$USERID'
     networks:
       - laasctl_network
     depends_on:
       - influxdb
+
   telegraf:
     image: telegraf
     container_name: telegraf

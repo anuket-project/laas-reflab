@@ -21,7 +21,6 @@ workflows = { path = "./workflows" }
 config = { path = "./config" }
 notifications = { path = "./notifications" }
 dal = { path = "./dal" }
-llid = { path = "./llid" }
 client = { path = "./client" }
 
 [workspace.dependencies]
@@ -126,7 +125,6 @@ url = "*"                                            # URL parsing
 members = [
   "client",
   "liblaas",
-  "llid",
   "users",
   "common",
   "metrics",
