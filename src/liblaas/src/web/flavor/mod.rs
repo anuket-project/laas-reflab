@@ -1,14 +1,15 @@
 //! Copyright (c) 2023 University of New Hampshire
 //! SPDX-License-Identifier: MIT
 
-use std::collections::HashMap;
-
+use super::api::FlavorBlob;
+use super::{
+    api::{self, InterfaceBlob},
+    AppState,
+};
 use crate::web::{
     api::{AggregateDescription, AllocationBlob, HostBlob, ImageBlob},
     WebError,
 };
-
-use super::api::FlavorBlob;
 use aide::{
     axum::{
         routing::{get, get_with},
@@ -27,27 +28,20 @@ use models::{
     dashboard::Image,
     inventory::*,
 };
-use tracing::debug;
-
-use llid::LLID;
 use models::{
     dal::{new_client, web::*, AsEasyTransaction, FKey, ID},
-    dashboard,
-    inventory,
+    dashboard, inventory,
 };
-
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use tracing::debug;
+use uuid::Uuid;
 use workflows::resource_management::allocator;
-
-use super::{
-    api::{self, InterfaceBlob},
-    AppState,
-};
 
 #[derive(Serialize, Deserialize, JsonSchema, Debug, Clone)]
 pub struct FlavorResponse {
-    id: LLID,
+    id: Uuid,
     name: String,
     description: String,
     interface_names: Vec<String>,
@@ -85,7 +79,12 @@ pub async fn list_flavors(Path(lab_name): Path<String>) -> Result<Json<Vec<Flavo
                 Some(l) => l.id,
                 None => return Err((StatusCode::NOT_FOUND, format!("Failed to find lab"))),
             },
-            Err(e) => return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to retrieve lab: {e}"))),
+            Err(e) => {
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Failed to retrieve lab: {e}"),
+                ))
+            }
         };
 
         let hosts = allocator::Allocator::instance()
@@ -143,7 +142,20 @@ pub async fn list_flavors(Path(lab_name): Path<String>) -> Result<Json<Vec<Flavo
                 swap_size: f.swap_size,
             };
 
-            if Host::select().where_field("flavor").equals(f.id).run(&mut transaction).await.expect("Expected to find host").get(0).unwrap().projects.get(0).unwrap().clone() == lab_name.clone() {
+            if Host::select()
+                .where_field("flavor")
+                .equals(f.id)
+                .run(&mut transaction)
+                .await
+                .expect("Expected to find host")
+                .get(0)
+                .unwrap()
+                .projects
+                .get(0)
+                .unwrap()
+                .clone()
+                == lab_name.clone()
+            {
                 fbs.push(fb);
             }
         }
@@ -166,11 +178,13 @@ fn list_flavors_docs(op: TransformOperation) -> TransformOperation {
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema)]
 pub struct ListFlavorsRequest {
     user_id: i64,
-    flavor_id: LLID,
+    flavor_id: Uuid,
 }
 
 /// List hosts, filtering to only hosts for the given project (dashboard)
-pub async fn list_hosts(Path(lab_name): Path<String>) -> Result<Json<Vec<api::HostBlob>>, WebError> {
+pub async fn list_hosts(
+    Path(lab_name): Path<String>,
+) -> Result<Json<Vec<api::HostBlob>>, WebError> {
     tracing::info!("API call to list_hosts()");
     let mut client = new_client().await.log_db_client_error()?;
     let mut transaction = client.easy_transaction().await.log_db_client_error()?;
@@ -187,7 +201,17 @@ pub async fn list_hosts(Path(lab_name): Path<String>) -> Result<Json<Vec<api::Ho
 
     for host in hosts {
         let host = host.into_inner();
-        if !(ResourceHandle::handle_for_host(&mut transaction, host.id).await.expect("Expected lab to exist").lab.unwrap().get(&mut transaction).await.expect("Expected lab to exist").name == lab_name) {
+        if !(ResourceHandle::handle_for_host(&mut transaction, host.id)
+            .await
+            .expect("Expected lab to exist")
+            .lab
+            .unwrap()
+            .get(&mut transaction)
+            .await
+            .expect("Expected lab to exist")
+            .name
+            == lab_name)
+        {
             continue;
         }
 
@@ -216,7 +240,13 @@ pub async fn list_hosts(Path(lab_name): Path<String>) -> Result<Json<Vec<api::Ho
                         id: agg.id,
                         purpose: agg.metadata.purpose,
                         project: agg.metadata.project,
-                        origin: agg.lab.get(&mut transaction).await.expect("Expected lab to exist").name.clone(),
+                        origin: agg
+                            .lab
+                            .get(&mut transaction)
+                            .await
+                            .expect("Expected lab to exist")
+                            .name
+                            .clone(),
                     })
                 } else {
                     None

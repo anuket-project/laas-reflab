@@ -39,7 +39,7 @@ pub mod prelude {
 
     pub use serde::{Deserialize, Serialize};
 
-    pub use llid::LLID;
+    pub use uuid::Uuid;
 }
 
 use parking_lot::RwLock;

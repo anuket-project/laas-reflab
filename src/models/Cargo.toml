@@ -15,8 +15,7 @@ inventory = { workspace = true }
 eui48 = { workspace = true }
 lazy_static = { workspace = true }
 tokio-postgres = { workspace = true }
+uuid = { workspace = true }
 
-# local workspaces
-llid = { path = "../llid" }
 common = { path = "../common" }
 dal = { path = "../dal" }

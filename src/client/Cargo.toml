@@ -14,6 +14,5 @@ tascii = { path = "../tascii/" }
 models = { path = "../models/" }
 workflows = { path = "../workflows/" }
 notifications = { path = "../notifications/" }
-llid = { path = "../llid/" }
 liblaas = { path = "../liblaas/" }
 users = { path = "../users/" }
