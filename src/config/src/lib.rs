@@ -198,7 +198,7 @@ impl<'de> Deserialize<'de> for RenderTarget {
     }
 }
 
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Serialize, Display)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Display)]
 pub enum Situation {
     BookingCreated,
     BookingExpiring,
@@ -207,6 +207,7 @@ pub enum Situation {
     VPNAccessRemoved,
     PasswordResetRequested,
     AccountCreated,
+    CollaboratorAdded(Vec<String>),
 }
 
 impl<'de> Deserialize<'de> for Situation {
@@ -223,6 +224,7 @@ impl<'de> Deserialize<'de> for Situation {
             "vpn_access_added" => Self::VPNAccessAdded,
             "vpn_access_removed" => Self::VPNAccessRemoved,
             "account_created" => Self::AccountCreated,
+            "collaborator_added" => Self::CollaboratorAdded(Vec::new()),
             other => Err(serde::de::Error::custom(format!(
                 "Bad situation specifier {other}"
             )))?,
@@ -244,7 +246,7 @@ impl<'de> Deserialize<'de> for HostPortPair {
         let base = String::deserialize(deserializer)?;
 
         let (host, port) = base
-            .split_once(":")
+            .split_once(':')
             .ok_or(serde::de::Error::custom(format!(
                 "Failed to split {base} into component host and port"
             )))?;
@@ -267,16 +269,14 @@ impl ToString for HostPortPair {
 }
 
 static CONFIG: once_cell::sync::Lazy<LibLaaSConfig> = once_cell::sync::Lazy::new(|| {
-    let config = config::Config::builder()
+    config::Config::builder()
         .add_source(config::File::with_name("config_data/config.yaml"))
         .build()
         .expect("couldn't load config file")
         .try_deserialize()
-        .expect("couldn't load config file, invalid format");
-
-    config
+        .expect("couldn't load config file, invalid format")
 });
 
 pub fn settings() -> &'static LibLaaSConfig {
-    &*CONFIG
+    &CONFIG
 }

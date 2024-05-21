@@ -46,9 +46,12 @@ pub struct Notification {
 
 fn render(notification: &Notification, target: RenderTarget) -> Result<String, anyhow::Error> {
     tracing::debug!("Getting a template with target {target:?} for notification {notification:?}");
-    let template_name =
-        templates::retrieve(notification.project.clone(), notification.situation, target)
-            .expect("no template found matching query");
+    let template_name = templates::retrieve(
+        notification.project.clone(),
+        notification.situation.clone(),
+        target,
+    )
+    .expect("no template found matching query");
 
     let rendered = TERA.render(&template_name, &notification.context)?;
 
@@ -163,7 +166,7 @@ pub async fn send_booking_notification(
             },
             send_to: username.clone(),
             by_methods: preferred_methods(&username.clone()),
-            situation,
+            situation: situation.clone(),
             project: env.project.clone(),
             context, // Use the merged context here
             attachment: None,
@@ -252,6 +255,85 @@ pub async fn booking_ended(env: &Env, info: &BookingInfo) -> Result<(), Vec<anyh
     .await
 }
 
+pub async fn collaborator_added(
+    env: &Env,
+    info: &BookingInfo,
+    users: Vec<String>,
+) -> Result<(), Vec<anyhow::Error>> {
+    let mut errors: Vec<anyhow::Error> = Vec::new();
+
+    for username in users.clone() {
+        let start = match info.start_date {
+            Some(s) => s.to_rfc2822(),
+            None => "None".to_owned(),
+        };
+        let end = match info.end_date {
+            Some(e) => e.to_rfc2822(),
+            None => "None".to_owned(),
+        };
+
+        let styles = read_styles(
+            settings()
+                .projects
+                .get(env.project.clone().as_str())
+                .unwrap()
+                .styles_path
+                .as_str(),
+        )
+        .expect("Failed to read styles");
+
+        let styles_json: serde_json::Value =
+            serde_json::from_str(&styles).expect("Failed to parse JSON");
+
+        let mut context = tera::Context::new();
+        context.insert("styles", &styles_json);
+
+        context.insert(
+            "booking",
+            &json!({
+                "id": info.id,
+                "lab": info.lab,
+                "purpose": info.purpose,
+                "template": info.template,
+                "project": env.project.clone(),
+                "owner": info.owner,
+                "collaborators": info.collaborators,
+                "start": start,
+                "end": end,
+                "ipmi_password": info.configuration.ipmi_password,
+                "ipmi_username": info.configuration.ipmi_username,
+            }),
+        );
+        context.insert("owner", &false);
+        context.insert("dashboard_url", &info.dashboard_url);
+
+        let notification = Notification {
+            title: "You Have Been Added To a New Booking.".to_owned(),
+            send_to: username.clone(),
+            by_methods: preferred_methods(&username.clone()),
+            // We want to use this template, not a new template for added collaborators.
+            situation: Situation::BookingCreated,
+            project: env.project.clone(),
+            context,
+            attachment: None,
+        };
+
+        match send(env, notification).await {
+            Ok(_) => {}
+            Err(e) => {
+                tracing::error!("Failed to send email to {username} with error {e:#?}");
+                errors.push(e)
+            }
+        }
+    }
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
+}
+
 /// Send email containing ipa username, temp password, openvpn config, and instructions
 pub async fn send_new_account_notification(
     env: &Env,
@@ -288,9 +370,9 @@ pub async fn send_new_account_notification(
     }
 
     if (errors.is_empty()) {
-        return Ok(());
+        Ok(())
     } else {
-        return Err(errors);
+        Err(errors)
     }
 }
 

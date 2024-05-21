@@ -9,7 +9,7 @@
 //! but I don't think it's strictly worth it when the entire project
 //! is as small as it is (relatively speaking)
 
-use std::{sync::Mutex};
+use std::sync::Mutex;
 
 use models::{
     dal::{new_client, AsEasyTransaction, FKey, ID},
@@ -23,7 +23,7 @@ use common::prelude::{anyhow, crossbeam_channel, once_cell};
 use crossbeam_channel::{Receiver, Sender};
 use models::dal::web::*;
 
-use tascii::{prelude::*};
+use tascii::prelude::*;
 
 //use crate::actions::{Action, ActionID, StatusHandle};
 
@@ -32,9 +32,16 @@ use tascii::{prelude::*};
 static ACTION_LOG_LOCK: Mutex<()> = Mutex::new(());
 
 pub enum Action {
-    DeployBooking { agg_id: FKey<Aggregate> },
-    CleanupBooking { agg_id: FKey<Aggregate> },
-    // AddUsers { agg_id: LLID, users: dashboard::UserData },
+    DeployBooking {
+        agg_id: FKey<Aggregate>,
+    },
+    CleanupBooking {
+        agg_id: FKey<Aggregate>,
+    },
+    AddUsers {
+        agg_id: FKey<Aggregate>,
+        users: Vec<String>,
+    },
     // UpdateUser { agg_id: LLID, user: dashboard::UserData },
     // RemoveUser { agg_id: LLID, user: i64 },
     // Reimage { agg_id: LLID, data: dashboard::ReimageData },
@@ -80,7 +87,6 @@ impl Dispatcher {
 
                     let task_id = self.rt.enroll(task.into());
                     self.rt.set_target(task_id);
-
                 }
                 Action::CleanupBooking { agg_id } => {
                     let task = crate::cleanup_booking::CleanupAggregate { agg_id };
@@ -88,36 +94,35 @@ impl Dispatcher {
                     let task_id = self.rt.enroll(task.into());
                     self.rt.set_target(task_id);
                 }
-                // Action::AddUsers { agg_id, users } => {
-                //     // TODO: Create task
-                //     let task_id: LLID = self.rt.enroll(todo!());
-                //     self.rt.set_target(task_id);
-                // },
-                // Action::UpdateUser { agg_id, user } => {
-                //     // TODO: Create task
-                //     let task_id: LLID = self.rt.enroll(todo!());
-                //     self.rt.set_target(task_id);
-                // },
-                // Action::RemoveUser { agg_id, user } => {
-                //     // TODO: Create task
-                //     let task_id: LLID = self.rt.enroll(todo!());
-                //     self.rt.set_target(task_id);
-                // },
-                // Action::Reimage { agg_id, data } => {
-                //     // TODO: Create task
-                //     let task_id: LLID = self.rt.enroll(todo!());
-                //     self.rt.set_target(task_id);
-                // },
-                // Action::AddInstance { agg_id, instance } => {
-                //     // TODO: Create task
-                //     let task_id: LLID = self.rt.enroll(todo!());
-                //     self.rt.set_target(task_id);
-                // },
-                // Action::RemoveInstance { agg_id, instance } => {
-                //     // TODO: Create task
-                //     let task_id: LLID = self.rt.enroll(todo!());
-                //     self.rt.set_target(task_id);
-                // },
+                Action::AddUsers { agg_id, users } => {
+                    let task = crate::users::AddUsers { agg_id, users };
+                    let task_id = self.rt.enroll(task.into());
+                    self.rt.set_target(task_id);
+                } // Action::UpdateUser { agg_id, user } => {
+                  //     // TODO: Create task
+                  //     let task_id: LLID = self.rt.enroll(todo!());
+                  //     self.rt.set_target(task_id);
+                  // },
+                  // Action::RemoveUser { agg_id, user } => {
+                  //     // TODO: Create task
+                  //     let task_id: LLID = self.rt.enroll(todo!());
+                  //     self.rt.set_target(task_id);
+                  // },
+                  // Action::Reimage { agg_id, data } => {
+                  //     // TODO: Create task
+                  //     let task_id: LLID = self.rt.enroll(todo!());
+                  //     self.rt.set_target(task_id);
+                  // },
+                  // Action::AddInstance { agg_id, instance } => {
+                  //     // TODO: Create task
+                  //     let task_id: LLID = self.rt.enroll(todo!());
+                  //     self.rt.set_target(task_id);
+                  // },
+                  // Action::RemoveInstance { agg_id, instance } => {
+                  //     // TODO: Create task
+                  //     let task_id: LLID = self.rt.enroll(todo!());
+                  //     self.rt.set_target(task_id);
+                  // },
             }
         }
     }

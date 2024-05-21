@@ -6,7 +6,9 @@ use models::{
     dal::{new_client, AsEasyTransaction, FKey},
     dashboard::Aggregate,
 };
-use notifications::{booking_ended, booking_ending, booking_started, BookingInfo, Env};
+use notifications::{
+    booking_ended, booking_ending, booking_started, collaborator_added, BookingInfo, Env,
+};
 use tascii::{prelude::*, task_trait::AsyncRunnable};
 
 #[derive(Debug, Clone, Hash, Serialize, Deserialize)]
@@ -33,15 +35,23 @@ impl AsyncRunnable for Notify {
 
         let agg = self.aggregate.get(&mut transaction).await.unwrap();
         let env = Env {
-            project: agg.lab.get(&mut transaction).await.expect("Expected to find lab").name.clone(),
+            project: agg
+                .lab
+                .get(&mut transaction)
+                .await
+                .expect("Expected to find lab")
+                .name
+                .clone(),
             //project: agg.metadata.project.clone().unwrap_or("None".to_owned()),
         };
         let info = BookingInfo {
             owner: agg.metadata.owner.clone().unwrap_or("None".to_owned()),
             collaborators: agg
-            .users
-            .iter().filter(|&username| *username != agg.metadata.owner.as_deref().unwrap_or_default()).cloned()
-            .collect(),
+                .users
+                .iter()
+                .filter(|&username| *username != agg.metadata.owner.as_deref().unwrap_or_default())
+                .cloned()
+                .collect(),
             lab: agg.metadata.lab.clone().unwrap_or("None".to_owned()),
             id: agg.metadata.booking_id.clone().unwrap_or("None".to_owned()),
             template: agg
@@ -57,7 +67,14 @@ impl AsyncRunnable for Notify {
             dashboard_url: match Some(agg.lab) {
                 Some(p) => settings()
                     .projects
-                    .get(p.get(&mut transaction).await.expect("Expected to find lab").name.clone().as_str())
+                    .get(
+                        p.get(&mut transaction)
+                            .await
+                            .expect("Expected to find lab")
+                            .name
+                            .clone()
+                            .as_str(),
+                    )
                     .unwrap()
                     .dashboard_url
                     .clone(),
@@ -68,7 +85,7 @@ impl AsyncRunnable for Notify {
 
         transaction.commit().await.unwrap();
 
-        match self.situation {
+        match self.situation.clone() {
             Situation::BookingCreated => {
                 booking_started(&env, &info)
                     .await
@@ -78,6 +95,9 @@ impl AsyncRunnable for Notify {
                 .await
                 .expect("couldn't notify users"),
             Situation::BookingExpiring => booking_ending(&env, &info)
+                .await
+                .expect("couldn't notify users"),
+            Situation::CollaboratorAdded(users) => collaborator_added(&env, &info, users)
                 .await
                 .expect("couldn't notify users"),
             _ => todo!(),

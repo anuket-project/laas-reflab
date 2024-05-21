@@ -10,6 +10,7 @@ pub mod deploy_booking;
 pub mod entry;
 pub mod resource_management;
 pub mod test_tascii;
+pub mod users;
 pub mod utils;
 
 use tascii::{prelude::*, task_trait::AsyncRunnable};
