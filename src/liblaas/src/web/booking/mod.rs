@@ -4,7 +4,7 @@
 use self::host::fetch_ipmi_fqdn;
 use super::{api, AppState, WebError};
 use crate::{booking, booking::make_aggregate};
-use aide::axum::{routing::delete, routing::get, ApiRouter};
+use aide::{axum::{routing::{delete, get}, ApiRouter}, OperationIo};
 use axum::{
     extract::{Json, Path},
     http::StatusCode,
@@ -35,8 +35,17 @@ async fn create_booking(
     Ok(Json(agg))
 }
 
-async fn end_booking(Path(agg_id): Path<FKey<Aggregate>>) {
-    booking::end_booking(axum::Json(agg_id))
+#[axum::debug_handler]
+async fn end_booking(Path(agg_id): Path<FKey<Aggregate>>) -> Json<EndBookingResponse> {
+    tracing::info!("Received call to end booking for {:?}", agg_id);
+    match booking::end_booking(agg_id).await {
+        Ok(_) => {
+            Json(EndBookingResponse { success: true, details: format!("Successfully ended booking with agg_id {:?}", agg_id)})
+        },
+        Err(error) => {
+            Json(EndBookingResponse { success: false, details: format!("{}", error.to_string())})
+        },
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -80,6 +89,12 @@ struct BookingStatus {
     instances: HashMap<FKey<Instance>, InstanceStatus>,
     config: AggregateConfiguration,
     template: Template,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, OperationIo)]
+pub struct EndBookingResponse {
+    pub success: bool,
+    pub details: String,
 }
 
 async fn booking_status(Path(agg_id): Path<Uuid>) -> Result<Json<BookingStatus>, WebError> {

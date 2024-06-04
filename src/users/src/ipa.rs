@@ -18,6 +18,8 @@ use schemars::{
     JsonSchema,
     _serde_json::{json, Value},
 };
+use strum::IntoEnumIterator;
+use strum_macros::EnumIter;
 
 use crate::anyhow::anyhow;
 
@@ -37,7 +39,7 @@ pub enum UserCreationFailure {
 }
 
 #[allow(non_camel_case_types)] // To allow names to match the expected IPA names
-#[derive(Serialize, Deserialize, Display, Debug, Clone, Hash)]
+#[derive(Serialize, Deserialize, Display, Debug, Clone, Hash, EnumIter)]
 pub enum UserData {
     uid(Option<String>),
     /// Username
@@ -922,7 +924,7 @@ impl IPA {
      */
     pub async fn group_find_user(
         &mut self,
-        username: &String
+        username: &String,
     ) -> Result<Vec<String>, anyhow::Error> {
         let mut user_groups: Vec<String> = vec![];
 
@@ -954,7 +956,7 @@ impl IPA {
             Err(e) => return Err(anyhow::Error::msg(e.to_string())),
         };
 
-        let text_json: serde_json::Value  = serde_json::from_str(text.as_str())?;
+        let text_json: serde_json::Value = serde_json::from_str(text.as_str())?;
         let error = text_json.get("error").unwrap();
 
         if !error.is_null() {
@@ -969,7 +971,16 @@ impl IPA {
 
         for r in result.as_array().unwrap() {
             // "cn" is the field that contains the name of the group. It is represented as an array of strings.
-            let group_name = r.get("cn").unwrap().as_array().unwrap().get(0).unwrap().as_str().unwrap().to_owned();
+            let group_name = r
+                .get("cn")
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .get(0)
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .to_owned();
             user_groups.push(group_name);
         }
 

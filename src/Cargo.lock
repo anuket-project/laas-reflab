@@ -511,6 +511,8 @@ dependencies = [
  "remoc",
  "serde",
  "serde_with",
+ "strum",
+ "strum_macros",
  "tascii",
  "users",
  "uuid",
@@ -3853,6 +3855,8 @@ dependencies = [
  "schemars",
  "serde",
  "serde_with",
+ "strum",
+ "strum_macros",
  "tokio",
 ]
 

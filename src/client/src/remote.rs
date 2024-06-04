@@ -957,12 +957,12 @@ pub async fn cli_server(tascii_rt: &'static Runtime, server: Server) -> LiblaasS
                 continue;
             }
             Ok(Ok(v)) => match v {
-                LiblaasStateInstruction::DoNothing() => continue,
-                LiblaasStateInstruction::ShutDown() => {
+                LiblaasStateInstruction::DoNothing => continue,
+                LiblaasStateInstruction::ShutDown => {
                     let _ = writeln!(sr.as_ref(), "Shutdown instruction issued");
                     break Ok(v);
                 }
-                LiblaasStateInstruction::ExitCLI() => {
+                LiblaasStateInstruction::ExitCLI => {
                     let _ = writeln!(sr.as_ref(), "Exiting CLI");
                     sr.session.send(ToClient::Terminate());
                     tracing::info!("Exiting CLI");
@@ -980,7 +980,7 @@ pub async fn cli_server(tascii_rt: &'static Runtime, server: Server) -> LiblaasS
 
     match res {
         Ok(v) => v,
-        Err(()) => LiblaasStateInstruction::DoNothing(),
+        Err(()) => LiblaasStateInstruction::DoNothing,
     }
 }
 

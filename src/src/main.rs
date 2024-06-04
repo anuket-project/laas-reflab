@@ -278,12 +278,12 @@ async fn main() {
         loop {
             let msg = liblaas_rx.recv().await;
             match msg {
-                Some(client::LiblaasStateInstruction::ShutDown()) => break,
-                Some(client::LiblaasStateInstruction::ExitCLI()) => {
+                Some(client::LiblaasStateInstruction::ShutDown) => break,
+                Some(client::LiblaasStateInstruction::ExitCLI) => {
                     tracing::info!("Client exited CLI cleanly");
                     continue;
                 }
-                Some(client::LiblaasStateInstruction::DoNothing()) => {
+                Some(client::LiblaasStateInstruction::DoNothing) => {
                     tracing::info!("NOOP CLI msg");
                     continue;
                 }

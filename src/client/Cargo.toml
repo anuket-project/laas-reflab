@@ -8,6 +8,8 @@ serde = { workspace = true, features = ["derive"] }
 serde_with = { workspace = true }
 remoc = { workspace = true, features = ['rtc'] }
 uuid = { workspace = true }
+strum = { workspace = true }
+strum_macros = { workspace = true }
 
 common = { path = "../common/" }
 tascii = { path = "../tascii/" }
