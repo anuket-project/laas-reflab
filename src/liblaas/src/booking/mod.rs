@@ -8,10 +8,9 @@ use common::prelude::chrono::Days;
 use metrics::prelude::*;
 use models::{
     dal::{new_client, AsEasyTransaction, EasyTransaction, FKey, NewRow},
-    dashboard,
     dashboard::{
-        Aggregate, AggregateConfiguration, BookingMetadata, HostConfig, Instance, InstanceProvData,
-        NetworkAssignmentMap, ProvEvent, StatusSentiment,
+        self, Aggregate, AggregateConfiguration, BookingMetadata, HostConfig, Instance, InstanceProvData,
+        LifeCycleState, NetworkAssignmentMap, ProvEvent, StatusSentiment
     },
     inventory::Lab,
 };
@@ -247,10 +246,32 @@ async fn ci_processing(
     }
 }
 
-pub fn end_booking(Json(agg_id): Json<FKey<Aggregate>>) {
-    DISPATCH
-        .get()
-        .unwrap()
-        .send(Action::CleanupBooking { agg_id })
-        .expect("Expected to dispatch end booking job");
+/// Attempts to end a booking. A booking can only be ended if the aggregate lifecycle state is "Active".
+/// Does not validate the cleanup aggregate task result.
+pub async fn end_booking(agg_id: FKey<Aggregate>) -> Result<(), anyhow::Error> {
+
+    let mut client = new_client().await.unwrap();
+    let mut transaction = client.easy_transaction().await?;
+
+    let agg = agg_id.get(&mut transaction).await?;
+
+    match agg.state {
+        LifeCycleState::Active => {
+
+            let sender = DISPATCH.get().unwrap();
+            let dispatch_result = sender.send(Action::CleanupBooking { agg_id });
+
+            match dispatch_result {
+                Ok(_) => Ok(()),
+                Err(_) => Err(anyhow::anyhow!("Failed to dispatch end booking job!"))
+            }
+        }
+        LifeCycleState::New => {
+            Err(anyhow::anyhow!("Cannot end booking while still provisioning!"))
+        },
+        LifeCycleState::Done => {
+            // Failed bookings are set to "Done"
+            Ok(())
+        },
+    }
 }

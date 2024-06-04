@@ -1,5 +1,5 @@
 use crate::remote::{Select, Server, Text};
-use crate::{get_lab, select_host};
+use crate::{areyousure, get_lab, select_host};
 use common::prelude::anyhow;
 use models::{
     allocation::{Allocation, ResourceHandle},
@@ -7,6 +7,7 @@ use models::{
     dashboard::{Aggregate, BookingMetadata, Instance, LifeCycleState, Network, ProvisionLogEvent},
     inventory::{Host, Vlan},
 };
+use uuid::Uuid;
 use std::io::Write;
 use strum::IntoEnumIterator;
 use strum_macros::{Display, EnumIter, EnumString};
@@ -31,6 +32,8 @@ pub enum Queries {
     FreeHosts,
     #[strum(serialize = "Query Host Power State")]
     HostPowerState,
+    #[strum(serialize = "Find Leaked Bookings")]
+    LeakedBooking,
 }
 
 pub async fn query(session: &Server) -> Result<(), anyhow::Error> {
@@ -45,6 +48,7 @@ pub async fn query(session: &Server) -> Result<(), anyhow::Error> {
         Queries::Summarize => handle_summarize_query(session).await,
         Queries::Aggregate => handle_aggregate_query(session).await,
         Queries::Config => handle_config_query(session).await,
+        Queries::LeakedBooking => handle_leaked_query(session).await
     }
 }
 
@@ -348,6 +352,82 @@ async fn handle_config_query(mut session: &Server) -> Result<(), anyhow::Error> 
     }
 
     transaction.commit().await?;
+    Ok(())
+}
+
+async fn handle_leaked_query(mut session: &Server) -> Result<(), anyhow::Error> {
+    let aggregate_tn = Aggregate::table_name();
+    let allocation_tn = Allocation::table_name();
+    let resource_handle_tn = ResourceHandle::table_name();
+
+    let _ = writeln!(session, "Finding potentially leaked bookings. THIS IS FOR DIAGNOSTIC PURPOSES ONLY. A booking is NOT guarenteed to be leaked if it appears here. The dashboard is the only source of truth for booking end dates.");
+    areyousure(session)?;
+
+    let active_not_ended_query = format!("
+        select
+            id as agg_id,
+            (metadata ->> 'end') :: text as expected_end
+        from
+            {aggregate_tn}
+        where
+            (metadata ->> 'end') :: timestamp < NOW()
+            and lifecycle_state = '\"Active\"'
+        order by
+            expected_end
+    ");
+
+    let mut client = new_client().await.expect("Expected to connect to db");
+    let mut t = client
+        .easy_transaction()
+        .await
+        .expect("Transaction creation error");
+
+    let active_not_ended_rows = t.query(&active_not_ended_query, &[]).await.expect("Expected to query for active bookings that were not ended!");
+
+    let _ = writeln!(session, "Aggregates with lifecycle_state = \"Active\" and end < NOW()\n-----------------------------");
+    for row in active_not_ended_rows {
+        let agg_id: Uuid = row.get("agg_id");
+        let expected_end: String = row.get("expected_end");
+
+        let _ = writeln!(session, "Aggregate ID: {agg_id}, Expected End: {expected_end}");
+    }
+
+    let has_allocations_query = format!("
+        select
+            aggs.id as agg_id,
+            a.id as alloc_id,
+            expected_end,
+            rh.tracks_resource_type as resource_type
+        from
+            {allocation_tn} a
+            join (
+                select
+                    id,
+                    (metadata ->> 'end') :: text as expected_end
+                from
+                    {aggregate_tn}
+                where
+                    (metadata ->> 'end') :: timestamp < NOW()
+            ) as aggs on a.for_aggregate = aggs.id
+            join {resource_handle_tn} rh on a.for_resource = rh.id
+        where
+            ended is null
+            and rh.tracks_resource_type != 'vpn'
+        order by
+            expected_end;
+        ");
+
+    let has_allocations_rows = t.query(&has_allocations_query, &[]).await.expect("Expected to query for bookings with allocations and end < NOW()");
+
+    let _ = writeln!(session, "\nAggregates with live allocations and end < NOW()\n-----------------------------");
+    for row in has_allocations_rows {
+        let agg_id: Uuid = row.get("agg_id");
+        let expected_end: String = row.get("expected_end");
+        let alloc_id: Uuid = row.get("alloc_id");
+        let resource_type: String = row.get("resource_type");
+
+        let _ = writeln!(session, "Aggregate ID: {agg_id}, Allocation ID: {alloc_id}, Resource Type: {resource_type}, Expected End: {expected_end}");
+    }
     Ok(())
 }
 
