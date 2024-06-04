@@ -159,7 +159,7 @@ impl AsyncRunnable for BookingTask {
 
             Ok(())
         } else {
-            for handle in results {
+            for handle in results.clone() {
                 match handle {
                     Ok(s) => tracing::info!("Succeeded in provisioning {s}"),
                     Err(e) => {
@@ -167,6 +167,16 @@ impl AsyncRunnable for BookingTask {
                         tracing::error!("Failed to provision a host, error: {e:?}")
                     }
                 }
+            }
+
+            if results.iter().all(|one| one.is_err()) {
+                tracing::info!("All hosts failed to provision, deallocating the aggregate");
+                Allocator::instance()
+                    .deallocate_aggregate(&mut transaction, self.aggregate_id)
+                    .await?;
+                let mut agg = self.aggregate_id.get(&mut transaction).await?;
+                agg.state = LifeCycleState::Done;
+                agg.update(&mut transaction).await?;
             }
 
             transaction.commit().await.unwrap();
@@ -1293,7 +1303,9 @@ async fn ci_serialize_runcmds(
         command(val(format!("sudo dhclient {pn} || true")));
     } else {
         let host_name = &host.server_name;
-        command(val(format!("echo 'There are no ports to run dhclient on!'")));
+        command(val(format!(
+            "echo 'There are no ports to run dhclient on!'"
+        )));
         tracing::error!(
             "Network config for {image_name} on {host_name} may fail, host had no ports"
         );
