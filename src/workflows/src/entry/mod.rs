@@ -18,12 +18,14 @@ use models::{
 
 use models::inventory;
 
-use common::prelude::{anyhow, crossbeam_channel, once_cell};
+use common::prelude::{anyhow, chrono, crossbeam_channel, once_cell};
 
 use crossbeam_channel::{Receiver, Sender};
 use models::dal::web::*;
 
 use tascii::prelude::*;
+
+use crate::deploy_booking::notify::Notify;
 
 //use crate::actions::{Action, ActionID, StatusHandle};
 
@@ -42,6 +44,10 @@ pub enum Action {
         agg_id: FKey<Aggregate>,
         users: Vec<String>,
     },
+    NotifyExpiring {
+        agg_id: FKey<Aggregate>,
+        ending_override: Option<chrono::DateTime<chrono::Utc>>
+    }
     // UpdateUser { agg_id: LLID, user: dashboard::UserData },
     // RemoveUser { agg_id: LLID, user: i64 },
     // Reimage { agg_id: LLID, data: dashboard::ReimageData },
@@ -73,32 +79,22 @@ impl Dispatcher {
 
     pub fn handler(self, recv: Receiver<Action>) {
         while let Ok(v) = recv.recv() {
-            match v {
+            let task: RunnableHandle = match v {
                 Action::DeployBooking { agg_id } => {
-                    // first, get all resources that are a member of the booking
-                    // create a task using the aggregate and spawn it into the runtime
-                    // use set_depends to say that that task can only run once
-                    // the hosts have finished what they were doing before
-                    // use the passed back task_id from creating the task in the first place to track progress
-
-                    let task = crate::deploy_booking::BookingTask {
+                    crate::deploy_booking::BookingTask {
                         aggregate_id: agg_id,
-                    };
-
-                    let task_id = self.rt.enroll(task.into());
-                    self.rt.set_target(task_id);
+                    }.into()
                 }
                 Action::CleanupBooking { agg_id } => {
-                    let task = crate::cleanup_booking::CleanupAggregate { agg_id };
-
-                    let task_id = self.rt.enroll(task.into());
-                    self.rt.set_target(task_id);
+                   crate::cleanup_booking::CleanupAggregate { agg_id }.into()
                 }
                 Action::AddUsers { agg_id, users } => {
-                    let task = crate::users::AddUsers { agg_id, users };
-                    let task_id = self.rt.enroll(task.into());
-                    self.rt.set_target(task_id);
-                } // Action::UpdateUser { agg_id, user } => {
+                    crate::users::AddUsers { agg_id, users }.into()
+                }
+                Action::NotifyExpiring { agg_id, ending_override } => {
+                    Notify { aggregate: agg_id, situation: config::Situation::BookingExpiring, ending_override }.into()
+                }, 
+                // Action::UpdateUser { agg_id, user } => {
                   //     // TODO: Create task
                   //     let task_id: LLID = self.rt.enroll(todo!());
                   //     self.rt.set_target(task_id);
@@ -123,7 +119,10 @@ impl Dispatcher {
                   //     let task_id: LLID = self.rt.enroll(todo!());
                   //     self.rt.set_target(task_id);
                   // },
-            }
+            };
+
+            let task_id = self.rt.enroll(task);
+            self.rt.set_target(task_id);
         }
     }
 

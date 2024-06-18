@@ -1,6 +1,7 @@
 //! Copyright (c) 2023 University of New Hampshire
 //! SPDX-License-Identifier: MIT
 
+use common::prelude::chrono;
 use config::{settings, Situation};
 use models::{
     dal::{new_client, AsEasyTransaction, FKey},
@@ -15,6 +16,7 @@ use tascii::{prelude::*, task_trait::AsyncRunnable};
 pub struct Notify {
     pub aggregate: FKey<Aggregate>,
     pub situation: Situation,
+    pub ending_override: Option<chrono::DateTime<chrono::Utc>>
 }
 
 #[derive(Debug, Clone, Copy, Hash, Serialize, Deserialize)]
@@ -63,7 +65,10 @@ impl AsyncRunnable for Notify {
                 .clone(),
             purpose: agg.metadata.purpose.clone().unwrap_or("None".to_owned()),
             start_date: agg.metadata.start,
-            end_date: agg.metadata.end,
+            end_date: match self.ending_override {
+                Some(o) => Some(o),
+                None => agg.metadata.end
+            },
             dashboard_url: match Some(agg.lab) {
                 Some(p) => settings()
                     .projects

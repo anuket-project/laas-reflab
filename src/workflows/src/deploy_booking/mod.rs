@@ -141,6 +141,7 @@ impl AsyncRunnable for BookingTask {
             let notify = context.spawn(Notify {
                 aggregate: self.aggregate_id,
                 situation: Situation::BookingCreated,
+                ending_override: None
             });
 
             // make sure it finishes before we return

@@ -16,7 +16,7 @@ use std::{
 use tera::Tera;
 pub mod email;
 
-use common::prelude::{anyhow, chrono, futures, itertools::Itertools, serde_json::json, tracing};
+use common::prelude::{anyhow, chrono::{self, Utc}, futures, itertools::Itertools, serde_json::json, tracing};
 use config::{settings, RenderTarget, Situation};
 
 pub type Username = String;
@@ -100,6 +100,7 @@ pub async fn send_booking_notification(
     situation: Situation,
     owner_title: String,
     collab_title: String,
+    extra: Option<serde_json::Value>
 ) -> Result<(), Vec<anyhow::Error>> {
     let users = info
         .collaborators
@@ -156,6 +157,10 @@ pub async fn send_booking_notification(
         );
         context.insert("owner", &is_owner);
         context.insert("dashboard_url", &info.dashboard_url);
+
+        if let Some(ref e) = extra {
+            context.insert("extra", e);
+        }
 
         // create te notification
         let notification = Notification {
@@ -229,6 +234,7 @@ pub async fn booking_started(env: &Env, info: &BookingInfo) -> Result<(), Vec<an
         Situation::BookingCreated,
         "You Have Created a New Booking.".to_owned(),
         "You Have Been Added To a New Booking.".to_owned(),
+        None
     )
     .await
 }
@@ -240,6 +246,9 @@ pub async fn booking_ending(env: &Env, info: &BookingInfo) -> Result<(), Vec<any
         Situation::BookingExpiring,
         "Your Booking Is About to Expire.".to_owned(),
         "A Booking You Collaborate On Is About to Expire.".to_owned(),
+        Some(json!({
+            "days": (info.end_date.unwrap_or(Utc::now()) - Utc::now()).num_days()
+        }))
     )
     .await
 }
@@ -251,6 +260,7 @@ pub async fn booking_ended(env: &Env, info: &BookingInfo) -> Result<(), Vec<anyh
         Situation::BookingExpired,
         "Your Booking Has Expired.".to_owned(),
         "A Booking You Collaborate On Has Expired.".to_owned(),
+        None
     )
     .await
 }
@@ -397,7 +407,7 @@ pub struct AccessInfo {
 // }
 
 static TERA: once_cell::sync::Lazy<tera::Tera> =
-    once_cell::sync::Lazy::new(|| match Tera::new("templates/**/*.html") {
+    once_cell::sync::Lazy::new(|| match Tera::new(&settings().notifications.templates_directory) {
         Ok(t) => t,
         Err(e) => {
             panic!("Couldn't create templating instance, failure: {e}")
