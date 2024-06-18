@@ -291,7 +291,12 @@ impl AsyncRunnable for SingleHostDeploy {
         format!("SingleHostDeploy with id {id}")
     }
 
+    fn retry_count(&self) -> usize {
+        3
+    }
+
     async fn run(&mut self, context: &Context) -> Result<Self::Output, TaskError> {
+        let same_host_retry_count = 3;
         tracing::info!("doing a SingleHostDeploy for instance: {:?}", self.instance);
 
         let mut client = new_client().await.unwrap();
@@ -304,11 +309,10 @@ impl AsyncRunnable for SingleHostDeploy {
             .config
             .clone();
 
-        let mut maybe_bad_hosts = Vec::new();
+        let mut maybe_bad_hosts: Vec<ResourceHandle> = Vec::new();
 
         transaction.commit().await.unwrap();
-
-        for _ in 0..3 {
+        for _task_retry_no in 0..self.retry_count() {
             match context
                 .spawn(AllocateHostTask {
                     instance: self.instance,
@@ -320,7 +324,8 @@ impl AsyncRunnable for SingleHostDeploy {
                 Ok((host, rh)) => {
                     tracing::info!("got an allocation, going to get db conn for other things");
                     tracing::debug!("we got an allocation, id is: {host:?}");
-                    for _ in 0..3 {
+                    for attempt_no in 0..same_host_retry_count {
+                        tracing::info!("Attempt same host no {attempt_no}");
                         let mut transaction = client.easy_transaction().await.unwrap();
                         tracing::info!("Got client and transaction for making CI files");
                         // try at most 2 times to provision with a given host before saying a host is broken
@@ -352,8 +357,8 @@ impl AsyncRunnable for SingleHostDeploy {
                             .join()
                         {
                             Ok(_) => {
-                                // we successfully set up the host, so exit the loop
-                                // with a success value
+
+                                tracing::warn!("{:?} Bad Hosts: {:?}", maybe_bad_hosts.len(), maybe_bad_hosts);
                                 mark_not_working(maybe_bad_hosts, self.for_aggregate).await;
 
                                 tracing::info!("Provisioned a host successfully");
@@ -369,11 +374,6 @@ impl AsyncRunnable for SingleHostDeploy {
                                     )
                                     .await;
 
-                                // we failed on a single host, but if we haven't
-                                // hit the limit yet then we should mark this host as not
-                                // working and continue with a different host
-                                maybe_bad_hosts.push(rh.clone());
-
                                 continue;
                             }
                         }
@@ -387,6 +387,8 @@ impl AsyncRunnable for SingleHostDeploy {
                             StatusSentiment::failed,
                         )
                         .await;
+
+                        maybe_bad_hosts.push(rh.clone());
                 }
                 Err(e) => {
                     tracing::debug!("failed to allocate a host?");
