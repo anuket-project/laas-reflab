@@ -266,6 +266,29 @@ async fn fetch_aggregate(id: &Uuid) -> Result<ExistingRow<Aggregate>, UserApiErr
     Ok(aggregate_row)
 }
 
+#[debug_handler]
+async fn get_many_users(
+    Json(usernames): Json<Vec<String>>
+) -> Result<Json<Vec<User>>, WebError> {
+    tracing::info!("Call to get many users");
+
+    let mut ipa = IPA::init()
+    .await
+    .log_server_error("Failed to connect to IPA", true)?;
+
+    let mut users: Vec<User> = vec![];
+
+    for u in usernames {
+        let u = ipa.find_matching_user(u, true, false)
+            .await
+            .log_server_error("Failed to find user", true)?;
+
+        users.push(u);
+    }
+
+    Ok(Json(users))
+}
+
 pub fn routes(state: AppState) -> ApiRouter {
     ApiRouter::new()
         .route("/:username", get(get_user))
@@ -274,4 +297,5 @@ pub fn routes(state: AppState) -> ApiRouter {
         .route("/:username/company", post(set_company))
         .route("/:username/email", post(set_email))
         .route("/:aggregate_id/addusers", post(add_users_to_booking))
+        .route("/many", post(get_many_users))
 }

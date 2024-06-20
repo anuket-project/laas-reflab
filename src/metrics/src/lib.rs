@@ -134,16 +134,34 @@ impl MetricHandler {
         Ok(())
     }
 
-    /// Creates a new [`MetricHandler`] and starts the [`MetricConsumer`] task. This should not be
-    /// called directly. Please use [`MetricHandler::send()`] which wraps this functions
-    /// in a static [`OnceLock`] if you would like to send metrics.
+    /// Creates a new [`MetricHandler`] and starts the [`MetricConsumer`] task.
+    /// This should not be called directly, only indirectly through [`MetricHandler::send()`]
+    /// which ensures the handler is only intialized once globally.
     pub fn new() -> Self {
-        let (tx, rx) = unbounded_channel();
+        let (tx, rx) = unbounded_channel::<MetricMessage>();
         let cancel = CancellationToken::new();
+        let cancel_cloned = cancel.clone();
 
-        tokio::spawn(MetricConsumer::new(rx, cancel.clone()).unwrap().run());
+        tokio::spawn(async move {
+            Self::initialize_consumer(rx, cancel_cloned).await;
+        });
 
         Self { tx, cancel }
+    }
+
+    /// Asynchronously initializes [`MetricConsumer`] with the given receiver and cancellation token.
+    async fn initialize_consumer(rx: UnboundedReceiver<MetricMessage>, cancel: CancellationToken) {
+        match MetricConsumer::new(rx, cancel.clone()).await {
+            Ok(consumer) => {
+                tokio::spawn(consumer.run());
+            }
+            Err(e) => {
+                warn!(
+                    "Could not initialize metric consumer. Metrics will not be sent: {:?}",
+                    e
+                );
+            }
+        }
     }
 
     /// Cancels the [`CancellationToken`], causing the [`MetricConsumer`] to stop its event loop.
@@ -170,7 +188,7 @@ pub struct MetricConsumer {
 impl MetricConsumer {
     /// Creates a new [`MetricConsumer`] with the given receiver and cancellation
     /// token. It initializes the Telegraf [`Client`] which may fail.
-    pub fn new(
+    pub async fn new(
         rx: UnboundedReceiver<MetricMessage>,
         cancel: CancellationToken,
     ) -> Result<Self, MetricError> {

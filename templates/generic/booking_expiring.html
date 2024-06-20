@@ -6,7 +6,7 @@
       <h2 style="{{ styles.headerStyle }}">YOUR BOOKING IS ABOUT TO EXPIRE</h2>
       <div style="{{ styles.paragraphStyle }}">
         <p>
-          Your booking will expire in 48 hours ({{ booking.end }}). If you would
+          Your booking will expire in {{extra.days}} {% if extra.days > 1 %} days {% else %} day {% endif %}({{ booking.end }}). If you would
           like to extend your booking, please click the button below.
         </p>
       </div>
@@ -17,7 +17,7 @@
       <div style="{{ styles.paragraphStyle }}">
         <p>
           A booking owned by <strong>{{ booking.owner }}</strong> will expire in
-          48 hours ({{ booking.end }}). If you would like to extend the booking,
+          {{extra.days}} {% if extra.days > 1 %} days {% else %} day {% endif %} ({{ booking.end }}). If you would like to extend the booking,
           please contact the owner. Otherwise, ensure all important information
           is backed up.
         </p>

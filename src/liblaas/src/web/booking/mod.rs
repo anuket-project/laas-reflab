@@ -9,6 +9,7 @@ use axum::{
     extract::{Json, Path},
     http::StatusCode,
 };
+use chrono::{DateTime, Utc};
 use common::prelude::{aide::axum::routing::post, itertools::Itertools, *};
 use host::{instance_power_control, instance_power_state};
 use models::dashboard::{AggregateConfiguration, Instance, StatusSentiment, Template};
@@ -18,6 +19,7 @@ use models::{
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use workflows::entry::DISPATCH;
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -189,6 +191,35 @@ async fn booking_status(Path(agg_id): Path<Uuid>) -> Result<Json<BookingStatus>,
     }))
 }
 
+#[axum::debug_handler]
+async fn notify_aggregate_expiring(
+    Path(agg_id): Path<Uuid>,
+    Json(date_string): Json<String>
+) -> Result<(), WebError> {
+
+    tracing::info!("Call to notify_aggregate_expiring() for {agg_id} with date_string {date_string}");
+
+    let ending_override = match DateTime::parse_from_rfc2822(&date_string) {
+        Ok(datetime) => Some(datetime.with_timezone(&Utc)),
+        Err(_) => {
+            tracing::error!("Unable to parse date string {date_string}! Defaulting to aggregate metadata...");
+            None
+        },
+    };
+
+    let agg_id: FKey<Aggregate> = FKey::from_id(agg_id.into());
+
+    let dispatch = DISPATCH.get().ok_or((StatusCode::INTERNAL_SERVER_ERROR, format!("Unable to get dispatcher")))?;
+
+    dispatch.send(
+        workflows::entry::Action::NotifyExpiring {
+            agg_id, ending_override
+        })
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, format!("Unable to execute notify task!")))?;
+
+    Ok(())
+}
+
 pub fn routes(state: AppState) -> ApiRouter {
     ApiRouter::new() // remember that in order to have the Handler trait, all inputs for
         // a handler need to implement FromRequest, and all outputs need to implement IntoResponse
@@ -198,4 +229,5 @@ pub fn routes(state: AppState) -> ApiRouter {
         .route("/ipmi/:instance_id/powerstatus", get(instance_power_state))
         .route("/ipmi/:instance_id/setpower", post(instance_power_control))
         .route("/ipmi/:instance_id/getfqdn", get(fetch_ipmi_fqdn))
+        .route("/:agg_id/notify/expiring", post(notify_aggregate_expiring))
 }

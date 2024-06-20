@@ -37,6 +37,7 @@ notifications:
   admin_send_to_email:
     username: example
     domain: mail.com
+  templates_directory: templates/**/*.html
 
 cobbler:
   url: http://cobbler.example.com/cobbler_api

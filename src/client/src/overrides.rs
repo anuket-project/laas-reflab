@@ -437,6 +437,7 @@ async fn handle_send_notification(
     let task = Notify {
         aggregate: agg,
         situation,
+        ending_override: None
     };
 
     let id = tascii_rt.enroll(task.into());

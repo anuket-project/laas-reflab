@@ -19,6 +19,3 @@ tokio-util = { workspace = true }
 tracing = { workspace = true }
 
 config = { path = "../config" }
-
-[dev-dependencies]
-mockall = "0.12.1"

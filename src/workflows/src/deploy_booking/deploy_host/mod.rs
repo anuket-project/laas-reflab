@@ -52,102 +52,27 @@ impl AsyncRunnable for DeployHost {
     type Output = ();
 
     async fn run(&mut self, context: &Context) -> Result<Self::Output, TaskError> {
-        context.reset(); // we can't recover from a partial run of this
-                         //
+        // reset the context as we can't recover from a partial run
+        context.reset();
+
         let (aggregate, host_name, lab) = self.fetch_host_details().await?;
+        // start time of the provision
+        let start_time = Timestamp::now();
 
-        let mut provision_metric = ProvisionMetric {
-            hostname: host_name.clone(),
-            owner: aggregate
-                .metadata
-                .owner
-                .clone()
-                .unwrap_or("None".to_string()),
-            project: aggregate.metadata.lab.clone().unwrap_or("None".to_string()),
-            ..Default::default()
-        };
+        let result = self
+            .deploy_host(context, (&aggregate, &host_name, &lab))
+            .await;
 
-        match MetricHandler::send(provision_metric.clone()) {
-            Ok(_) => {
-                trace!("Sent metric for provision start")
-            }
-            Err(e) => {
-                error!("Failed to send metric for provision start: {:?}", e)
-            }
-        }
-
-        match self.wait_for_mock_injection().await {
-            MockInjectionResult::Success => return Ok(()),
-            MockInjectionResult::Abort(err) => return Err(err),
-            MockInjectionResult::Continue => {}
-        }
-
-        self.log(
-            "Provision Start",
-            "a task has started running to provision the host",
-            StatusSentiment::in_progress,
+        let provisioning_time_seconds = start_time.elapsed();
+        self.send_provision_metric(
+            &host_name,
+            &aggregate,
+            provisioning_time_seconds,
+            result.is_ok(),
         )
         .await;
 
-        let (preimage_waiter, imaging_waiter, mut post_boot_waiter, mut post_provision_waiter) =
-            self.generate_endpoints().await;
-
-        self.configure_cobbler_and_set_boot(
-            context,
-            preimage_waiter.endpoint(),
-            imaging_waiter.endpoint(),
-            &host_name,
-        )
-        .await?;
-
-        sleep(Duration::from_secs(2)).await;
-
-        self.set_power_on(context, &host_name).await?;
-
-        self.configure_mgmt_networking(context, lab.clone()).await?;
-
-        self.install_os(preimage_waiter, imaging_waiter).await?;
-
-        self.set_power_off(context, &host_name).await?;
-
-        self.boot_from_disk(context, &host_name).await?;
-
-        self.configure_postprovision_networking(context, lab.clone(), &mut post_boot_waiter)
-            .await?;
-
-        self.verify_host_provisioned(context, &host_name, &mut post_provision_waiter)
-            .await?;
-
-        match self
-            .setup_ipmi_accounts(context, aggregate.clone(), &host_name)
-            .await
-        {
-            Ok(_) => {
-                self.log(
-                    "Successfully Provisioned",
-                    &format!("{} has provisioned according to configuration", host_name),
-                    StatusSentiment::succeeded,
-                )
-                .await;
-
-                provision_metric.success = true;
-                provision_metric.provisioning_time_seconds = provision_metric.ts.elapsed();
-
-                match MetricHandler::send(provision_metric) {
-                    Ok(_) => {
-                        trace!("Sent metric for provision success")
-                    }
-                    Err(e) => {
-                        error!("Failed to send metric for provision success: {:?}", e)
-                    }
-                }
-            }
-            Err(e) => {
-                return Err(e);
-            }
-        }
-
-        Ok(())
+        result
     }
 
     fn summarize(&self, id: models::dal::ID) -> String {
@@ -170,6 +95,65 @@ pub enum MockInjectionResult {
 }
 
 impl DeployHost {
+    async fn deploy_host(
+        &mut self,
+        context: &Context,
+        (aggregate, host_name, lab): (&Aggregate, &String, &Lab),
+    ) -> Result<(), TaskError> {
+        match self.wait_for_mock_injection().await {
+            MockInjectionResult::Success => return Ok(()),
+            MockInjectionResult::Abort(err) => return Err(err),
+            MockInjectionResult::Continue => {}
+        }
+
+        self.log(
+            "Provision Start",
+            "a task has started running to provision the host",
+            StatusSentiment::in_progress,
+        )
+        .await;
+
+        let (preimage_waiter, imaging_waiter, mut post_boot_waiter, mut post_provision_waiter) =
+            self.generate_endpoints().await;
+
+        self.configure_cobbler_and_set_boot(
+            context,
+            preimage_waiter.endpoint(),
+            imaging_waiter.endpoint(),
+            host_name,
+        )
+        .await?;
+
+        sleep(Duration::from_secs(2)).await;
+
+        self.set_power_on(context, host_name).await?;
+
+        self.configure_mgmt_networking(context, lab.clone()).await?;
+
+        self.install_os(preimage_waiter, imaging_waiter).await?;
+
+        self.set_power_off(context, host_name).await?;
+
+        self.boot_from_disk(context, host_name).await?;
+
+        self.configure_postprovision_networking(context, lab.clone(), &mut post_boot_waiter)
+            .await?;
+
+        self.verify_host_provisioned(context, host_name, &mut post_provision_waiter)
+            .await?;
+
+        self.setup_ipmi_accounts(context, aggregate.clone(), host_name)
+            .await?;
+
+        self.log(
+            "Successfully Provisioned",
+            &format!("{} has provisioned according to configuration", host_name),
+            StatusSentiment::succeeded,
+        )
+        .await;
+
+        Ok(())
+    }
     async fn generate_endpoints(
         &self,
     ) -> (
@@ -695,5 +679,42 @@ impl DeployHost {
     }
     async fn log(&self, msg: &str, desc: &str, sentiment: StatusSentiment) {
         self.using_instance.log(msg, desc, sentiment).await;
+    }
+
+    async fn send_provision_metric(
+        &self,
+        host_name: &str,
+        aggregate: &Aggregate,
+        duration: u64,
+        success: bool,
+    ) {
+        let mut client = new_client().await.unwrap();
+        let mut transaction = client.easy_transaction().await.unwrap();
+
+        let provision_metric = ProvisionMetric {
+            hostname: host_name.to_string(),
+            owner: aggregate
+                .metadata
+                .owner
+                .clone()
+                .unwrap_or_else(|| "None".to_string()),
+            // Hopefully the right name
+            project: aggregate
+                .lab
+                .get(&mut transaction)
+                .await
+                .map_or_else(|_| "None".to_string(), |v| v.name.clone()),
+            provisioning_time_seconds: duration,
+            success,
+            ..Default::default()
+        };
+
+        transaction.commit().await.unwrap();
+
+        if let Err(e) = MetricHandler::send(provision_metric) {
+            error!("Failed to send provision metric: {:?}", e);
+        } else {
+            trace!("Provision metric sent successfully");
+        }
     }
 }
