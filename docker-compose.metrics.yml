@@ -2,11 +2,10 @@ services:
   influxdb:
     image: influxdb:latest
     restart: always
-    container_name: influxdb
     ports:
       - "${INFLUXDB_PORT}:8086"
     volumes:
-      - ./influx:/var/lib/influxdb2
+      - influxdb-data:/var/lib/influxdb2
       - .influxdb2:/etc/influxdb2
     environment:
       - DOCKER_INFLUXDB_INIT_MODE=setup
@@ -19,8 +18,7 @@ services:
       - laasctl_network
   influxdb-backup:
     build:
-      context: ./influxdb_backup 
-    container_name: influxdb-backup
+      context: ./backup_container/
     volumes:
       - ./influx_backups:/backups
     environment:
@@ -34,7 +32,6 @@ services:
       - laasctl_network
   grafana:
     image: grafana/grafana:latest
-    container_name: grafana
     ports:
       - "${GRAFANA_PORT}:3000"
     environment:
@@ -45,9 +42,9 @@ services:
       - INFLUX_ORG=${INFLUXDB_INIT_ORG}
       - INFLUXDB_INIT_BUCKET
     volumes:
-      - ./grafana:/var/lib/grafana
-      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
-      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
+      - grafana-data:/var/lib/grafana
+      - ./.grafana_config/datasources:/etc/grafana/provisioning/datasources
+      - ./.grafana_config/dashboards:/etc/grafana/provisioning/dashboards
     user: '$USERID'
     networks:
       - laasctl_network
@@ -56,7 +53,6 @@ services:
 
   telegraf:
     image: telegraf
-    container_name: telegraf
     restart: always
     environment:
       - TELEGRAF_PORT
@@ -74,4 +70,8 @@ services:
       - influxdb
 
 
-
+volumes:
+  influxdb-data:
+    external: true
+  grafana-data:
+    external: true

@@ -2,6 +2,9 @@ build:
 	docker compose -f docker-compose.yml -f docker-compose.metrics.yml build
 
 up:
+	docker compose -f docker-compose.yml -f docker-compose.dev.yml up 
+
+up-metrics:
 	docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.metrics.yml up 
 
 deploy:
