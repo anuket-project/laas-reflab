@@ -117,11 +117,24 @@ impl WeakUntypedOneshotHandle {
 
 pub trait OneShotAny: Send + Sync {
     fn as_any(&self) -> &dyn std::any::Any;
+
+    fn value_as_json(&self) -> Option<Result<serde_json::Value, TaskError>>;
 }
 
 impl<T: TaskSafe + Send + Sync> OneShotAny for OneShot<Result<T, TaskError>> {
     fn as_any(&self) -> &dyn std::any::Any {
         self
+    }
+
+    fn value_as_json(&self) -> Option<Result<serde_json::Value, TaskError>> {
+        let v = self.get()?;
+
+        let r = match v {
+            Ok(v) => Ok(serde_json::to_value(v).ok()?),
+            Err(e) => Err(e), // work around T being different even if E is same
+        };
+
+        Some(r)
     }
 }
 
