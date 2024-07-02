@@ -11,6 +11,7 @@
 
 use std::sync::Mutex;
 
+use config::Situation;
 use models::{
     dal::{new_client, AsEasyTransaction, FKey, ID},
     dashboard::Aggregate,
@@ -44,10 +45,16 @@ pub enum Action {
         agg_id: FKey<Aggregate>,
         users: Vec<String>,
     },
-    NotifyExpiring {
+    NotifyTask {
         agg_id: FKey<Aggregate>,
-        ending_override: Option<chrono::DateTime<chrono::Utc>>
-    }
+        situation: Situation,
+
+        // List of (key, value) for extra items to be rendered in the template
+        // Needs to be a Vec and not a map because task fields need to derive Hash
+        // This was done in an attempt to generify notifications into a single task
+        // Check the Notify task's run method to see expected fields for a template
+        context: Vec<(String, String)>,
+    },
     // UpdateUser { agg_id: LLID, user: dashboard::UserData },
     // RemoveUser { agg_id: LLID, user: i64 },
     // Reimage { agg_id: LLID, data: dashboard::ReimageData },
@@ -91,9 +98,9 @@ impl Dispatcher {
                 Action::AddUsers { agg_id, users } => {
                     crate::users::AddUsers { agg_id, users }.into()
                 }
-                Action::NotifyExpiring { agg_id, ending_override } => {
-                    Notify { aggregate: agg_id, situation: config::Situation::BookingExpiring, ending_override }.into()
-                }, 
+                Action::NotifyTask { agg_id, situation, context } => {
+                    Notify { aggregate: agg_id, situation, extra_context: context }.into()
+                }
                 // Action::UpdateUser { agg_id, user } => {
                   //     // TODO: Create task
                   //     let task_id: LLID = self.rt.enroll(todo!());

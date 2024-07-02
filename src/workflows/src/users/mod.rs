@@ -29,7 +29,7 @@ impl AsyncRunnable for AddUsers {
         context.spawn(Notify {
             aggregate: self.agg_id,
             situation: Situation::CollaboratorAdded(self.users.clone()),
-            ending_override: None // this being out of sync can actually happen. Consider synchronizing end dates or passing end date with AddUsers task
+            extra_context: vec![]
         });
 
         Ok(())

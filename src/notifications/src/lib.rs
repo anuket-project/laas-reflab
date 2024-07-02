@@ -3,7 +3,7 @@
 #![doc = include_str!("../README.md")]
 #![allow(unused_attributes, unused_variables, dead_code, unused, unused_imports)]
 
-use email::send;
+use email::{send, send_to_admins_email_template};
 use models::dashboard::AggregateConfiguration;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -74,6 +74,7 @@ pub struct BookingInfo {
     pub id: String,
     pub template: String,
     pub purpose: String,
+    pub project: String,
     pub start_date: Option<chrono::DateTime<chrono::Utc>>,
     pub end_date: Option<chrono::DateTime<chrono::Utc>>,
     pub dashboard_url: String,
@@ -206,6 +207,7 @@ pub async fn send_test_email(
         id: "12345".to_owned(),
         template: "Test Pod".to_owned(),
         purpose: "Email Testing".to_owned(),
+        project: "LaaS".to_owned(),
         start_date: Some(chrono::Utc::now()),
         end_date: Some(chrono::Utc::now()),
         dashboard_url: "https://example.com".to_owned(),
@@ -221,6 +223,7 @@ pub async fn send_test_email(
         Situation::BookingExpired => booking_ended(&dummy_env, &dummy_info).await,
         Situation::BookingCreated => booking_started(&dummy_env, &dummy_info).await,
         Situation::BookingExpiring => booking_ending(&dummy_env, &dummy_info).await,
+        Situation::RequestBookingExtension => request_booking_extension(&dummy_env, &dummy_info, &String::from("Sun, 16 Jun 2099 20:33:54 +0000"), &String::from("I need more time!")).await,
         _ => Err(vec![anyhow::Error::msg(
             "Invalid status for test email. Must be BookingExpired, BookingCreated or BookingExpiring",
         )]),
@@ -342,6 +345,75 @@ pub async fn collaborator_added(
     } else {
         Err(errors)
     }
+}
+
+pub async fn request_booking_extension(
+    env: &Env,
+    info: &BookingInfo,
+    extension_date: &String,
+    extension_reason: &String,
+) -> Result<(), Vec<anyhow::Error>> {
+
+    let styles = read_styles(
+        settings()
+            .projects
+            .get(env.project.clone().as_str())
+            .unwrap()
+            .styles_path
+            .as_str(),
+    )
+    .expect("Failed to read styles");
+
+    let styles_json: serde_json::Value =
+        serde_json::from_str(&styles).expect("Failed to parse JSON");
+
+    let mut context = tera::Context::new();
+    context.insert("styles", &styles_json);
+
+    context.insert(
+        "booking",
+        &json!({
+            "id": info.id,
+            "lab": info.lab,
+            "purpose": info.purpose,
+            "template": info.template,
+            "project": info.project,
+            "owner": info.owner,
+            "collaborators": info.collaborators,
+            "start": match info.start_date {
+                Some(s) => s.to_rfc2822(),
+                None => "None".to_owned(),
+            },
+            "ipmi_password": info.configuration.ipmi_password,
+            "ipmi_username": info.configuration.ipmi_username,
+        }),
+    );
+    context.insert("owner", &false);
+    context.insert("dashboard_url", &info.dashboard_url);
+    context.insert("extension_reason", extension_reason);
+    context.insert("extension_date", extension_date);
+
+    tracing::error!("it needs to get send to {}", config::settings().notifications.admin_send_to_email.clone().expect("expected admin email address").as_address_string());
+
+    let notification = Notification {
+        title: format!("Booking Extension Request ({} - {})", info.project, info.purpose),
+        send_to: format!("N/A"), // Ignored by the send_to_admins_email_template() function.
+        by_methods: vec![Method::Email()],
+        situation: Situation::RequestBookingExtension,
+        project: env.project.clone(),
+        context: context,
+        attachment: None,
+    };
+
+match send_to_admins_email_template(env, notification).await {
+    Ok(_) => {
+        Ok(())
+    }
+    Err(e) => {
+        tracing::error!("Failed to send email with error {e:#?}");
+        Err(vec![e])
+    }
+}
 }
 
 /// Send email containing ipa username, temp password, openvpn config, and instructions

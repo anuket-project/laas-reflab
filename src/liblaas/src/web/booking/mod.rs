@@ -11,6 +11,7 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use common::prelude::{aide::axum::routing::post, itertools::Itertools, *};
+use config::Situation;
 use host::{instance_power_control, instance_power_state};
 use models::dashboard::{AggregateConfiguration, Instance, StatusSentiment, Template};
 use models::{
@@ -97,6 +98,12 @@ struct BookingStatus {
 pub struct EndBookingResponse {
     pub success: bool,
     pub details: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct ExtensionRequest {
+    pub date: String,
+    pub reason: String
 }
 
 async fn booking_status(Path(agg_id): Path<Uuid>) -> Result<Json<BookingStatus>, WebError> {
@@ -199,22 +206,39 @@ async fn notify_aggregate_expiring(
 
     tracing::info!("Call to notify_aggregate_expiring() for {agg_id} with date_string {date_string}");
 
-    let ending_override = match DateTime::parse_from_rfc2822(&date_string) {
-        Ok(datetime) => Some(datetime.with_timezone(&Utc)),
-        Err(_) => {
-            tracing::error!("Unable to parse date string {date_string}! Defaulting to aggregate metadata...");
-            None
-        },
-    };
 
     let agg_id: FKey<Aggregate> = FKey::from_id(agg_id.into());
 
     let dispatch = DISPATCH.get().ok_or((StatusCode::INTERNAL_SERVER_ERROR, format!("Unable to get dispatcher")))?;
 
     dispatch.send(
-        workflows::entry::Action::NotifyExpiring {
-            agg_id, ending_override
-        })
+        workflows::entry::Action::NotifyTask { agg_id, situation: Situation::BookingExpiring, context: vec![(String::from("ending_override"), date_string)] })
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, format!("Unable to execute notify task!")))?;
+
+    Ok(())
+}
+
+#[axum::debug_handler]
+/// Sends an email to admins with the details of a booking extension request
+async fn request_booking_extension(
+    Path(agg_id): Path<Uuid>,
+    Json(details): Json<ExtensionRequest>
+) -> Result<(), WebError> {
+    
+    tracing::info!("Call to request_booking_extension() for {agg_id} with details {} {}", details.reason, details.date);
+
+    let agg_id: FKey<Aggregate> = FKey::from_id(agg_id.into());
+
+    let dispatch = DISPATCH.get().ok_or((StatusCode::INTERNAL_SERVER_ERROR, format!("Unable to get dispatcher")))?;
+
+    dispatch.send(
+        workflows::entry::Action::NotifyTask {
+            agg_id,
+            situation: Situation::RequestBookingExtension,
+            context: vec![
+                (String::from("extension_date"), details.date),
+                (String::from("extension_reason"), details.reason)]
+            })
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, format!("Unable to execute notify task!")))?;
 
     Ok(())
@@ -230,4 +254,5 @@ pub fn routes(state: AppState) -> ApiRouter {
         .route("/ipmi/:instance_id/setpower", post(instance_power_control))
         .route("/ipmi/:instance_id/getfqdn", get(fetch_ipmi_fqdn))
         .route("/:agg_id/notify/expiring", post(notify_aggregate_expiring))
+        .route("/:agg_id/request-extension", post(request_booking_extension))
 }

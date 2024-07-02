@@ -151,6 +151,7 @@ async fn handle_test_email_template(session: &Server) -> Result<(), anyhow::Erro
             Situation::BookingCreated,
             Situation::BookingExpiring,
             Situation::BookingExpired,
+            Situation::RequestBookingExtension
         ],
     )
     .prompt(session)
@@ -437,7 +438,7 @@ async fn handle_send_notification(
     let task = Notify {
         aggregate: agg,
         situation,
-        ending_override: None
+        extra_context: vec![],
     };
 
     let id = tascii_rt.enroll(task.into());
