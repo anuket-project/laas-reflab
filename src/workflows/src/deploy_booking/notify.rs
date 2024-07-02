@@ -1,14 +1,16 @@
 //! Copyright (c) 2023 University of New Hampshire
 //! SPDX-License-Identifier: MIT
 
-use common::prelude::chrono;
+use std::collections::HashMap;
+
+use common::prelude::{chrono};
 use config::{settings, Situation};
 use models::{
     dal::{new_client, AsEasyTransaction, FKey},
     dashboard::Aggregate,
 };
 use notifications::{
-    booking_ended, booking_ending, booking_started, collaborator_added, BookingInfo, Env,
+    booking_ended, booking_ending, booking_started, collaborator_added, request_booking_extension, BookingInfo, Env
 };
 use tascii::{prelude::*, task_trait::AsyncRunnable};
 
@@ -16,7 +18,7 @@ use tascii::{prelude::*, task_trait::AsyncRunnable};
 pub struct Notify {
     pub aggregate: FKey<Aggregate>,
     pub situation: Situation,
-    pub ending_override: Option<chrono::DateTime<chrono::Utc>>
+    pub extra_context: Vec<(String, String)>
 }
 
 #[derive(Debug, Clone, Copy, Hash, Serialize, Deserialize)]
@@ -46,6 +48,8 @@ impl AsyncRunnable for Notify {
                 .clone(),
             //project: agg.metadata.project.clone().unwrap_or("None".to_owned()),
         };
+
+        let context_map: HashMap<String, String> = HashMap::from_iter(self.extra_context.clone().into_iter());
         let info = BookingInfo {
             owner: agg.metadata.owner.clone().unwrap_or("None".to_owned()),
             collaborators: agg
@@ -64,9 +68,17 @@ impl AsyncRunnable for Notify {
                 .name
                 .clone(),
             purpose: agg.metadata.purpose.clone().unwrap_or("None".to_owned()),
+            project: agg.metadata.project.clone().unwrap_or("None".to_owned()),
             start_date: agg.metadata.start,
-            end_date: match self.ending_override {
-                Some(o) => Some(o),
+            end_date: match context_map.get("ending_override") {
+                Some(o) => {
+                    match chrono::DateTime::parse_from_rfc2822(&o.to_string()) {
+                        Ok(parsed) => {
+                            Some(parsed.with_timezone(&chrono::Utc))
+                        },
+                        Err(_) => agg.metadata.end
+                    }
+                },
                 None => agg.metadata.end
             },
             dashboard_url: match Some(agg.lab) {
@@ -105,7 +117,14 @@ impl AsyncRunnable for Notify {
             Situation::CollaboratorAdded(users) => collaborator_added(&env, &info, users)
                 .await
                 .expect("couldn't notify users"),
-            _ => todo!(),
+            Situation::RequestBookingExtension => request_booking_extension(
+                &env,
+                &info,
+                context_map.get("extension_date").unwrap_or(&format!("N/A")),
+                context_map.get("extension_reason").unwrap_or(&format!("N/A")))
+                .await
+                .expect("couldn't notify admins"),
+            _ => todo!()
         }
 
         Ok(())

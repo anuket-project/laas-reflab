@@ -89,6 +89,12 @@ pub struct Email {
     pub domain: String,
 }
 
+impl Email {
+    pub fn as_address_string(&self) -> String {
+        format!("{}@{}", self.username, self.domain)
+    }
+}
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct Dev {
     pub status: bool,
@@ -209,6 +215,7 @@ pub enum Situation {
     PasswordResetRequested,
     AccountCreated,
     CollaboratorAdded(Vec<String>),
+    RequestBookingExtension,
 }
 
 impl<'de> Deserialize<'de> for Situation {
@@ -226,6 +233,7 @@ impl<'de> Deserialize<'de> for Situation {
             "vpn_access_removed" => Self::VPNAccessRemoved,
             "account_created" => Self::AccountCreated,
             "collaborator_added" => Self::CollaboratorAdded(Vec::new()),
+            "booking_extension_request" => Self::RequestBookingExtension,
             other => Err(serde::de::Error::custom(format!(
                 "Bad situation specifier {other}"
             )))?,

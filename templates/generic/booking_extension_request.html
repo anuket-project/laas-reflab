@@ -1,0 +1,108 @@
+<!DOCTYPE HTML5>
+<html>
+  <body>
+    <div style="{{ styles.messageContentWrapperStyle }}">
+      <h2 style="{{ styles.headerStyle }}">Booking Extension Request ({{ booking.project }} - {{ booking.purpose }})</h2>
+      <div style="{{ styles.paragraphStyle }}">
+        <p>
+            A user has requested a booking extension. Please review, extend if needed, and contact the booking owner.
+        </p>
+      </div>
+      <table style="{{ styles.tableStyle }}">
+        <tr style="{{ styles.tableHeaderStyle }}">
+          <td style="{{ styles.tableHeaderCellStyle }}" colspan="2">
+            Booking Details
+          </td>
+        </tr>
+
+        <tr style="{{ styles.tableRowStyle}}">
+          <td style="{{ styles.tableCellStyle }}; font-weight: bold;">
+            Owner:
+          </td>
+          <td style="{{ styles.tableCellStyle }}">{{ booking.owner }}</td>
+        </tr>
+
+        <tr>
+          <td style="{{ styles.tableCellStyle }}; font-weight: bold;">ID:</td>
+          <td style="{{ styles.tableCellStyle }}">{{ booking.id }}</td>
+        </tr>
+
+        <tr style="{{ styles.tableRowStyle }}">
+          <td style="{{ styles.tableCellStyle }}; font-weight: bold;">Lab:</td>
+          <td style="{{ styles.tableCellStyle }}">{{ booking.lab }}</td>
+        </tr>
+
+        <tr>
+          <td style="{{ styles.tableCellStyle }}; font-weight: bold;">
+            Resource:
+          </td>
+          <td style="{{ styles.tableCellStyle }}">{{ booking.template }}</td>
+        </tr>
+
+        <tr style="{{styles.tableRowStyle}}">
+          <td style="{{ styles.tableCellStyle }}; font-weight: bold;">
+            Start Date/Time:
+          </td>
+          <td style="{{ styles.tableCellStyle }}">{{ booking.start}}</td>
+        </tr>
+
+        <tr>
+          <td style="{{ styles.tableCellStyle }}; font-weight: bold;">
+            Project:
+          </td>
+          <td style="{{ styles.tableCellStyle }}">{{ booking.project }}</td>
+        </tr>
+
+        <tr style="{{styles.tableRowStyle}}">
+          <td style="{{ styles.tableCellStyle }}; font-weight: bold;">
+            Purpose:
+          </td>
+          <td style="{{ styles.tableCellStyle }}">{{ booking.purpose }}</td>
+        </tr>
+
+        {% if booking.collaborators %}
+        <tr>
+          <td style="{{ styles.tableCellStyle }}; font-weight: bold;">
+            Collaborators:
+          </td>
+          <td style="{{ styles.tableCellStyle }}">
+            {% for collaborator in booking.collaborators %} {{ collaborator }}
+            {% if not loop.last %}<br />{% endif %} {% endfor %}
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td style="{{ styles.tableCellStyle }}; font-weight: bold;">
+            Collaborators:
+          </td>
+          <td style="{{ styles.tableCellStyle }}">No collaborators</td>
+        </tr>
+        {% endif %}
+      </table>
+      <!--  -->
+
+      <table style="{{ styles.tableStyle }}">
+        <tr style="{{ styles.tableHeaderStyle }}">
+          <td style="{{ styles.tableHeaderCellStyle }}" colspan="2">
+            Extension Request Details
+          </td>
+        </tr>
+
+        <tr style="{{ styles.tableRowStyle}}">
+          <td style="{{ styles.tableCellStyle }}; font-weight: bold;">
+            Request End Date:
+          </td>
+          <td style="{{ styles.tableCellStyle }}">{{ extension_date }}</td>
+        </tr>
+
+        <tr>
+          <td style="{{ styles.tableCellStyle }}; font-weight: bold;">Extension Reason:</td>
+          <td style="{{ styles.tableCellStyle }}">{{ extension_reason }}</td>
+        </tr>
+      </table>
+      <a href="{{ dashboard_url }}booking/detail/{{ booking.id }}">
+        <button style="{{ styles.buttonStyle }}">More Information</button>
+      </a>
+    </div>
+  </body>
+</html>

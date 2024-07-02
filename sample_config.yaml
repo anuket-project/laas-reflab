@@ -61,6 +61,7 @@ projects:
                 booking_expired: generic/booking_expired.html
                 vpn_access_added: project1/vpn_access_added.html
                 account_created: generic/account_created.html
+                booking_extension_request: generic/booking_extension_request.html
         styles_path: ./templates/generic/styles.json
         search_domains: []
         nameservers: []
@@ -79,6 +80,7 @@ projects:
                 booking_expired: generic/booking_expired.html
                 vpn_access_added: project2/vpn_access_added.html
                 account_created: generic/account_created.html
+                booking_extension_request: generic/booking_extension_request.html
         styles_path: ./templates/generic/styles.json
         search_domains: []
         nameservers: []
