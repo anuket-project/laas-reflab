@@ -7,7 +7,7 @@ services:
     networks:
       - laasctl_network
     ports:
-      - "${LAAS_MAILBOX_PORT}:${LAAS_MAILBOX_PORT}"
+      - "${LAAS_MAILBOX_PORT:-3001}:${LAAS_MAILBOX_PORT:-3001}"
     volumes:
       - config_data:/usr/src/liblaas/config_data
 
