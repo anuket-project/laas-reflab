@@ -2,3 +2,6 @@ services:
   liblaas:
     ports:
       - "${LAAS_PORT:-3000}:${LAAS_PORT:-3000}"
+  db:
+    ports:
+      - 5432:5432

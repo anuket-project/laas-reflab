@@ -18,18 +18,16 @@ use schemars::{
     JsonSchema,
     _serde_json::{json, Value},
 };
-use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
 use crate::anyhow::anyhow;
 
 use std::{collections::HashMap, fs::read, path::PathBuf};
-
 pub struct IPA {
     client: reqwest::Client,
     id: u32,
-    url: String,
     version: String,
+    ipa: IPAConfig,
 }
 
 pub enum UserCreationFailure {
@@ -225,20 +223,23 @@ pub struct User {
     pub usercertificate: Option<String>, //cert
 }
 
+
 impl IPA {
     pub async fn init() -> Result<IPA, anyhow::Error> {
-        let url = settings().ipa.url.clone();
-        let cert: PathBuf = settings().ipa.certificate_path.clone();
-
-        let mut headers = reqwest::header::HeaderMap::new();
-        headers.insert(
-            "Referer",
-            HeaderValue::from_str(format!("{}/ipa", url).as_str()).unwrap(),
-        );
-
-        let client = reqwest::Client::builder()
-            .add_root_certificate(
-                Certificate::from_pem(&read(cert).expect("Expected to find file"))
+        //Vec of all servers provided
+        let ipa_vec = &settings().ipa;
+        //connection_error: error that will be returned by the fucntion if connection is unsuccessful        
+        let mut connection_error: anyhow::Error = anyhow::Error::msg("No server URLs in config, unable to connect");
+        for current_ipa in ipa_vec{
+            let mut headers = reqwest::header::HeaderMap::new();
+            headers.insert(
+                "Referer",
+                HeaderValue::from_str(format!("{}/ipa", current_ipa.url).as_str()).unwrap(),
+            );
+            
+            let client = reqwest::Client::builder()
+                .add_root_certificate(
+                    Certificate::from_pem(&read(current_ipa.certificate_path.clone()).expect("Expected to find file"))
                     .expect("Expected to get cert"),
             )
             .default_headers(headers)
@@ -246,26 +247,27 @@ impl IPA {
             .danger_accept_invalid_certs(true)
             .build()
             .expect("Expected to build client");
-        let mut new = IPA {
-            client,
-            id: 0,
-            url,
-            version: "2.245".to_owned(),
-        };
-        let res = new.get_auth().await;
-        match res {
-            Ok(_) => Ok(new),
-            Err(e) => Err(anyhow::Error::msg(e.to_string())),
+            // new_ipa: This will be created and saved as an IPA if the connection is succssful
+
+            let mut new_ipa = IPA{
+                client,
+                id:0,
+                version: "2.245".to_owned(),
+                ipa: current_ipa.clone(),
+
+            };
+            let res_ipa = new_ipa.get_auth().await;
+            match res_ipa {
+                Ok(i) => return Ok(new_ipa),
+                Err(e) => connection_error = e,
+            }
         }
+        return Err(anyhow::Error::msg(format!("Failed to connect to any ipa server due to {}", connection_error.to_string())) )
     }
 
     pub async fn get_auth(&mut self) -> Result<bool, anyhow::Error> {
-        let user = settings().ipa.username.as_str();
-        let password = settings().ipa.password.as_str();
-
-        /*et mut form = reqwest::multipart::Form::new()
-        .text("user", user)
-        .text("password", password);*/
+        let user = self.ipa.username.as_str();
+        let password = self.ipa.password.as_str();
 
         let form: HashMap<&str, &str> = [("user", user), ("password", password)]
             .into_iter()
@@ -273,7 +275,7 @@ impl IPA {
 
         let res = self
             .client
-            .post(format!("{}/ipa/session/login_password", self.url))
+            .post(format!("{}/ipa/session/login_password", self.ipa.url))
             .header("Accept", "text/plain")
             .header("Content-Type", "application/x-www-form-urlencoded")
             .form(&form)
@@ -340,7 +342,7 @@ impl IPA {
 
         let res = self
             .client
-            .post(format!("{}/ipa/session/json", self.url))
+            .post(format!("{}/ipa/session/json", self.ipa.url))
             .header("Accept", "application/json")
             .header("Content-Type", "application/json")
             .json(&json)
@@ -588,7 +590,7 @@ impl IPA {
 
         let res = self
             .client
-            .post(format!("{}/ipa/session/json", self.url))
+            .post(format!("{}/ipa/session/json", self.ipa.url))
             .header("Accept", "application/json")
             .header("Content-Type", "application/json")
             .json(&json)
@@ -850,7 +852,7 @@ impl IPA {
 
         let res = self
             .client
-            .post(format!("{}/ipa/session/json", self.url))
+            .post(format!("{}/ipa/session/json", self.ipa.url))
             .header("Accept", "application/json")
             .header("Content-Type", "application/json")
             .json(&json)
@@ -944,7 +946,7 @@ impl IPA {
 
         let res = self
             .client
-            .post(format!("{}/ipa/session/json", self.url))
+            .post(format!("{}/ipa/session/json", self.ipa.url))
             .header("Accept", "application/json")
             .header("Content-Type", "application/json")
             .json(&json)
@@ -1010,7 +1012,7 @@ impl IPA {
 
         let res = self
             .client
-            .post(format!("{}/ipa/session/json", self.url))
+            .post(format!("{}/ipa/session/json", self.ipa.url))
             .header("Accept", "application/json")
             .header("Content-Type", "application/json")
             .json(&json)

@@ -45,10 +45,15 @@ cobbler:
   password: password
 
 ipa:
-  url: https://ipa.example.com
-  username: username
-  password: password
-  certificate_path: config_data/os-ipa-ca.crt
+  - url: https://ipa.example.com
+    username: username
+    password: password
+    certificate_path: config_data/os-ipa-ca.crt
+
+  -  url: https://ipa2.example.com
+    username: username
+    password: password
+    certificate_path: config_data/os-ipa-ca.crt
 
 projects:
     project1:
