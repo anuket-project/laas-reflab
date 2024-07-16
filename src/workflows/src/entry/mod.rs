@@ -14,7 +14,7 @@ use std::sync::Mutex;
 use config::Situation;
 use models::{
     dal::{new_client, AsEasyTransaction, FKey, ID},
-    dashboard::Aggregate,
+    dashboard::{self, Aggregate, Instance}, inventory::Host,
 };
 
 use models::inventory;
@@ -26,7 +26,7 @@ use models::dal::web::*;
 
 use tascii::prelude::*;
 
-use crate::deploy_booking::notify::Notify;
+use crate::deploy_booking::{deploy_host::DeployHost, notify::Notify};
 
 //use crate::actions::{Action, ActionID, StatusHandle};
 
@@ -45,6 +45,11 @@ pub enum Action {
         agg_id: FKey<Aggregate>,
         users: Vec<String>,
     },
+    Reimage {
+        host_id: FKey<Host>,
+        inst_id: FKey<Instance>,
+        agg_id: FKey<Aggregate>
+    },
     NotifyTask {
         agg_id: FKey<Aggregate>,
         situation: Situation,
@@ -57,7 +62,6 @@ pub enum Action {
     },
     // UpdateUser { agg_id: LLID, user: dashboard::UserData },
     // RemoveUser { agg_id: LLID, user: i64 },
-    // Reimage { agg_id: LLID, data: dashboard::ReimageData },
     // AddInstance { agg_id: LLID, instance: dashboard::InstanceData },
     // RemoveInstance { agg_id: LLID, instance: dashboard::InstanceData },
 }
@@ -98,20 +102,21 @@ impl Dispatcher {
                 Action::AddUsers { agg_id, users } => {
                     crate::users::AddUsers { agg_id, users }.into()
                 }
+                Action::Reimage { agg_id, inst_id, host_id } => {
+                    DeployHost {
+                        host_id,
+                        aggregate_id: agg_id,
+                        using_instance: inst_id,
+                    }.into()
+                },
                 Action::NotifyTask { agg_id, situation, context } => {
                     Notify { aggregate: agg_id, situation, extra_context: context }.into()
                 }
                 // Action::UpdateUser { agg_id, user } => {
                   //     // TODO: Create task
                   //     let task_id: LLID = self.rt.enroll(todo!());
-                  //     self.rt.set_target(task_id);
                   // },
                   // Action::RemoveUser { agg_id, user } => {
-                  //     // TODO: Create task
-                  //     let task_id: LLID = self.rt.enroll(todo!());
-                  //     self.rt.set_target(task_id);
-                  // },
-                  // Action::Reimage { agg_id, data } => {
                   //     // TODO: Create task
                   //     let task_id: LLID = self.rt.enroll(todo!());
                   //     self.rt.set_target(task_id);

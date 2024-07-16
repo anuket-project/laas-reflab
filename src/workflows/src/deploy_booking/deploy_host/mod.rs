@@ -2,9 +2,7 @@
 //! SPDX-License-Identifier: MIT
 
 use common::prelude::{
-    anyhow,
-    tokio::time::{sleep, Duration},
-    tracing::{error, info, trace, warn},
+    anyhow, tokio::time::{sleep, Duration}, tracing::{self, error, info, trace, warn}
 };
 
 use metrics::prelude::*;
@@ -59,20 +57,57 @@ impl AsyncRunnable for DeployHost {
         // start time of the provision
         let start_time = Timestamp::now();
 
-        let result = self
-            .deploy_host(context, (&aggregate, &host_name, &lab))
+        let mut err: TaskError = TaskError::Reason(String::from("Host failed to attempt deploy."));
+        for _task_retry_no in 0..(self.retry_count() + 1) {
+            let result = self
+                .deploy_host(context, (&aggregate, &host_name, &lab))
+                .await;
+
+            let provisioning_time_seconds = start_time.elapsed();
+            self.send_provision_metric(
+                &host_name,
+                &aggregate,
+                provisioning_time_seconds,
+                result.is_ok(),
+            )
             .await;
 
-        let provisioning_time_seconds = start_time.elapsed();
-        self.send_provision_metric(
-            &host_name,
-            &aggregate,
-            provisioning_time_seconds,
-            result.is_ok(),
-        )
+            match result {
+                Ok(_) => {
+                    return result
+                },
+                Err(e) => {
+                    err = e;
+                    continue
+                },
+            }
+        }
+
+        let mut client = new_client().await.unwrap();
+        let mut transaction = client.easy_transaction().await.unwrap();
+        let profile = self
+            .using_instance
+            .get(&mut transaction)
+            .await
+            .unwrap()
+            .into_inner()
+            .config
+            .flavor
+            .get(&mut transaction)
+            .await
+            .unwrap()
+            .into_inner()
+            .name;
+
+        send_to_admins(format!(
+            "Failure to provision a host for instance {:?}, this is of profile {profile}",
+            self.using_instance
+        ))
         .await;
 
-        result
+        transaction.commit().await.unwrap();
+
+        Err(err)
     }
 
     fn summarize(&self, id: models::dal::ID) -> String {
@@ -85,6 +120,10 @@ impl AsyncRunnable for DeployHost {
 
     fn timeout() -> std::time::Duration {
         Duration::from_secs(60 * 60) // 60 minute per individual provision try
+    }
+
+    fn retry_count(&self) -> usize {
+        3
     }
 }
 

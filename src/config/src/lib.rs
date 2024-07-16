@@ -21,7 +21,7 @@ pub struct LibLaaSConfig {
     pub cli: CliConfig,
     pub notifications: NotificationConfig,
     pub cobbler: CobblerConfig,
-    pub ipa: IPAConfig,
+    pub ipa: Vec<IPAConfig>,
     pub projects: HashMap<String, ProjectConfig>,
     #[serde(default)]
     pub metrics: Option<MetricsConfig>,
