@@ -6,21 +6,21 @@ use super::{api, AppState, WebError};
 use crate::{booking, booking::make_aggregate};
 use aide::{axum::{routing::{delete, get}, ApiRouter}, OperationIo};
 use axum::{
-    extract::{Json, Path},
-    http::StatusCode,
+    debug_handler, extract::{Json, Path}, http::StatusCode
 };
 use chrono::{DateTime, Utc};
 use common::prelude::{aide::axum::routing::post, itertools::Itertools, *};
+use dal::DBTable;
 use config::Situation;
 use host::{instance_power_control, instance_power_state};
-use models::dashboard::{AggregateConfiguration, Instance, StatusSentiment, Template};
+use models::{dashboard::{AggregateConfiguration, Image, Instance, StatusSentiment, Template}, inventory::Action};
 use models::{
     dal::{new_client, web::*, AsEasyTransaction, ExistingRow, FKey},
     dashboard::{self, Aggregate, ProvisionLogEvent},
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use workflows::entry::DISPATCH;
+use workflows::{deploy_booking::deploy_host, entry::DISPATCH};
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -92,6 +92,44 @@ struct BookingStatus {
     instances: HashMap<FKey<Instance>, InstanceStatus>,
     config: AggregateConfiguration,
     template: Template,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+struct ReimageBlob {
+    image_id: FKey<Image>,
+}
+
+#[axum::debug_handler]
+async fn reimage_host(
+    Path(instance_id): Path<Uuid>,
+    Json(request): Json<ReimageBlob>,
+) -> Result<(), WebError> {
+    tracing::info!("API call to reimage_host()");
+    let image_id = request.image_id;
+    let mut client = new_client().await.log_db_client_error()?;
+    let mut transaction = client.easy_transaction().await.log_db_client_error()?;
+    // instance id, instance hostname, status
+
+    let mut inst = Instance::get(&mut transaction, instance_id.into()).await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, format!("Error accessing image from database.")))?;
+    inst.config.image = image_id;
+    inst.update(&mut transaction).await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, format!("Error updating instance image.")))?;
+    transaction.commit().await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, format!("Error committing instance changes.")))?;
+
+    let res = DISPATCH
+        .get()
+        .ok_or((StatusCode::INTERNAL_SERVER_ERROR, format!("Tascii was not found.")))?
+        .send(workflows::entry::Action::Reimage {
+            host_id: inst.linked_host.ok_or((StatusCode::INTERNAL_SERVER_ERROR, format!("No linked host was found for instance.")))?,
+            inst_id: dal::FKey::from_id(instance_id.into()),
+            agg_id: inst.aggregate,
+        });
+    match res {
+        Err(e) => {
+            tracing::error!("Failed to send deploy task with error {:#?}", e)
+        }
+        Ok(_) => {}
+    };
+    Ok(())
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, OperationIo)]
@@ -250,6 +288,7 @@ pub fn routes(state: AppState) -> ApiRouter {
         .route("/:agg_id/status", get(booking_status))
         .route("/create", post(create_booking))
         .route("/:agg_id/end", delete(end_booking))
+        .route("/:instance_id/reimage", post(reimage_host))
         .route("/ipmi/:instance_id/powerstatus", get(instance_power_state))
         .route("/ipmi/:instance_id/setpower", post(instance_power_control))
         .route("/ipmi/:instance_id/getfqdn", get(fetch_ipmi_fqdn))

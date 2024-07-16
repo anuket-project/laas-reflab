@@ -1,14 +1,12 @@
 use aide::OperationIo;
 use axum::{
-    extract::{Json, Path},
-    http::StatusCode,
-    response::{IntoResponse, Response},
+    debug_handler, extract::{Json, Path}, http::StatusCode, response::{IntoResponse, Response}
 };
 use common::prelude::serde_json;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, span::Id, warn};
 
 use uuid::Uuid;
 
@@ -17,10 +15,10 @@ use models::{
     dashboard::{Aggregate, Instance, LifeCycleState},
     inventory::Host,
 };
-use workflows::deploy_booking::set_host_power_state::{
+use workflows::{deploy_booking::set_host_power_state::{
     get_host_power_state, set_host_power_state, HostConfig, PowerState, PowerStateError,
     TimeoutConfig,
-};
+}, entry::{Action, DISPATCH}};
 
 /// Respective error types for the handlers. All of these error messages will be converted into an
 /// HTTP response.
@@ -95,6 +93,11 @@ pub struct PowerCommandRequest {
 #[derive(Debug, Serialize, Deserialize, JsonSchema, OperationIo)]
 pub struct PowerStateResponse {
     pub power_state: PowerState,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, OperationIo)]
+pub struct IPMIFQDNResponse {
+    pub ipmi_fqdn: String,
 }
 
 /// A handler that retrieves the current power state of a specific instance.
@@ -299,9 +302,9 @@ async fn is_instance_active(instance: &Instance) -> Result<bool, ApiPowerStateEr
     Ok(aggregate.into_inner().state == LifeCycleState::Active)
 }
 
-pub async fn fetch_ipmi_fqdn(Path(instance_id): Path<Uuid>) -> Result<String, ApiPowerStateError> {
+pub async fn fetch_ipmi_fqdn(Path(instance_id): Path<Uuid>) -> Result<Json<IPMIFQDNResponse>, ApiPowerStateError> {
     let host = fetch_host(&fetch_instance(&instance_id).await?)
         .await?
         .unwrap();
-    Ok(host.ipmi_fqdn)
+    Ok(Json(IPMIFQDNResponse { ipmi_fqdn: host.ipmi_fqdn }))
 }

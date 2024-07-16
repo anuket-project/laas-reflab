@@ -296,7 +296,6 @@ impl AsyncRunnable for SingleHostDeploy {
     }
 
     async fn run(&mut self, context: &Context) -> Result<Self::Output, TaskError> {
-        let same_host_retry_count = 3;
         tracing::info!("doing a SingleHostDeploy for instance: {:?}", self.instance);
 
         let mut client = new_client().await.unwrap();
@@ -312,7 +311,7 @@ impl AsyncRunnable for SingleHostDeploy {
         let mut maybe_bad_hosts: Vec<ResourceHandle> = Vec::new();
 
         transaction.commit().await.unwrap();
-        for _task_retry_no in 0..self.retry_count() {
+        for _task_retry_no in 0..(self.retry_count() + 1) {
             match context
                 .spawn(AllocateHostTask {
                     instance: self.instance,
@@ -324,12 +323,8 @@ impl AsyncRunnable for SingleHostDeploy {
                 Ok((host, rh)) => {
                     tracing::info!("got an allocation, going to get db conn for other things");
                     tracing::debug!("we got an allocation, id is: {host:?}");
-                    for attempt_no in 0..same_host_retry_count {
-                        tracing::info!("Attempt same host no {attempt_no}");
                         let mut transaction = client.easy_transaction().await.unwrap();
                         tracing::info!("Got client and transaction for making CI files");
-                        // try at most 2 times to provision with a given host before saying a host is broken
-                        // and moving on to the next host to try provisioning
 
                         self.instance
                             .log(
@@ -369,26 +364,16 @@ impl AsyncRunnable for SingleHostDeploy {
                                 self.instance
                                     .log(
                                         "Failed to Provision",
-                                        "the provision workflow threw an error",
+                                        "Failed to provision this host too many times, \
+                                                    trying again with a different host",
                                         StatusSentiment::degraded,
                                     )
                                     .await;
 
-                                continue;
+                                maybe_bad_hosts.push(rh.clone());
+
                             }
                         }
-                    }
-
-                    self.instance
-                        .log(
-                            "Failed to Provision",
-                            "failed to provision this host too many times, \
-                                                    trying again with a different host",
-                            StatusSentiment::failed,
-                        )
-                        .await;
-
-                        maybe_bad_hosts.push(rh.clone());
                 }
                 Err(e) => {
                     tracing::debug!("failed to allocate a host?");
