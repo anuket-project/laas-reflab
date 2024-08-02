@@ -28,6 +28,7 @@ timer = "0.2.0"
 execute = "0.2.11"
 derive_more = "0.99.17"
 itertools = "0.10.5"
+schemars = "*"
 
 tokio = { version = "1", features = [
   "full",

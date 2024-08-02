@@ -3272,6 +3272,7 @@ dependencies = [
  "pyo3",
  "rand",
  "rayon",
+ "schemars",
  "serde",
  "serde_json",
  "timer",
