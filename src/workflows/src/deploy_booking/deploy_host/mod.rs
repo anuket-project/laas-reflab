@@ -2,7 +2,9 @@
 //! SPDX-License-Identifier: MIT
 
 use common::prelude::{
-    anyhow, tokio::time::{sleep, Duration}, tracing::{self, error, info, trace, warn}
+    anyhow,
+    tokio::time::{sleep, Duration},
+    tracing::{self, error, info, trace, warn},
 };
 
 use metrics::prelude::*;
@@ -73,13 +75,11 @@ impl AsyncRunnable for DeployHost {
             .await;
 
             match result {
-                Ok(_) => {
-                    return result
-                },
+                Ok(_) => return result,
                 Err(e) => {
                     err = e;
-                    continue
-                },
+                    continue;
+                }
             }
         }
 
@@ -625,7 +625,7 @@ impl DeployHost {
         )
         .await;
 
-        match post_provision_waiter.wait_next(Duration::from_secs(60 * 20)) {
+        match post_provision_waiter.wait_next(Duration::from_secs(60 * 30)) {
             Ok(_) => {
                 info!("Host came back up after applying network configs");
             }
