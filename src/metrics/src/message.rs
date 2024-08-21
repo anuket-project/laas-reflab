@@ -53,5 +53,6 @@ impl<T: Metric> MetricWrapper for T {
 pub enum MetricMessage {
     Booking(BookingMetric),
     Provision(ProvisionMetric),
+    BookingExpired(BookingExpiredMetric),
     // ...add additional metrics defined in the metrics module here
 }
