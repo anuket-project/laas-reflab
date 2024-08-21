@@ -41,10 +41,16 @@ services:
       - INFLUX_HOST=http://influxdb:${INFLUXDB_PORT}
       - INFLUX_ORG=${INFLUXDB_INIT_ORG}
       - INFLUXDB_INIT_BUCKET
+      - LDAP_BIND_PASSWORD
+      - LDAP_HOST
+      - LDAP_BIND_DN
     volumes:
       - grafana-data:/var/lib/grafana
-      - ./.grafana_config/datasources:/etc/grafana/provisioning/datasources
-      - ./.grafana_config/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/grafana.ini:/etc/grafana/grafana.ini
+      - ./grafana/ldap.toml:/etc/grafana/ldap.toml
+      - ./grafana/certificates/ca.crt:/etc/ssl/certs/ca.crt
     user: '$USERID'
     networks:
       - laasctl_network

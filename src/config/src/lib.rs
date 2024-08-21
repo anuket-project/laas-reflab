@@ -142,7 +142,7 @@ pub struct NotificationConfig {
     pub admin_send_from_email: Option<Email>,
 
     pub admin_send_to_email: Option<Email>,
-    pub templates_directory: String
+    pub templates_directory: String,
 }
 #[derive(Debug, Deserialize, Clone)]
 pub struct CobblerConfig {
