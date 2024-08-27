@@ -6,7 +6,8 @@ s1.vim
 .env
 /data
 primary-targets.json
-*.crt
+# I have explicit permission to include the grafana cert in this repo
+#*.crt
 config_data/*
 tracing.log
 cli/src/import_data/*.json

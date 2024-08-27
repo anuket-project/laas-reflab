@@ -31,7 +31,9 @@ services:
     networks:
       - laasctl_network
   grafana:
-    image: grafana/grafana:latest
+    image: laas-grafana
+    build: 
+      context: ./grafana/
     ports:
       - "${GRAFANA_PORT}:3000"
     environment:
@@ -41,16 +43,16 @@ services:
       - INFLUX_HOST=http://influxdb:${INFLUXDB_PORT}
       - INFLUX_ORG=${INFLUXDB_INIT_ORG}
       - INFLUXDB_INIT_BUCKET
-    volumes:
-      - grafana-data:/var/lib/grafana
-      - ./.grafana_config/datasources:/etc/grafana/provisioning/datasources
-      - ./.grafana_config/dashboards:/etc/grafana/provisioning/dashboards
+      - LDAP_BIND_PASSWORD
+      - LDAP_HOST
+      - LDAP_BIND_DN
     user: '$USERID'
-    networks:
-      - laasctl_network
     depends_on:
       - influxdb
-
+    volumes:
+      - grafana-data:/var/lib/grafana
+    networks:
+      - laasctl_network
   telegraf:
     image: telegraf
     restart: always

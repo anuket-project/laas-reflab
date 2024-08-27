@@ -9,8 +9,8 @@ use metrics::prelude::*;
 use models::{
     dal::{new_client, AsEasyTransaction, EasyTransaction, FKey, NewRow},
     dashboard::{
-        self, Aggregate, AggregateConfiguration, BookingMetadata, HostConfig, Instance, InstanceProvData,
-        LifeCycleState, NetworkAssignmentMap, ProvEvent, StatusSentiment
+        self, Aggregate, AggregateConfiguration, BookingMetadata, HostConfig, Instance,
+        InstanceProvData, LifeCycleState, NetworkAssignmentMap, ProvEvent, StatusSentiment,
     },
     inventory::Lab,
 };
@@ -56,14 +56,28 @@ pub async fn make_aggregate(
 
     let now = Utc::now();
 
+    let booking_id: i32 = blob
+        .metadata
+        .booking_id
+        .clone()
+        .unwrap_or_default()
+        .parse()
+        .unwrap_or_default();
+
     let booking = BookingMetric {
+        booking_id,
         booking_length_days: blob.metadata.length.unwrap_or_default() as i32,
         num_hosts: template.hosts.len() as i32,
-        // This is because the owner is also in the allowed_users list
-        num_collaborators: blob.allowed_users.len() as i32 - 1,
-        // Option type requires unwrapping
+        num_collaborators: blob
+            .allowed_users
+            .iter()
+            .filter(|x| x != &&blob.metadata.owner.clone().unwrap_or_default())
+            .count() as i32,
         owner: blob.metadata.owner.clone().unwrap_or("None".to_string()),
+        lab: blob.origin.clone(),
         project: blob.metadata.project.clone().unwrap_or("None".to_string()),
+        purpose: blob.metadata.purpose.clone().unwrap_or("None".to_string()),
+
         // defaults to current time.
         ..Default::default()
     };
@@ -249,7 +263,6 @@ async fn ci_processing(
 /// Attempts to end a booking. A booking can only be ended if the aggregate lifecycle state is "Active".
 /// Does not validate the cleanup aggregate task result.
 pub async fn end_booking(agg_id: FKey<Aggregate>) -> Result<(), anyhow::Error> {
-
     let mut client = new_client().await.unwrap();
     let mut transaction = client.easy_transaction().await?;
 
@@ -257,21 +270,21 @@ pub async fn end_booking(agg_id: FKey<Aggregate>) -> Result<(), anyhow::Error> {
 
     match agg.state {
         LifeCycleState::Active => {
-
             let sender = DISPATCH.get().unwrap();
             let dispatch_result = sender.send(Action::CleanupBooking { agg_id });
 
             match dispatch_result {
                 Ok(_) => Ok(()),
-                Err(_) => Err(anyhow::anyhow!("Failed to dispatch end booking job!"))
+                Err(_) => Err(anyhow::anyhow!("Failed to dispatch end booking job!")),
             }
         }
-        LifeCycleState::New => {
-            Err(anyhow::anyhow!("Cannot end booking while still provisioning!"))
-        },
+        LifeCycleState::New => Err(anyhow::anyhow!(
+            "Cannot end booking while still provisioning!"
+        )),
         LifeCycleState::Done => {
             // Failed bookings are set to "Done"
             Ok(())
-        },
+        }
     }
 }
+

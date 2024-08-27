@@ -180,6 +180,11 @@ pub struct BookingMetric {
     #[serde(default)]
     /// The timestamp of the booking event.
     pub ts: Timestamp,
+
+    #[telegraf(field)]
+    #[serde(skip)]
+    pub booking_id: i32,
+
     #[telegraf(field)]
     #[serde(default)]
     /// **Field**: The duration of the booking in days.
@@ -202,8 +207,18 @@ pub struct BookingMetric {
 
     #[telegraf(tag)]
     #[serde(default)]
-    /// **Tag:** The project associated with this booking. ex. "Anuket"
+    /// **Tag:** The lab associated with this booking. ex. "Anuket"
+    pub lab: String,
+
+    #[telegraf(field)]
+    #[serde(default)]
+    /// **Tag:** The project associated with this booking. ex. "Thoth"
     pub project: String,
+
+    #[telegraf(field)]
+    #[serde(default)]
+    /// **Tag:** The purpose of this booking. ex. "ONAP_DEV"
+    pub purpose: String,
 
     /// **Tag:** Metadata tag to differentiate between fake/mock data and real data in the
     /// dashboard.
@@ -268,6 +283,48 @@ pub struct ProvisionMetric {
 }
 
 impl Timestampable for ProvisionMetric {
+    fn update(mut self) {
+        self.ts = Timestamp::now();
+    }
+    fn set(mut self, ts: Timestamp) {
+        self.ts = ts;
+    }
+}
+
+/// Represents a booking expired metric event
+#[derive(Metric, Default, Debug, Serialize, Deserialize, Clone)]
+#[measurement = "booking_expired"]
+pub struct BookingExpiredMetric {
+    #[telegraf(timestamp)]
+    #[serde(default)]
+    pub ts: Timestamp,
+
+    #[telegraf(field)]
+    #[serde(default)]
+    pub owner: String,
+
+    #[telegraf(field)]
+    #[serde(default)]
+    pub booking_id: i32,
+
+    #[telegraf(field)]
+    #[serde(default)]
+    pub extension_length_days: i32,
+
+    #[telegraf(field)]
+    #[serde(default)]
+    pub project: String,
+
+    #[telegraf(tag)]
+    #[serde(default)]
+    pub lab: String,
+
+    #[telegraf(tag)]
+    #[serde(default)]
+    pub mock: bool,
+}
+
+impl Timestampable for BookingExpiredMetric {
     fn update(mut self) {
         self.ts = Timestamp::now();
     }
