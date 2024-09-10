@@ -144,10 +144,10 @@ where
         let slef: &'static mut Self = unsafe { std::mem::transmute(self) };
 
         let res = std::panic::catch_unwind(AssertUnwindSafe(|| {
-            let r = tokio_rt.block_on(async move {
+            tokio_rt.block_on(async move {
                 let r = slef.v.run(&context).await;
 
-                let summary = slef.summarize(run_id);
+                let _summary = slef.summarize(run_id);
 
                 debug!("Going to complete the oneshot");
                 // this already internally saves any changes,
@@ -157,13 +157,11 @@ where
                 r
 
                 // TODO: we want to atomically notify the scheduler that we've completed
-            });
-
-            r
+            })
         }));
 
         let complete_with = match res {
-            Err(e) => Err(TaskError::Panic(format!("Task failed to run, panicked"))),
+            Err(_e) => Err(TaskError::Panic("Task failed to run, panicked".to_string())),
             Ok(Err(e)) => Err(TaskError::Reason(format!(
                 "Task failed to run, reason: {e:?}"
             ))),
@@ -190,7 +188,7 @@ where
     }
 
     fn on_error(&self) -> Box<dyn Fn(StrongUntypedOneshotHandle, TaskError) -> Result<(), ()>> {
-        let summary = self.summarize(ID::nil());
+        let _summary = self.summarize(ID::nil());
         fn on_error<Res: TaskSafe>(h: StrongUntypedOneshotHandle, e: TaskError) -> Result<(), ()> {
             executors::spawn_on_tascii_tokio("oneshot", async move {
                 match h.to_typed::<Result<Res, TaskError>>() {
@@ -206,7 +204,8 @@ where
         }
 
         // fn items are gross and weird, TODO: revisit this
-        Box::new(move |h, e| on_error::<R::Output>(h, e))
+        // I think he is talking about the Box::new() ^^^
+        Box::new(on_error::<R::Output>)
     }
 
     fn fake_success(
@@ -244,8 +243,8 @@ where
         // TODO: this part is not particularly panic safe, even though
         // we run drop code for the value!
         match { os.get() } {
-            Some(Ok(v)) => TaskState::Done,
-            Some(Err(e)) => TaskState::Failed,
+            Some(Ok(_v)) => TaskState::Done,
+            Some(Err(_e)) => TaskState::Failed,
             None => TaskState::Ready,
         }
     }
@@ -256,7 +255,7 @@ where
         })
     }
 
-    fn summarize(&self, id: ID) -> String {
+    fn summarize(&self, _id: ID) -> String {
         let task_ty_name = type_name::<R>();
 
         format!("Task {task_ty_name} with content {:#?}", self.v)
@@ -334,7 +333,7 @@ impl<'de> Deserialize<'de> for RunnableHandle {
 
         let df = tm.deserialize_fn;
 
-        Ok(df(Box::new(st.task)))
+        Ok(df(st.task))
     }
 }
 
@@ -350,7 +349,7 @@ impl Serialize for RunnableHandle {
 
         let sf = tm.serialize_fn;
 
-        Ok(sf(self).serialize(serializer)?)
+        sf(self).serialize(serializer)
     }
 }
 
@@ -399,18 +398,16 @@ pub fn collect_tasks() -> &'static HashMap<TaskIdentifier, TaskMarker> {
 
 pub const fn register_task<T: AsyncRunnable + Serialize + DeserializeOwned + 'static>() -> TaskMarker
 {
-    fn serialize<T: AsyncRunnable + Serialize + DeserializeOwned>(
-        rh: &RunnableHandle,
-    ) -> Box<serde_json::Value> {
+    fn serialize(rh: &RunnableHandle) -> Box<serde_json::Value> {
         let p = &*rh.task;
 
         p.to_value()
     }
 
     fn deserialize<T: AsyncRunnable + DeserializeOwned + 'static>(
-        val: Box<serde_json::Value>,
+        val: serde_json::Value,
     ) -> RunnableHandle {
-        let t: T = serde_json::from_value(*val).expect("couldn't deserialize task");
+        let t: T = serde_json::from_value(val).expect("couldn't deserialize task");
         let boxed: Box<dyn DynRunnable> = Box::new(DynRunnableShim { v: t });
 
         RunnableHandle { task: boxed }
@@ -418,7 +415,7 @@ pub const fn register_task<T: AsyncRunnable + Serialize + DeserializeOwned + 'st
 
     TaskMarker {
         deserialize_fn: deserialize::<T>,
-        serialize_fn: serialize::<T>,
+        serialize_fn: serialize,
         ident: T::identifier,
     }
 }

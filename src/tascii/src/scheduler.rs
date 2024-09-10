@@ -15,9 +15,10 @@ use crossbeam_channel::{Receiver, Sender};
 use tracing::{debug, error, info, trace, warn};
 
 use crate::{
+    executors,
     runtime::Runtime,
     task_runtime::{RuntimeTask, TaskState},
-    workflows::TaskError, executors,
+    workflows::TaskError,
 };
 
 #[allow(dead_code)]
@@ -166,7 +167,7 @@ impl Orchestrator {
                                         debug!("Returned from is_complete(), value {c}");
                                         c
                                     } else {
-                                        return false;
+                                        false
                                     }
                                 })
                                 .expect("failed to find task?");
@@ -222,7 +223,7 @@ impl Orchestrator {
                         .with_task(task_id, |t| t.proto.task_ref().summarize(task_id))
                         .unwrap_or("couldn't fetch".to_owned());
 
-                    if let Ok(e) = stopped {
+                    if let Ok(_e) = stopped {
                         warn!("STOPPED (canceled) task {summary}, with the reason {reason:?}. Intervention may be required");
                     }
                 }
@@ -293,10 +294,7 @@ impl Orchestrator {
             // if there are no tasks in that set that are in the "Ready" state, then this task
             // is stalled
             for dependency in r.depends_on.clone() {
-                let was_new = depset
-                    .entry(dependency)
-                    .or_insert_with(|| HashSet::new())
-                    .insert(task_id);
+                let was_new = depset.entry(dependency).or_default().insert(task_id);
 
                 let status = self
                     .runtime()
@@ -378,7 +376,7 @@ impl Orchestrator {
                                  // unhappy
         self.running_tasks.insert(task_id);
 
-        let thread = std::thread::spawn(move || RuntimeTask::run(task_id, rt));
+        let _thread = std::thread::spawn(move || RuntimeTask::run(task_id, rt));
     }
 
     /// Get the taskstate of the given task ID

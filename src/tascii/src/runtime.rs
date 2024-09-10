@@ -18,9 +18,9 @@ use write_to_file::WriteToFile;
 
 use crate::{
     executors,
-    task_shim::RunnableHandle,
+    scheduler::{self, Orchestrator, TaskMessage},
     task_runtime::{RuntimeTask, TaskGuard, TaskGuardInner, TaskState},
-    scheduler::{Orchestrator, TaskMessage, self},
+    task_shim::RunnableHandle,
 };
 
 pub struct Runtime {
@@ -40,9 +40,7 @@ impl Runtime {
     pub fn enroll(&'static self, v: RunnableHandle) -> ID {
         debug!("enrolls task");
         // enroll the task within the given runtime
-        let tid = self.create(v);
-
-        tid
+        self.create(v)
     }
 
     /// Says a must happen before b can start
@@ -127,11 +125,11 @@ impl Runtime {
 
     /// Gets a deduplicated set of taskguards for the list of IDs
     pub async fn get_all(&'static self, all: &[ID]) -> Vec<TaskGuard> {
-        let as_set: HashSet<ID> = all.into_iter().map(|&e| e).collect();
+        let _as_set: HashSet<ID> = all.iter().copied().collect();
 
         let mut r = Vec::new();
 
-        for id in all.into_iter() {
+        for id in all.iter() {
             if let Ok(tg) = self.get_task(*id) {
                 r.push(tg);
             }
@@ -367,7 +365,6 @@ impl Runtime {
         proto: RunnableHandle,
         within_rt: &'static Runtime,
     ) -> Result<RuntimeTask, anyhow::Error> {
-
         let t = RuntimeTask::build(proto, within_rt)?;
         let id = t.id();
 

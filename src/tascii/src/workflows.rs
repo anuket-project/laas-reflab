@@ -62,7 +62,7 @@ impl TaskError {
 }
 
 impl From<anyhow::Error> for TaskError {
-    fn from(value: anyhow::Error) -> Self {
+    fn from(_value: anyhow::Error) -> Self {
         todo!()
     }
 }
@@ -74,17 +74,21 @@ pub struct InternalError {
 
 impl Serialize for InternalError {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where S: serde::Serializer {
+    where
+        S: serde::Serializer,
+    {
         self.internal.map(|o| o.to_owned()).serialize(serializer)
     }
 }
 
 impl<'de> Deserialize<'de> for InternalError {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where D: serde::Deserializer<'de> {
+    where
+        D: serde::Deserializer<'de>,
+    {
         let v = Option::<String>::deserialize(deserializer)?;
         Ok(Self {
-            internal: v.map(|e| String::leak(e)).map(|e| &*e),
+            internal: v.map(String::leak).map(|e| &*e),
         })
     }
 }
@@ -122,7 +126,9 @@ pub struct Context {
 
 impl<'de> Deserialize<'de> for Context {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where D: serde::Deserializer<'de> {
+    where
+        D: serde::Deserializer<'de>,
+    {
         let s = Self {
             inner: Arc::new(Mutex::new(ContextInner::deserialize(deserializer)?)),
         };
@@ -135,7 +141,9 @@ impl<'de> Deserialize<'de> for Context {
 
 impl Serialize for Context {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where S: serde::Serializer {
+    where
+        S: serde::Serializer,
+    {
         let inner = self.inner.lock();
 
         debug!("Serializing context, it has an inner of {:?}", inner);
@@ -190,7 +198,7 @@ impl Context {
                     let jh = CtxJoinHandle {
                         ctx: self.clone_context_ref(),
                         tid,
-                        _p: PhantomData::default(),
+                        _p: PhantomData,
                     };
 
                     inner.current_index += 1;
@@ -222,7 +230,7 @@ impl Context {
         let jh = CtxJoinHandle {
             ctx: self.clone_context_ref(),
             tid: id,
-            _p: PhantomData::default(),
+            _p: PhantomData,
         };
 
         // create a new task and contract since we didn't have one to recover
@@ -258,7 +266,9 @@ impl Context {
     }
 
     fn with_inner<T, F>(&self, f: F) -> T
-    where F: FnOnce(&mut ContextInner) -> T {
+    where
+        F: FnOnce(&mut ContextInner) -> T,
+    {
         let mut g = self.inner.lock();
 
         f(&mut g)
@@ -325,7 +335,7 @@ impl Context {
 
                 r
             })
-            .map_err(|e| TaskError::internal("couldn't get the task that was being joined on"))?
+            .map_err(|_e| TaskError::internal("couldn't get the task that was being joined on"))?
             .to_typed::<Result<D, TaskError>>()
             .expect("Invariant violated: bad join type downcast")
             .wait()
@@ -399,7 +409,6 @@ pub struct CtxJoinHandle<D> {
 }
 
 impl<
-        'ctx,
         D: Sized
             + Send
             + Sync
