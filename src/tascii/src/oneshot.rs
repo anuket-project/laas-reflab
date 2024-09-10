@@ -3,23 +3,15 @@
 
 use std::{
     cell::UnsafeCell,
+    collections::HashMap,
     mem::MaybeUninit,
     panic::RefUnwindSafe,
-    sync::{atomic::fence, Arc, Weak}, collections::HashMap,
+    sync::{atomic::fence, Arc, Weak},
 };
 
 use dal::{
-    web::AnyWaySpecStr,
-    AsEasyTransaction,
-    DBTable,
-    ExistingRow,
-    FKey,
-    Migrate,
-    NewRow,
-    ID, 
-    Migration, 
-    ToSqlObject, 
-    Apply,
+    web::AnyWaySpecStr, Apply, AsEasyTransaction, DBTable, ExistingRow, FKey, Migrate, Migration,
+    NewRow, ToSqlObject, ID,
 };
 
 use dashmap::DashMap;
@@ -57,7 +49,9 @@ pub struct SimpleOneshotHandle {
 /// an Arc<dyn OneShotAny> and finally wrap it with StrongUntypedOneshotHandle
 impl<'de> Deserialize<'de> for SimpleOneshotHandle {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where D: serde::Deserializer<'de> {
+    where
+        D: serde::Deserializer<'de>,
+    {
         let id = ID::deserialize(deserializer)?;
 
         Ok(Self { id })
@@ -66,7 +60,9 @@ impl<'de> Deserialize<'de> for SimpleOneshotHandle {
 
 impl Serialize for SimpleOneshotHandle {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where S: serde::Serializer {
+    where
+        S: serde::Serializer,
+    {
         self.id.serialize(serializer)
     }
 }
@@ -104,14 +100,10 @@ pub struct WeakUntypedOneshotHandle {
 
 impl WeakUntypedOneshotHandle {
     pub fn upgrade(&self) -> Option<StrongUntypedOneshotHandle> {
-        if let Some(u) = self.oneshot.upgrade() {
-            Some(StrongUntypedOneshotHandle {
-                stored_as: self.stored_as,
-                oneshot: u,
-            })
-        } else {
-            None
-        }
+        self.oneshot.upgrade().map(|u| StrongUntypedOneshotHandle {
+            stored_as: self.stored_as,
+            oneshot: u,
+        })
     }
 }
 
@@ -158,7 +150,7 @@ impl<T: TaskSafe> StoredOneShot<T> {
         let mut trans = client.easy_transaction().await?;
 
         debug!("About to update it in the db");
-        let res = existing.update(&mut trans).await?;
+        existing.update(&mut trans).await?;
 
         debug!("About to commit");
         trans.commit().await?;
@@ -308,7 +300,7 @@ impl<T: TaskSafe + Send + Sync + RefUnwindSafe> OneShot<T> {
             == 1
         {
             // it hasn't been signaled, so it isn't yet complete
-            return None;
+            None
         } else {
             unsafe {
                 let r = self
@@ -378,12 +370,13 @@ impl OneShotRegistry {
     pub async fn get_as_any<T: TaskSafe>(id: ID) -> StrongUntypedOneshotHandle {
         let inst = Self::instance();
 
-        let mut mr = inst.oneshots.entry(id).or_insert_with(|| {
-            WeakUntypedOneshotHandle {
+        let mut mr = inst
+            .oneshots
+            .entry(id)
+            .or_insert_with(|| WeakUntypedOneshotHandle {
                 stored_as: id,
                 oneshot: Self::new_weak_handle(),
-            }
-        });
+            });
 
         if let Some(v) = mr.upgrade() {
             v
@@ -429,10 +422,12 @@ mod futex_polyfill {
     impl<T> Futex<T> {
         #[allow(dead_code)]
         pub fn new<I>(v: I) -> Futex<T>
-        where I: Into<AtomicI32> {
+        where
+            I: Into<AtomicI32>,
+        {
             Self {
                 value: v.into(),
-                _p: PhantomData::default(),
+                _p: PhantomData,
                 cv: Condvar::new(),
             }
         }
@@ -519,36 +514,33 @@ impl<T: TaskSafe> DBTable for DatabaseObjectWrapper<T> {
 
     fn to_rowlike(&self) -> Result<HashMap<&str, Box<dyn ToSqlObject>>, anyhow::Error> {
         let v = serde_json::to_value(self.v.clone())?;
-        let c: [(&str, Box<dyn ToSqlObject>); _] = [
-            ("id", Box::new(self.id)),
-            ("v", Box::new(v)),
-        ];
+        let c: [(&str, Box<dyn ToSqlObject>); _] = [("id", Box::new(self.id)), ("v", Box::new(v))];
 
         Ok(c.into_iter().collect())
     }
 
     fn migrations() -> Vec<Migration> {
         vec![
-            Migration { 
+            Migration {
                 unique_name: "create_tascii_database_objects_0001",
                 description: "Creates the tascii_database_objects table",
                 depends_on: vec![],
-                apply: Apply::SQL(format!(
+                apply: Apply::SQL(
                     "CREATE TABLE public.tascii_database_objects (
                         id UUID NOT NULL,
                         data JSONB NOT NULL
                     );"
-                )),
+                    .to_string(),
+                ),
             },
-            Migration { 
+            Migration {
                 unique_name: "migrate_tascii_database_objects_0002",
                 description: "Migrates the tascii_database_objects table",
                 depends_on: vec![],
                 apply: Apply::SQLMulti(vec![
-                    "ALTER TABLE tascii_database_objects ADD COLUMN v JSONB;".to_owned(),
-                    "UPDATE tascii_database_objects SET v = data -> 'v';".to_owned(),
-
-                    "ALTER TABLE tascii_database_objects DROP COLUMN data;".to_owned(),
+                    "ALTER TABLE tascii_database_objects ADD COLUMN v JSONB;".to_string(),
+                    "UPDATE tascii_database_objects SET v = data -> 'v';".to_string(),
+                    "ALTER TABLE tascii_database_objects DROP COLUMN data;".to_string(),
                 ]),
             },
         ]
@@ -581,10 +573,10 @@ impl<T: TaskSafe> DatabaseObjectWrapper<T> {
         let mut client = dal::new_client().await?;
         let mut trans = client.easy_transaction().await?;
 
-        let tn = <DatabaseObjectWrapper<T> as DBTable>::table_name();
-        let id = self.id;
+        let _tn = <DatabaseObjectWrapper<T> as DBTable>::table_name();
+        let _id = self.id;
 
-        let fk = self.id;
+        let _fk = self.id;
         ExistingRow::from_existing(self).update(&mut trans).await?;
         trans.commit().await?;
 

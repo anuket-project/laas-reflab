@@ -8,14 +8,7 @@ use std::{
 };
 
 use dal::{
-    web::AnyWaySpecStr,
-    AsEasyTransaction,
-    DBTable,
-    FKey,
-    Migrate,
-    Migration,
-    Row,
-    SchrodingerRow,
+    web::AnyWaySpecStr, AsEasyTransaction, DBTable, FKey, Migrate, Migration, Row, SchrodingerRow,
     ID,
 };
 use itertools::Itertools;
@@ -26,9 +19,9 @@ use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info, warn};
 
 use crate::{
+    executors,
     oneshot::{SimpleOneshotHandle, StrongUntypedOneshotHandle},
     runtime::Runtime,
-    executors,
     task_shim::RunnableHandle,
     workflows::{Context, TaskError},
 };
@@ -93,7 +86,7 @@ impl DBTable for RuntimeTask {
             .map_err(|e| format!("err: {e:?}"))
             .anyway()?;
 
-        let result = serde_json::to_value(&self.result.simplify())?;
+        let result = serde_json::to_value(self.result.simplify())?;
 
         let context = serde_json::to_value(&*self.context)?;
 
@@ -128,7 +121,7 @@ impl DBTable for RuntimeTask {
             unique_name: "create_tascii_runtime_tasks_0001",
             description: "create a table to hold tascii tasks",
             depends_on: vec![],
-            apply: dal::Apply::SQL(format!(
+            apply: dal::Apply::SQL(
                 "CREATE TABLE IF NOT EXISTS tascii_runtime_tasks (
                     id UUID PRIMARY KEY NOT NULL,
                     proto JSONB NOT NULL,
@@ -139,7 +132,8 @@ impl DBTable for RuntimeTask {
                     depends_for UUID[] NOT NULL,
                     state JSONB NOT NULL
                 );"
-            )),
+                .to_string(),
+            ),
         }]
     }
 }
@@ -173,7 +167,7 @@ impl RuntimeTask {
     pub(crate) fn cancel(&self, why: TaskError) -> Result<(), anyhow::Error> {
         let res = self.proto.task_ref().on_error()(self.result.clone(), why);
 
-        Ok(res.map_err(|_| anyhow::Error::msg("task was already completed"))?)
+        res.map_err(|_| anyhow::Error::msg("task was already completed"))
     }
 
     pub(crate) fn status(&self) -> TaskState {
@@ -225,7 +219,7 @@ impl RuntimeTask {
 
         // we try to trust the task closure to complete without panicking,
         // but we catch again to make sure the runtime can never fall over
-        let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
             debug!("running task with caught panics");
             task_closure()
         }))
@@ -276,10 +270,7 @@ impl RuntimeTask {
         // for now, we're just cloning things to try to avoid some
         // strange hole in my logic from before
         let sc = self.clone();
-        executors::spawn_on_tascii_tokio(
-            "task_commit",
-            async move { sc.commit_async().await },
-        )?;
+        executors::spawn_on_tascii_tokio("task_commit", async move { sc.commit_async().await })?;
 
         Ok(())
     }

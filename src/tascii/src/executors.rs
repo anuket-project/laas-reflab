@@ -30,7 +30,6 @@
 ///
 /// This module tries to wrap up the various abstractions for bridging these two
 /// warring contexts into a nice, tidy package
-
 use std::{panic::AssertUnwindSafe, process::exit, sync::atomic::compiler_fence};
 
 use dashmap::DashMap;
@@ -80,7 +79,7 @@ where
                 Ok(v) => {
                     // we assert unwind safety here since the immediate action, if T is given back
                     // to us, is to forget it--no destructors get called
-                    let send_res = std::panic::catch_unwind(AssertUnwindSafe(move || {
+                    let _send_res = std::panic::catch_unwind(AssertUnwindSafe(move || {
                         let send_res = tx.send(v);
                         if send_res.is_err() {
                             warn!("Failed to send into channel");
@@ -118,9 +117,7 @@ where
 /// closure you pass can not panic, or
 /// that it does not borrow any values going in
 /// If it could possibly panic, then the
-pub fn spawn_on_tascii_tokio_primary<T, F>(
-    f: F,
-) -> T
+pub fn spawn_on_tascii_tokio_primary<T, F>(f: F) -> T
 where
     T: Send + Sync + 'static,
     F: Future<Output = T> + Send + 'static,

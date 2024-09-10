@@ -1,6 +1,6 @@
 // Copyright (c) 2023 University of New Hampshire
 // SPDX-License-Identifier: MIT
-#![allow(dead_code, unused_variables)]
+#![allow(dead_code, clippy::await_holding_lock, async_fn_in_trait)]
 #![feature(
     async_closure,
     async_iterator,
@@ -48,7 +48,6 @@ use parking_lot::RwLock;
 #[allow(unused_imports)]
 use tracing::{debug, error, info, warn};
 
-#[macro_use]
 extern crate lazy_static;
 
 use crate::runtime::Runtime;
@@ -114,11 +113,12 @@ fn panic_hook(info: &PanicInfo<'_>) {
     });
 }
 
-static DEFAULT_HOOK: RwLock<Option<Box<dyn Fn(&PanicInfo<'_>) + Sync + Send + 'static>>> =
-    RwLock::new(None);
+type BoxedPanic = Box<dyn Fn(&PanicInfo<'_>) + Sync + Send + 'static>;
+
+static DEFAULT_HOOK: RwLock<Option<BoxedPanic>> = RwLock::new(None);
 
 thread_local! {
-    static LOCAL_HOOK: parking_lot::Mutex<Option<Box<dyn Fn(&PanicInfo<'_>) + Sync + Send + 'static>>> = parking_lot::Mutex::new(None);
+    static LOCAL_HOOK: parking_lot::Mutex<Option<BoxedPanic>> = parking_lot::Mutex::new(None);
 }
 
 pub fn set_local_hook<F>(f: Option<Box<F>>)

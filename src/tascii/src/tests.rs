@@ -8,8 +8,8 @@ use tracing::debug;
 
 use crate::{
     init,
-    task_trait::{self, Runnable, TaskIdentifier, TaskRegistered},
     prelude::TaskError,
+    task_trait::{self, Runnable, TaskIdentifier, TaskRegistered},
 };
 
 //#[test]
@@ -38,7 +38,12 @@ pub async fn workflows_1() {
     let res = rt.with_task(id, |t| t.result.clone());
 
     debug!("test waits on end of primary");
-    let _ = res.unwrap().to_typed::<Result<String, TaskError>>().unwrap().wait().unwrap();
+    let _ = res
+        .unwrap()
+        .to_typed::<Result<String, TaskError>>()
+        .unwrap()
+        .wait()
+        .unwrap();
 
     //assert!(r == "hello");
 }

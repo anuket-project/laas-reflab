@@ -1,7 +1,7 @@
 //! Copyright (c) 2023 University of New Hampshire
 //! SPDX-License-Identifier: MIT
 
-use std::{hash::Hash, panic::RefUnwindSafe, time::Duration, any::type_name};
+use std::{any::type_name, hash::Hash, panic::RefUnwindSafe, time::Duration};
 
 use dal::ID;
 
@@ -113,14 +113,13 @@ pub trait AsyncRunnable:
 }
 
 impl<T> AsyncRunnable for T
-where T: Runnable
+where
+    T: Runnable,
 {
     type Output = <Self as Runnable>::Output;
 
     async fn run(&mut self, context: &Context) -> Result<Self::Output, TaskError> {
-        let r = self.run(&context);
-
-        r
+        self.run(context)
     }
 
     fn identifier() -> TaskIdentifier {
@@ -183,7 +182,7 @@ impl TaskIdentifier {
 
 #[derive(Clone)]
 pub struct TaskMarker {
-    pub(crate) deserialize_fn: fn(Box<serde_json::Value>) -> RunnableHandle,
+    pub(crate) deserialize_fn: fn(serde_json::Value) -> RunnableHandle,
     pub(crate) serialize_fn: fn(&RunnableHandle) -> Box<serde_json::Value>,
     pub(crate) ident: fn() -> TaskIdentifier,
 }
@@ -195,6 +194,7 @@ macro_reexport::collect!(TaskMarker);
 
 /// A marker trait indicating you should tack on a `tascii::mark_task!(<your task type>)`
 /// before your task
+#[allow(clippy::missing_safety_doc)]
 pub unsafe trait TaskRegistered {}
 
 pub mod macro_reexport {

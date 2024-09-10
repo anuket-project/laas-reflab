@@ -1,0 +1,21 @@
+apiVersion: 1
+datasources:
+- orgId: 1
+  name: InfluxDB
+  type: influxdb
+  access: proxy
+  url: $INFLUX_HOST
+  user: $INFLUX_USER
+  isDefault: true
+  editable: false
+  jsonData:
+    dbName: $INFLUXDB_INIT_BUCKET
+    oauthPassThru: false
+    tlsAuth: false
+    tlsAuthWithCACert: false
+    tlsSkipVerify: false
+    version: InfluxQL
+  secureJsonData:
+    password: $INFLUX_TOKEN
+    token: $INFLUX_TOKEN
+

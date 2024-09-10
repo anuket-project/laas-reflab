@@ -182,7 +182,7 @@ pub struct BookingMetric {
     pub ts: Timestamp,
 
     #[telegraf(field)]
-    #[serde(skip)]
+    #[serde(default)]
     pub booking_id: i32,
 
     #[telegraf(field)]
@@ -207,12 +207,12 @@ pub struct BookingMetric {
 
     #[telegraf(tag)]
     #[serde(default)]
-    /// **Tag:** The lab associated with this booking. ex. "Anuket"
+    /// **Tag:** The lab associated with this booking.
     pub lab: String,
 
-    #[telegraf(field)]
+    #[telegraf(tag)]
     #[serde(default)]
-    /// **Tag:** The project associated with this booking. ex. "Thoth"
+    /// **Tag:** The project associated with this booking.
     pub project: String,
 
     #[telegraf(field)]
@@ -270,8 +270,13 @@ pub struct ProvisionMetric {
     #[serde(default)]
     pub owner: String,
 
-    /// **Field:** The project associated with the host being provisioned.
-    #[telegraf(field)]
+    /// **Tag:** The originating lab associated with the host being provisioned.
+    #[telegraf(tag)]
+    #[serde(default)]
+    pub lab: String,
+
+    /// **Tag:** The project associated with the host being provisioned.
+    #[telegraf(tag)]
     #[serde(default)]
     pub project: String,
 
