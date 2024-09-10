@@ -737,12 +737,16 @@ impl DeployHost {
                 .owner
                 .clone()
                 .unwrap_or_else(|| "None".to_string()),
-            // Hopefully the right name
-            project: aggregate
+            lab: aggregate
                 .lab
                 .get(&mut transaction)
                 .await
                 .map_or_else(|_| "None".to_string(), |v| v.name.clone()),
+            project: aggregate
+                .metadata
+                .project
+                .clone()
+                .unwrap_or_else(|| "None".to_string()),
             provisioning_time_seconds: duration,
             success,
             ..Default::default()
