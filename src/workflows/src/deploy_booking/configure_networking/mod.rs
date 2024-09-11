@@ -10,7 +10,7 @@ use common::prelude::macaddr;
 
 use crate::resource_management::{
     cisco::{self},
-    network::NetworkConfig, sonic,
+    network::NetworkConfig,
 };
 
 #[derive(Serialize, Deserialize)]
@@ -33,7 +33,7 @@ impl AsyncRunnable for ConfigureNetworking {
 
     async fn run(&mut self, _context: &Context) -> Result<Self::Output, TaskError> {
         cisco::nx_run_network_task(self.net_config.clone()).await;
-        sonic::sonic_run_network_task(self.net_config.clone()).await;
+        // sonic::sonic_run_network_task(self.net_config.clone()).await;
         // Current Objective: Figure out what this is supposed to do
         // Next Objective: Make it do what it is supposed to do
         Ok(true)

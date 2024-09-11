@@ -15,6 +15,7 @@ pub mod cobbler_set_config;
 pub mod cobbler_start_provision;
 pub mod configure_networking;
 pub mod deploy_host;
+pub mod manage_eve_nodes;
 pub mod net_config;
 pub mod notify;
 pub mod reachable;
@@ -22,8 +23,6 @@ pub mod set_boot;
 pub mod set_host_power_state;
 pub mod sol;
 pub mod wait_host_os_reachable;
-
-use common::prelude::futures::*;
 
 use config::Situation;
 
@@ -41,14 +40,14 @@ use models::{
 };
 use notifications::email::send_to_admins;
 use serde_yaml::{to_value, Mapping, Value};
-use tascii::task_trait::AsyncRunnable;
 use tracing::info;
 
-use crate::resource_management::{allocator::*, mailbox::Mailbox, vpn::SyncVPN};
+use crate::{
+    deploy_booking::deploy_host::DeployHost,
+    resource_management::{allocator::*, mailbox::Mailbox, vpn::SyncVPN},
+};
 use models::dal::{AsEasyTransaction, EasyTransaction};
 use serde::{Deserialize, Serialize};
-
-use deploy_host::DeployHost;
 
 use tascii::prelude::*;
 use tracing::log::warn;
@@ -323,57 +322,60 @@ impl AsyncRunnable for SingleHostDeploy {
                 Ok((host, rh)) => {
                     tracing::info!("got an allocation, going to get db conn for other things");
                     tracing::debug!("we got an allocation, id is: {host:?}");
-                        let mut transaction = client.easy_transaction().await.unwrap();
-                        tracing::info!("Got client and transaction for making CI files");
+                    let mut transaction = client.easy_transaction().await.unwrap();
+                    tracing::info!("Got client and transaction for making CI files");
 
-                        self.instance
-                            .log(
-                                "Generating Cloud Config",
-                                "generating composite cloud config to send to the host",
-                                StatusSentiment::in_progress,
-                            )
-                            .await;
+                    self.instance
+                        .log(
+                            "Generating Cloud Config",
+                            "generating composite cloud config to send to the host",
+                            StatusSentiment::in_progress,
+                        )
+                        .await;
 
-                        let mut inst = self.instance.get(&mut transaction).await.unwrap();
-                        inst.linked_host = Some(host); // so cleanup knows what to clean up
+                    let mut inst = self.instance.get(&mut transaction).await.unwrap();
+                    inst.linked_host = Some(host); // so cleanup knows what to clean up
 
-                        inst.update(&mut transaction)
-                            .await
-                            .expect("Couldn't update instance with ci file");
+                    inst.update(&mut transaction)
+                        .await
+                        .expect("Couldn't update instance with ci file");
 
-                        transaction.commit().await.unwrap();
+                    transaction.commit().await.unwrap();
 
-                        match context
-                            .spawn(DeployHost {
-                                host_id: host,
-                                aggregate_id: self.for_aggregate,
-                                using_instance: self.instance,
-                            })
-                            .join()
-                        {
-                            Ok(_) => {
+                    match context
+                        .spawn(DeployHost {
+                            host_id: host,
+                            aggregate_id: self.for_aggregate,
+                            using_instance: self.instance,
+                            distribution: None,
+                        })
+                        .join()
+                    {
+                        Ok(_) => {
+                            tracing::warn!(
+                                "{:?} Bad Hosts: {:?}",
+                                maybe_bad_hosts.len(),
+                                maybe_bad_hosts
+                            );
+                            mark_not_working(maybe_bad_hosts, self.for_aggregate).await;
 
-                                tracing::warn!("{:?} Bad Hosts: {:?}", maybe_bad_hosts.len(), maybe_bad_hosts);
-                                mark_not_working(maybe_bad_hosts, self.for_aggregate).await;
+                            tracing::info!("Provisioned a host successfully");
 
-                                tracing::info!("Provisioned a host successfully");
-
-                                return Ok("successfully provisioned".to_owned());
-                            }
-                            Err(_) => {
-                                self.instance
-                                    .log(
-                                        "Failed to Provision",
-                                        "Failed to provision this host too many times, \
-                                                    trying again with a different host",
-                                        StatusSentiment::degraded,
-                                    )
-                                    .await;
-
-                                maybe_bad_hosts.push(rh.clone());
-
-                            }
+                            return Ok("successfully provisioned".to_owned());
                         }
+                        Err(_) => {
+                            self.instance
+                                .log(
+                                    "Failed to Provision",
+                                    "Failed to provision this host too many times, \
+                                                    trying again with a different host",
+                                    StatusSentiment::degraded,
+                                )
+                                .await;
+
+                            maybe_bad_hosts.push(rh.clone());
+                        }
+                    }
                 }
                 Err(e) => {
                     tracing::debug!("failed to allocate a host?");
@@ -585,17 +587,6 @@ async fn mark_not_working(hosts: Vec<ResourceHandle>, original_agg: FKey<Aggrega
     }
 }
 
-fn map_of(v: &[(&str, Value)]) -> serde_yaml::Value {
-    let mut m = serde_yaml::Mapping::new();
-
-    for (k, v) in v {
-        let k = (*k).to_owned();
-        m.insert(Value::String(k.to_owned()), v.clone());
-    }
-
-    m.into()
-}
-
 pub async fn generate_cloud_config(
     conf: HostConfig,
     host_id: FKey<Host>,
@@ -668,7 +659,6 @@ async fn ci_serialize_users(
     for user_data in users {
         let mut user_dict: Mapping = Mapping::new();
         user_dict.insert("name".into(), Value::String(user_data.1.uid.clone()));
-        user_dict.insert("passwd".into(), "$6$rounds=4096$/qID1GeIAvoE9FJI$G/s6R0Dz8Y.5kX3Srnv8WOzhI09WWXOcX586EzHYMtwXJjHYrdzhWLlyAhJr0/i7X5E3UYkcX3fZ0rTKOZcp4.".into()); // TODO: remove this
         user_dict.insert("lock_passwd".into(), false.into());
         user_dict.insert("groups".into(), "sudo".into());
         user_dict.insert("sudo".into(), "ALL=(ALL) NOPASSWD:ALL".into());
@@ -769,9 +759,13 @@ async fn render_nmcli_commands(
                     .connects_to
                     .iter()
                     .find(|vl| {
+                        tracing::warn!("vcc is {vl:?}");
+                        tracing::warn!("network is {:?}", vl.network.clone());
+                        tracing::warn!("sync nm is {:?}", sync_nm.clone());
+
                         sync_nm
                             .get(&vl.network)
-                            .unwrap()
+                            .expect("Expected to find network in NetworkAssignmentMap")
                             .1
                             .public_config
                             .as_ref()
@@ -1017,6 +1011,7 @@ fn val<V: Serialize>(v: V) -> serde_yaml::Value {
     serde_yaml::to_value(v).unwrap()
 }
 
+#[allow(dead_code)]
 async fn ci_serialize_netconf(
     transaction: &mut EasyTransaction<'_>,
     conf: HostConfig,

@@ -55,6 +55,11 @@ ipa:
     password: password
     certificate_path: config_data/os-ipa-ca.crt
 
+eve:
+  url: https://sandbox.url.com
+  api_key: example-api-key
+  onboarding_key: example-onboarding-key
+
 projects:
     project1:
         vpn:

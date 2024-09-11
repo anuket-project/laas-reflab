@@ -14,11 +14,10 @@
 
 pub mod web;
 
-use common::prelude::{axum::async_trait, tokio_postgres::types::FromSql};
+use common::prelude::{anyhow::anyhow, axum::async_trait, tokio_postgres::types::FromSql};
 use sha2::Digest;
 use std::{
-    any::type_name, backtrace::Backtrace, collections::HashMap, hash::Hash, marker::PhantomData,
-    str::FromStr,
+    any::type_name, backtrace::Backtrace, collections::HashMap, hash::Hash, marker::PhantomData, path::PathBuf, str::FromStr
 };
 
 use common::prelude::{config::*, itertools::Itertools, schemars::JsonSchema, *};
@@ -166,6 +165,12 @@ pub struct FKey<T: DBTable> {
     _p: PhantomData<T>,
 }
 
+impl<T: DBTable> Default for FKey<T> {
+    fn default() -> Self {
+        Self::new_id_dangling()
+    }
+}
+
 impl<T: DBTable> JsonSchema for FKey<T> {
     fn schema_name() -> String {
         ID::schema_name()
@@ -271,12 +276,23 @@ impl<T: DBTable> FKey<T> {
 }
 
 #[derive(Clone, Debug, Copy, Hash)]
-pub struct ExistingRow<T> {
+pub struct ExistingRow<T: DBTable> {
     data: T,
     had_id: ID,
 }
 
-impl<T> std::ops::Deref for ExistingRow<T> {
+impl<T: DBTable> ExistingRow<T> {
+    pub fn mass_update(&mut self, new_data: T) -> Result<(), anyhow::Error> {
+        if self.data.id() == new_data.id() {
+            self.data = new_data;
+            Ok(())
+        } else {
+            Err(anyhow::Error::msg("Unable to update, IDs do not match"))
+        }
+    }
+}
+
+impl<T: DBTable> std::ops::Deref for ExistingRow<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -284,7 +300,7 @@ impl<T> std::ops::Deref for ExistingRow<T> {
     }
 }
 
-impl<T> std::ops::DerefMut for ExistingRow<T> {
+impl<T: DBTable> std::ops::DerefMut for ExistingRow<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.data
     }
@@ -322,8 +338,8 @@ impl<T: DBTable> ExistingRow<T> {
             self.had_id,
             "user tried to change the id of a model during update"
         );
-
-        self.data.update(client, Protect::new()).await
+        let res = self.data.update(client, Protect::new()).await;
+        res
     }
 
     pub async fn delete(self, client: &mut EasyTransaction<'_>) -> Result<(), anyhow::Error> {
@@ -376,7 +392,7 @@ pub struct WhereBuilder<T> {
     field_name: String,
 }
 
-pub trait Gotten<T> {
+pub trait Gotten<T: DBTable> {
     async fn gotten(self, t: &mut EasyTransaction) -> Vec<Result<ExistingRow<T>, anyhow::Error>>;
 }
 
@@ -497,6 +513,36 @@ impl<T: DBTable> SelectBuilder<T> {
 
         T::from_rows(rows)
     }
+}
+
+pub trait Named {
+    fn name_parts(&self) -> Vec<String>;
+    fn name_columnnames() -> Vec<String>;
+}
+
+pub trait Lookup: DBTable + Named {
+    async fn lookup(transaction: &mut EasyTransaction<'_>, name_parts: Vec<String>) -> Result<ExistingRow<Self>, anyhow::Error> {
+        let mut select = Self::select();
+        let col_names = Self::name_columnnames();
+        
+        for (col, val) in col_names.into_iter()
+        .zip(name_parts.into_iter()) {
+            select = select.where_field(&col).equals(val);
+        }
+
+        let mut res = select.run(transaction).await.expect("Expected to run query");
+        
+        match res.len() {
+            0 => Err(anyhow!("No results found")),
+            1 => Ok(res.pop().unwrap()),
+            _ => panic!("Someone did not implement Named properly.")
+        }
+    }
+}
+
+pub trait Importable: Lookup {
+    async fn import(transaction: &mut EasyTransaction<'_>, import_file_path: PathBuf, proj_path: Option<PathBuf>) -> Result<Option<ExistingRow<Self>>, anyhow::Error>;
+    async fn export(&self, transaction: &mut EasyTransaction<'_>) -> Result<(), anyhow::Error>;
 }
 
 /// If you're making a SQL model, implement this directly
@@ -657,12 +703,10 @@ pub trait DBTable: Sized + 'static + Send + Sync {
         let mut columns = vec![];
 
         let mut args = vec![];
-
         for (k, v) in row.iter() {
             columns.push(k);
             args.push(&**v);
         }
-
         let pairs = columns
             .into_iter()
             .enumerate()
@@ -684,7 +728,6 @@ pub trait DBTable: Sized + 'static + Send + Sync {
             .collect_vec();
 
         client.execute(q.as_str(), args.as_slice()).await.anyway()?;
-
         Ok(())
     }
 

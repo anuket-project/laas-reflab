@@ -1,18 +1,21 @@
 //! Copyright (c) 2023 University of New Hampshire
 //! SPDX-License-Identifier: MIT
 
+use common::prelude::tracing;
+use config::settings;
 use models::{
     dal::{new_client, AsEasyTransaction, FKey},
     dashboard::{Aggregate, EasyLog, Instance, StatusSentiment},
     inventory::Host,
 };
+use notifications::email::{send_to_admins_email, send_to_admins_gchat};
 use serde::{self, Deserialize, Serialize};
 use tascii::prelude::*;
 
 use crate::{
     deploy_booking::{
         configure_networking::ConfigureNetworking, net_config::empty_network_config,
-        set_host_power_state::SetPower,
+        manage_eve_nodes::DeleteEveNode, set_host_power_state::SetPower
     },
     resource_management::ipmi_accounts::DeleteIPMIAccount,
     retry_for,
@@ -73,13 +76,74 @@ impl AsyncRunnable for CleanupHost {
 
         let _ignore = nets_jh.join();
 
-        self.instance
-            .log(
-                "Cleanup Finished",
-                "host has been deprovisioned",
-                StatusSentiment::succeeded,
-            )
-            .await;
+        let agg = self
+            .agg_id
+            .get(&mut transaction)
+            .await
+            .expect("Expected to find aggregate");
+        let host = self
+            .host_id
+            .get(&mut transaction)
+            .await
+            .expect("Expected to find host");
+
+        let image_id = self
+            .instance
+            .get(&mut transaction)
+            .await
+            .expect("Expected to get instance")
+            .config
+            .image;
+        if image_id
+            .get(&mut transaction)
+            .await
+            .expect("Expected to find image name")
+            .name
+            .to_lowercase()
+            .contains("eve")
+        {
+            match context
+                .spawn(DeleteEveNode {
+                    host_id: self.host_id,
+                })
+                .join()
+            {
+                Ok(_) => {
+                    self.instance
+                        .log(
+                            "Cleanup Finished",
+                            "host has been deprovisioned",
+                            StatusSentiment::succeeded,
+                        )
+                        .await;
+                }
+                Err(e) => {
+                    tracing::error!("Failed to delete host {} from sandbox due to error: {e:?}. Aggregate is {:?}, owned by {}", host.server_name.clone(), self.agg_id, match agg.metadata.owner.clone() {
+                        Some(s) => s,
+                        None => "nobody".to_owned()
+                    });
+
+                    // send_to_admins_gchat(format!(
+                    //     "Failed to delete {} from sandbox due to error: {e:?}",
+                    //     host.server_name.clone()
+                    // ))
+                    // .await;
+                    // send_to_admins_email(format!(
+                    //     "Failed to delete {} from sandbox due to error: {e:?}",
+                    //     host.server_name.clone()
+                    // ))
+                    // .await;
+
+                    self.instance
+                        .log(
+                            "Failed to offboard node from sandbox",
+                            "host has been deprovisioned, but not offboarded from sandbox",
+                            StatusSentiment::succeeded,
+                        )
+                        .await;
+                }
+            }
+        }
 
         Ok(())
     }

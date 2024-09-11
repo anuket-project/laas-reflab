@@ -3,11 +3,11 @@
 
 use std::collections::HashMap;
 
-use common::prelude::{chrono};
+use common::prelude::{chrono, tracing, serde_json::json};
 use config::{settings, Situation};
 use models::{
-    dal::{new_client, AsEasyTransaction, FKey},
-    dashboard::Aggregate,
+    dal::{new_client, AsEasyTransaction, DBTable, FKey},
+    dashboard::{Aggregate, Instance},
 };
 use notifications::{
     booking_ended, booking_ending, booking_started, collaborator_added, request_booking_extension, BookingInfo, Env
@@ -38,6 +38,13 @@ impl AsyncRunnable for Notify {
             .expect("Transaction creation error");
 
         let agg = self.aggregate.get(&mut transaction).await.unwrap();
+        let hosts = match Instance::select().where_field("aggregate").equals(agg.id.clone()).run(&mut transaction).await {
+            Ok(hv) => hv,
+            Err(e) => {
+                tracing::error!("Failed to find hosts for a user's booking when notifying them due to error {}, the email may be inaccurate!", e.to_string());
+                vec![]
+            },
+        };
         let env = Env {
             project: agg
                 .lab
@@ -104,9 +111,34 @@ impl AsyncRunnable for Notify {
 
         match self.situation.clone() {
             Situation::BookingCreated => {
-                booking_started(&env, &info)
+                let mut client = new_client().await.expect("Expected to connect to db");
+                let mut transaction = client
+                    .easy_transaction()
                     .await
-                    .expect("couldn't notify users");
+                    .expect("Transaction creation error");
+                
+                let mut sent = false;
+                for host in hosts {
+                    if sent == false {
+                        match host.config.image.clone().get(&mut transaction).await {
+                            Ok(i) => {
+                                if i.cobbler_name.to_lowercase().contains("eve") {
+                                    booking_started(&env, &info, Some(json!({"eve": true})))
+                                        .await
+                                        .expect("couldn't notify users");
+                                    sent = true;
+                                }
+                            },
+                            Err(_) => {},
+                        }
+                    }
+                }
+
+                if sent == false {
+                    booking_started(&env, &info, None)
+                        .await
+                        .expect("couldn't notify users");
+                }
             }
             Situation::BookingExpired => booking_ended(&env, &info)
                 .await

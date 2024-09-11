@@ -7,6 +7,7 @@ use common::prelude::{
     tracing::{self, error, info, trace, warn},
 };
 
+use config::{self, settings};
 use metrics::prelude::*;
 use models::{
     dal::{new_client, AsEasyTransaction, FKey},
@@ -15,8 +16,10 @@ use models::{
 };
 use notifications::email::send_to_admins;
 use serde::{Deserialize, Serialize};
+use ssh2::Session;
 
-use std::sync::{atomic::AtomicBool, Arc};
+use strum_macros::EnumString;
+use std::{net::TcpStream, sync::{atomic::AtomicBool, Arc}};
 use tascii::{prelude::*, task_trait::AsyncRunnable};
 
 use super::{
@@ -27,7 +30,7 @@ use super::{
 use crate::{
     deploy_booking::{
         cobbler_set_config::*, configure_networking::ConfigureNetworking,
-        wait_host_os_reachable::WaitHostOSReachable,
+        net_config::mgmt_network_config_with_public, wait_host_os_reachable::WaitHostOSReachable,
     },
     resource_management::{
         cobbler::*,
@@ -37,13 +40,38 @@ use crate::{
     retry_for,
 };
 
+/// A WorkflowDistro is used for path branching within a workflow.
+#[derive(Debug, Hash, EnumString, Deserialize, Serialize, Clone)]
+#[strum(serialize_all = "lowercase")]
+pub enum WorkflowDistro {
+    Ubuntu,
+    Fedora,
+    Eve,
+}
+
+impl WorkflowDistro {
+    fn from_str(s: &str) -> Result<Self, anyhow::Error> {
+        let s = s.to_lowercase();
+        if s.contains("ubuntu") {
+            return Ok(WorkflowDistro::Ubuntu);
+        }
+        if s.contains("fedora") {
+            return Ok(WorkflowDistro::Fedora);
+        }
+        if s.contains("eve") {
+            return Ok(WorkflowDistro::Eve);
+        }
+
+        Err(anyhow::anyhow!("Unable to parse WorkflowDistro from {}", s))
+    }
+}
+
 #[derive(Debug, Clone, Hash, Serialize, Deserialize)]
 pub struct DeployHost {
     pub host_id: FKey<Host>,
     pub aggregate_id: FKey<Aggregate>,
-    // pub with_config: HostConfig,
     pub using_instance: FKey<models::dashboard::Instance>,
-    // pub template: FKey<Template>,
+    pub distribution: Option<WorkflowDistro>,
 }
 
 tascii::mark_task!(DeployHost);
@@ -134,6 +162,36 @@ pub enum MockInjectionResult {
 }
 
 impl DeployHost {
+    /// Fetches the image name for an instance and converts it to a workflow distro
+    /// Returns an error if it is unable to do so
+    /// Currently recomputes the workflow distro every time this is called
+    async fn get_workflow_distro(&mut self) -> Result<WorkflowDistro, anyhow::Error> {
+        if let Some(distro) = &self.distribution {
+            return Ok(distro.clone());
+        } else {
+            let mut client = new_client().await.unwrap();
+            let mut transaction = client.easy_transaction().await.unwrap();
+
+            let image_name = self
+                .using_instance
+                .get(&mut transaction)
+                .await?
+                .into_inner()
+                .config
+                .image
+                .get(&mut transaction)
+                .await
+                .unwrap()
+                .into_inner()
+                .name;
+            transaction.commit().await.unwrap();
+            let distro = WorkflowDistro::from_str(&image_name).unwrap();
+
+            self.distribution = Some(distro.clone());
+            return Ok(distro);
+        }
+    }
+
     async fn deploy_host(
         &mut self,
         context: &Context,
@@ -193,8 +251,9 @@ impl DeployHost {
 
         Ok(())
     }
+
     async fn generate_endpoints(
-        &self,
+        &mut self,
     ) -> (
         MailboxMessageReceiver,
         MailboxMessageReceiver,
@@ -223,7 +282,7 @@ impl DeployHost {
             post_provision_waiter,
         )
     }
-    async fn wait_for_mock_injection(&self) -> MockInjectionResult {
+    async fn wait_for_mock_injection(&mut self) -> MockInjectionResult {
         let mut mock_waiter = self.set_endpoint_hook("mock").await.unwrap();
 
         self.log(
@@ -257,7 +316,7 @@ impl DeployHost {
         }
     }
 
-    async fn fetch_host_details(&self) -> Result<(Aggregate, String, Lab), anyhow::Error> {
+    async fn fetch_host_details(&mut self) -> Result<(Aggregate, String, Lab), anyhow::Error> {
         let mut client = new_client().await.unwrap();
         let mut transaction = client.easy_transaction().await.unwrap();
 
@@ -286,7 +345,7 @@ impl DeployHost {
     }
 
     async fn configure_cobbler_and_set_boot(
-        &self,
+        &mut self,
         context: &Context,
         preimage_endpoint: Endpoint,
         postimage_endpoint: Endpoint,
@@ -304,18 +363,35 @@ impl DeployHost {
         )
         .await;
 
+        let wfd = self.get_workflow_distro().await?;
+
         let cobbler_config_jh = context.spawn(CobblerSetConfiguration {
             host_id: self.host_id,
-            config: CobblerConfig::new(
-                self.using_instance
-                    .get(&mut transaction)
-                    .await?
-                    .into_inner(),
-                self.host_id,
-                postimage_endpoint,
-                preimage_endpoint,
-            )
-            .await,
+            config: match wfd {
+                WorkflowDistro::Eve => {
+                    CobblerConfig::new_eve_config(
+                        self.using_instance
+                            .get(&mut transaction)
+                            .await?
+                            .into_inner(),
+                        self.host_id,
+                        Some("sda".to_owned()),
+                    )
+                    .await
+                }
+                _ => {
+                    CobblerConfig::new(
+                        self.using_instance
+                            .get(&mut transaction)
+                            .await?
+                            .into_inner(),
+                        self.host_id,
+                        postimage_endpoint,
+                        preimage_endpoint,
+                    )
+                    .await
+                }
+            },
             endpoint: postimage_endpoint,
         });
 
@@ -357,16 +433,41 @@ impl DeployHost {
 
         cobbler_config_jh.join()?;
 
-        info!(
-            "set cobbler configuration and finished mgmt net config, also set host next boot dev"
-        );
+        match wfd {
+            WorkflowDistro::Eve => {
+                let config::CobblerConfig {address, url, username, password, api_username, api_password} = settings().cobbler.clone();
+
+                let mut session =
+                    Session::new().expect("Failed to create a new SSH session for cobbler.");
+                let connection = TcpStream::connect(format!("{address}:22"))
+                    .expect(format!("Failed to open TCP stream to cobbler at {address}:22.").as_str());
+
+                session.set_tcp_stream(connection);
+                session.handshake().unwrap();
+                session
+                    .userauth_password(username.as_str(), password.as_str())
+                    .expect("SSH basic authentication failed");
+
+                let mut channel = session.channel_session().expect("Expected to connect to cobbler to fix the eve cfg files!");
+                channel.exec(format!("sudo /srv/www/cobbler/distro_mirror/eve-amd64/set-eve.sh {} 12.0.3-lts", host_name).as_str()).expect("Expected to get host arch info");
+
+                tracing::info!(
+                    "set cobbler configuration, edited grub config and finished mgmt net config, also set host next boot dev"
+                );
+            },
+            _ => {
+                info!(
+                    "set cobbler configuration and finished mgmt net config, also set host next boot dev"
+                );
+            }
+        };
 
         transaction.commit().await?;
 
         Ok(())
     }
 
-    async fn set_power_on(&self, context: &Context, host_name: &str) -> Result<(), TaskError> {
+    async fn set_power_on(&mut self, context: &Context, host_name: &str) -> Result<(), TaskError> {
         warn!("setting host {} power on", host_name);
 
         self.log(
@@ -385,15 +486,19 @@ impl DeployHost {
         Ok(())
     }
 
-    async fn set_power_off(&self, context: &Context, host_name: &str) -> Result<(), TaskError> {
-        warn!("Setting host {} power off", host_name);
-        retry_for(SetPower::off(self.host_id), context, 5, 10)?;
-        warn!("Set host {} power off", host_name);
-
+    async fn set_power_off(&mut self, context: &Context, host_name: &str) -> Result<(), TaskError> {
+        match self.get_workflow_distro().await? {
+            WorkflowDistro::Eve => {},
+            _ => {
+                warn!("Setting host {} power off", host_name);
+                retry_for(SetPower::off(self.host_id), context, 5, 10)?;
+                warn!("Set host {} power off", host_name);
+            }
+        }
         Ok(())
     }
 
-    async fn boot_from_disk(&self, context: &Context, host_name: &str) -> Result<(), TaskError> {
+    async fn boot_from_disk(&mut self, context: &Context, host_name: &str) -> Result<(), TaskError> {
         self.log(
             "Booting From Disk",
             "host is being configured to boot the now-installed operating system",
@@ -401,12 +506,17 @@ impl DeployHost {
         )
         .await;
 
+        let wfd = self.get_workflow_distro().await?;
+
         warn!("Booting host {} from disk", host_name);
         let result = retry_for(
             SetBoot {
                 host_id: self.host_id,
                 persistent: true,
-                boot_to: BootTo::Disk,
+                boot_to: match wfd {
+                    WorkflowDistro::Eve => BootTo::SpecificDisk,
+                    _ => BootTo::Disk,
+                },
             },
             context,
             5,
@@ -434,7 +544,7 @@ impl DeployHost {
     }
 
     async fn configure_mgmt_networking(
-        &self,
+        &mut self,
         context: &Context,
         lab: Lab,
     ) -> Result<(), TaskError> {
@@ -452,7 +562,17 @@ impl DeployHost {
             // need mgmt nets set before we can try ipmi managing the host
             context
                 .spawn(ConfigureNetworking {
-                    net_config: mgmt_network_config(self.host_id, &mut transaction).await,
+                    net_config: match self.get_workflow_distro().await? {
+                        WorkflowDistro::Eve => {
+                            mgmt_network_config_with_public(
+                                self.host_id,
+                                self.using_instance,
+                                &mut transaction,
+                            )
+                            .await
+                        }
+                        _ => mgmt_network_config(self.host_id, &mut transaction).await,
+                    },
                 })
                 .join()?;
         } else {
@@ -462,6 +582,8 @@ impl DeployHost {
                 StatusSentiment::in_progress,
             )
             .await;
+
+        
         }
 
         info!(
@@ -475,7 +597,7 @@ impl DeployHost {
     }
 
     async fn install_os(
-        &self,
+        &mut self,
         mut preimage_waiter: MailboxMessageReceiver,
         mut imaging_waiter: MailboxMessageReceiver,
     ) -> Result<(), TaskError> {
@@ -486,94 +608,116 @@ impl DeployHost {
         )
         .await;
 
-        let inst_id = self.using_instance;
-        let finished_imaging = Arc::new(AtomicBool::new(false));
-        let fcopy = finished_imaging.clone();
-        std::thread::spawn(move || {
-            let mb_return = preimage_waiter.wait_next(Duration::from_secs(60 * 35));
-            match (fcopy.load(std::sync::atomic::Ordering::SeqCst), mb_return) {
-                (true, _) => {
-                    // don't report anything, skip
-                    warn!("Host didn't phone home before imaging!");
-                }
-                (false, Ok(_)) => {
-                    tascii::executors::spawn_on_tascii_tokio("laas_notifications", async move {
-                        inst_id.log("Installing OS", "host has booted into the installer, and is now installing the base OS", StatusSentiment::in_progress).await;
-                    });
-                }
-                (false, Err(_e)) => {
-                    tascii::executors::spawn_on_tascii_tokio("laas_notifications", async move {
-                        inst_id
-                            .log(
-                                "Failed to Boot",
-                                "host failed to reach the installer",
+        let wfd = self.get_workflow_distro().await?;
+
+        match wfd {
+            WorkflowDistro::Eve => {
+                // wait 7 mins
+                sleep(Duration::new(900, 0)).await;
+            }
+            _ => {
+                let inst_id = self.using_instance;
+                let finished_imaging = Arc::new(AtomicBool::new(false));
+                let fcopy = finished_imaging.clone();
+                std::thread::spawn(move || {
+                    let mb_return = preimage_waiter.wait_next(Duration::from_secs(60 * 35));
+                    match (fcopy.load(std::sync::atomic::Ordering::SeqCst), mb_return) {
+                        (true, _) => {
+                            // don't report anything, skip
+                            warn!("Host didn't phone home before imaging!");
+                        }
+                        (false, Ok(_)) => {
+                            tascii::executors::spawn_on_tascii_tokio(
+                                "laas_notifications",
+                                async move {
+                                    inst_id.log("Installing OS", "host has booted into the installer, and is now installing the base OS", StatusSentiment::in_progress).await;
+                                },
+                            );
+                        }
+                        (false, Err(_e)) => {
+                            tascii::executors::spawn_on_tascii_tokio(
+                                "laas_notifications",
+                                async move {
+                                    inst_id
+                                        .log(
+                                            "Failed to Boot",
+                                            "host failed to reach the installer",
+                                            StatusSentiment::degraded,
+                                        )
+                                        .await;
+                                },
+                            );
+                        }
+                    }
+                });
+
+                match imaging_waiter.wait_next(Duration::from_secs(60 * 35)) {
+                    // give the host 20 minutes to boot
+                    // and provision
+                    Ok(_) => {
+                        // TODO: allow host to post a *failure* message, so we can detect that and save
+                        // those logs and force it to reboot and retry (and detect this all early)
+                        info!("Imaging successful!!")
+                    }
+                    Err(e) => {
+                        self.log(
+                                "OS Install Failed",
+                                "installing the OS timed out or experienced an early failure, initiating error recovery routines",
                                 StatusSentiment::degraded,
                             )
                             .await;
-                    });
+
+                        error!("MAILBOX FAILED with {:?}", e);
+                        return Err(TaskError::Reason("Mailbox error".to_owned()));
+                    }
                 }
-            }
-        });
 
-        match imaging_waiter.wait_next(Duration::from_secs(60 * 35)) {
-            // give the host 20 minutes to boot
-            // and provision
-            Ok(_) => {
-                // TODO: allow host to post a *failure* message, so we can detect that and save
-                // those logs and force it to reboot and retry (and detect this all early)
-                info!("Imaging successful!!")
-            }
-            Err(e) => {
+                finished_imaging.store(true, std::sync::atomic::Ordering::SeqCst);
+
                 self.log(
-                        "OS Install Failed",
-                        "installing the OS timed out or experienced an early failure, initiating error recovery routines",
-                        StatusSentiment::degraded,
-                    )
-                    .await;
-
-                error!("MAILBOX FAILED with {:?}", e);
-                return Err(TaskError::Reason("Mailbox error".to_owned()));
+                    "OS Installed",
+                    "the unconfigured operating system has been installed onto the host",
+                    StatusSentiment::in_progress,
+                )
+                .await;
             }
         }
-
-        finished_imaging.store(true, std::sync::atomic::Ordering::SeqCst);
-
-        self.log(
-            "OS Installed",
-            "the unconfigured operating system has been installed onto the host",
-            StatusSentiment::in_progress,
-        )
-        .await;
-
         Ok(())
     }
 
     async fn configure_postprovision_networking(
-        &self,
+        &mut self,
         context: &Context,
         lab: Lab,
         post_boot_waiter: &mut MailboxMessageReceiver,
     ) -> Result<(), TaskError> {
-        self.log(
-            "Wait Host Pre-Configure",
-            "wait for host to boot into pre-configure mode and bootstrap the configuration environment",
-            StatusSentiment::in_progress,
-        )
-        .await;
+        let wfd = self.get_workflow_distro().await?;
 
-        match post_boot_waiter.wait_next(Duration::from_secs(60 * 35)) {
-            Ok(_) => {
-                info!("Host came back up after imaging");
-            }
-            Err(e) => {
+        match wfd {
+            WorkflowDistro::Eve => {}
+            _ => {
                 self.log(
-                    "Pre-Configure Wait Failed",
-                    "host failed to boot into pre-configure mode, initiating error recovery routines",
-                    StatusSentiment::degraded,
+                    "Wait Host Pre-Configure",
+                    "wait for host to boot into pre-configure mode and bootstrap the configuration environment",
+                    StatusSentiment::in_progress,
                 )
                 .await;
-                error!("MAILBOX FAILED with {:?}", e);
-                return Err(TaskError::Reason("Mailbox error".to_owned()));
+
+                match post_boot_waiter.wait_next(Duration::from_secs(60 * 35)) {
+                    Ok(_) => {
+                        info!("Host came back up after imaging");
+                    }
+                    Err(e) => {
+                        self.log(
+                            "Pre-Configure Wait Failed",
+                            "host failed to boot into pre-configure mode, initiating error recovery routines",
+                            StatusSentiment::degraded,
+                        )
+                        .await;
+                        error!("MAILBOX FAILED with {:?}", e);
+                        return Err(TaskError::Reason("Mailbox error".to_owned()));
+                    }
+                }
             }
         }
 
@@ -613,32 +757,46 @@ impl DeployHost {
     }
 
     async fn verify_host_provisioned(
-        &self,
+        &mut self,
         context: &Context,
         host_name: &str,
         post_provision_waiter: &mut MailboxMessageReceiver,
     ) -> Result<(), TaskError> {
-        self.log(
-            "Wait Host Online",
-            "wait for host to complete on-device setup steps (incl Cloud-Init)",
-            StatusSentiment::in_progress,
-        )
-        .await;
+        let wfd = self.get_workflow_distro().await?;
 
-        match post_provision_waiter.wait_next(Duration::from_secs(60 * 30)) {
-            Ok(_) => {
-                info!("Host came back up after applying network configs");
-            }
-            Err(e) => {
+        match wfd {
+            WorkflowDistro::Eve => {
                 self.log(
-                    "On-Device Setup Failed",
-                    "host failed to complete on-device configuration, initiating error recovery routines",
-                    StatusSentiment::degraded,
+                    "Wait Host Online",
+                    "wait for host to come online",
+                    StatusSentiment::in_progress,
+                )
+                .await;
+            }
+            _ => {
+                self.log(
+                    "Wait Host Online",
+                    "wait for host to complete on-device setup steps (incl Cloud-Init)",
+                    StatusSentiment::in_progress,
                 )
                 .await;
 
-                error!("MAILBOX FAILED with {:?}", e);
-                return Err(TaskError::Reason("Mailbox error".to_owned()));
+                match post_provision_waiter.wait_next(Duration::from_secs(60 * 30)) {
+                    Ok(_) => {
+                        info!("Host came back up after applying network configs");
+                    }
+                    Err(e) => {
+                        self.log(
+                            "On-Device Setup Failed",
+                            "host failed to complete on-device configuration, initiating error recovery routines",
+                            StatusSentiment::degraded,
+                        )
+                        .await;
+
+                        error!("MAILBOX FAILED with {:?}", e);
+                        return Err(TaskError::Reason("Mailbox error".to_owned()));
+                    }
+                }
             }
         }
 
@@ -662,7 +820,7 @@ impl DeployHost {
     }
 
     async fn setup_ipmi_accounts(
-        &self,
+        &mut self,
         context: &Context,
         aggregate: Aggregate,
         host_name: &str,
@@ -711,17 +869,17 @@ impl DeployHost {
     }
 
     async fn set_endpoint_hook(
-        &self,
+        &mut self,
         usage: &'static str,
     ) -> Result<MailboxMessageReceiver, anyhow::Error> {
         Mailbox::set_endpoint_hook(self.using_instance, usage).await
     }
-    async fn log(&self, msg: &str, desc: &str, sentiment: StatusSentiment) {
+    async fn log(&mut self, msg: &str, desc: &str, sentiment: StatusSentiment) {
         self.using_instance.log(msg, desc, sentiment).await;
     }
 
     async fn send_provision_metric(
-        &self,
+        &mut self,
         host_name: &str,
         aggregate: &Aggregate,
         duration: u64,

@@ -1,14 +1,12 @@
 //! Copyright (c) 2023 University of New Hampshire
 //! SPDX-License-Identifier: MIT
 
+use aide::error;
 use ::serde_with::serde_as;
-use common::prelude::{
-    chrono::{DateTime, Utc},
-    reqwest::StatusCode,
-    serde_json::Value,
+use common::prelude::{chrono::{DateTime, Utc}, itertools::Itertools, reqwest::StatusCode, serde_json::Value
 };
 use dal::{web::*, *};
-use std::str::FromStr;
+use std::{fs::File, io::Write, path::PathBuf, str::FromStr};
 use strum_macros::Display;
 use tokio_postgres::types::{FromSql, ToSql};
 
@@ -20,6 +18,14 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use crate::inventory::{Flavor, Host, Lab, Vlan};
 
 use super::dal::*;
+
+/// Name and public
+#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema)]
+pub struct NetworkBlob {
+    ///
+    pub name: String,
+    pub public: bool,
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema)]
 pub struct AggregateConfiguration {
@@ -244,6 +250,241 @@ impl Aggregate {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Hash, PartialEq, Eq, JsonSchema)]
+pub struct ImportVlanConnectionConfig {
+    pub network: String, // network name
+    pub tagged: bool,
+}
+
+impl ImportVlanConnectionConfig {
+    pub async fn to_vcc(&self, transaction: &mut EasyTransaction<'_>) -> VlanConnectionConfig {
+        VlanConnectionConfig {
+            network: Network::select()
+                .where_field("name")
+                .equals(self.network.clone())
+                .run(transaction).await.
+                expect("Expected to find network")
+                .get(0)
+                .expect("Expected to find network")
+                .id.clone(),
+            tagged: self.tagged,
+        }
+    }
+
+    pub async fn from_vcc(vcc: VlanConnectionConfig, transaction: &mut EasyTransaction<'_>) -> ImportVlanConnectionConfig {
+        ImportVlanConnectionConfig {
+            network: vcc.network.get(transaction).await.expect("Expected to find network").name.clone(),
+            tagged: vcc.tagged.clone(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default, JsonSchema)]
+pub struct ImportBondGroupConfig {
+    pub connects_to: HashSet<ImportVlanConnectionConfig>,
+    pub member_interfaces: HashSet<String>,
+}
+
+impl ImportBondGroupConfig {
+    pub async fn to_bgc(&self, transaction: &mut EasyTransaction<'_>) -> BondGroupConfig {
+        let mut connections = HashSet::new();
+
+        for conf in self.connects_to.clone() {
+            connections.insert(conf.to_vcc(transaction).await);
+        }
+
+        BondGroupConfig {
+            connects_to: connections,
+            member_interfaces: self.member_interfaces.clone(),
+        }
+    }
+
+    pub async fn from_bgc(bgc: BondGroupConfig, transaction: &mut EasyTransaction<'_>) -> ImportBondGroupConfig {
+        let mut connections = HashSet::new();
+
+        for conf in bgc.connects_to.clone() {
+            connections.insert(ImportVlanConnectionConfig::from_vcc(conf, transaction).await);
+        }
+
+        ImportBondGroupConfig {
+            connects_to: connections,
+            member_interfaces: bgc.member_interfaces.clone(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema)]
+pub struct ImportTemplate {
+    pub name: String,
+    pub deleted: bool,
+    pub description: String,
+    pub owner: Option<String>,
+    pub public: bool,                 // If template should be available to all users
+    pub networks: Vec<NetworkBlob>, // User defined network
+    pub hosts: Vec<ImportHostConfig>,
+    pub lab: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema)]
+pub struct ImportHostConfig {
+    pub hostname: String,
+    pub image: String,
+    pub flavor: String,
+    pub cifile: Vec<Cifile>,
+    pub connections: Vec<ImportBondGroupConfig>,
+}
+
+impl ImportHostConfig {
+    pub async fn to_host_config(&self, transaction: &mut EasyTransaction<'_>) -> HostConfig {
+        let clone = self.clone();
+
+        let image = Image::lookup(transaction, vec![clone.image.clone()]).await.expect(format!("Expected to find image named {}", clone.image).as_str()).id;
+
+        let mut cifile: Vec<FKey<Cifile>> = Vec::new();
+        for cf in clone.cifile {
+            cifile.push(cf.id);
+        }
+
+        let flavor = Flavor::lookup(transaction, vec![clone.flavor.clone()]).await.expect(format!("Expected to find flavor named {}", clone.flavor).as_str()).id;
+
+        let mut connections = Vec::new();
+
+        for conn in clone.connections {
+            connections.push(conn.to_bgc(transaction).await);
+        }
+
+        HostConfig {
+            hostname: clone.hostname,
+            flavor,
+            image: image,
+            cifile: cifile,
+            connections,
+        }
+    }
+
+    pub async fn from_host_config(transaction: &mut EasyTransaction<'_>, host_config: &HostConfig) -> ImportHostConfig {
+        let clone = host_config.clone();
+
+        let image = clone.image.get(transaction).await.expect("Expected to find image");
+        
+        let mut cifile: Vec<Cifile> = Vec::new();
+        for cf in clone.cifile {
+            cifile.push(cf.get(transaction).await.expect("Expected to find cifile").into_inner());
+        }
+
+        let flavor = clone.flavor.get(transaction).await.expect("Expected to find flavor").name.clone();
+
+        let mut connections = Vec::new();
+
+        for conn in clone.connections {
+            connections.push(ImportBondGroupConfig::from_bgc(conn, transaction).await);
+        }
+
+        ImportHostConfig {
+            hostname: clone.hostname,
+            image: image.name.clone(),
+            flavor,
+            cifile: cifile,
+            connections,
+        }
+    }
+}
+
+pub async fn import_net(net: NetworkBlob, transaction: &mut EasyTransaction<'_>) -> FKey<Network> {
+    match Network::select().where_field("name").equals(net.name.clone()).run(transaction).await {
+        Ok(existing_net) => {
+            match existing_net.len() {
+                0 => {
+                    tracing::error!("No network found, creating network.");
+                    let id = FKey::new_id_dangling();
+
+                    let net = Network { 
+                        id: id.clone(),
+                        name: net.name,
+                        public: net.public
+                    };
+    
+                    NewRow::new(net).insert(transaction).await.expect("Expected to insert new network")
+                },
+                1 => {existing_net.get(0).expect("Expected to find network").id.clone()},
+                _ => {
+                    tracing::error!("More than one network found, please modify your template to use a specific network");
+                    existing_net.get(0).expect("Expected to find network").id.clone()
+                }
+            }
+        },
+        Err(_) => {
+            let id = FKey::new_id_dangling();
+
+            let net = Network { 
+                id: id.clone(),
+                name: net.name,
+                public: net.public
+            };
+
+            NewRow::new(net).insert(transaction).await.expect("Expected to insert new network")
+        }
+    }
+}
+
+impl ImportTemplate {
+    pub async fn to_template(&self, transaction: &mut EasyTransaction<'_>, proj_path: PathBuf) -> Template {
+        let clone = self.clone();
+
+        let lab = Lab::get_by_name(transaction, clone.lab).await.expect("Expected to find lab").expect("Expected that lab exists");
+
+        let mut nets: Vec<FKey<Network>> = Vec::new();
+        for net in clone.networks {
+            let id = import_net(net, transaction).await;
+            nets.push(id);
+        }
+
+        let mut hosts: Vec<HostConfig> = Vec::new();
+        for host_config in clone.hosts.clone() {
+            hosts.push(host_config.to_host_config(transaction).await);
+        }
+
+        Template {
+            id: FKey::new_id_dangling(),
+            name: clone.name,
+            public: clone.public,
+            deleted: clone.deleted,
+            description: clone.description,
+            owner: clone.owner,
+            networks: nets,
+            hosts,
+            lab: lab.id,
+        }
+    }
+
+    pub async fn from_template(transaction: &mut EasyTransaction<'_>, template: &Template) -> ImportTemplate {
+        let clone = template.clone();
+        let lab = clone.lab.get(transaction).await.expect("Expected to find lab");
+        let mut networks: Vec<NetworkBlob> = Vec::new();
+
+        for net_key in clone.networks {
+            let net = net_key.get(transaction).await.expect("Expected to find network");
+            networks.push(NetworkBlob { name: net.name.clone(), public: net.public })
+        }
+
+        let mut hosts: Vec<ImportHostConfig> = Vec::new();
+        for host_config in clone.hosts.clone() {
+            hosts.push(ImportHostConfig::from_host_config(transaction, &host_config).await);
+        }
+        
+        ImportTemplate {
+            name: clone.name,
+            deleted: clone.deleted,
+            description: clone.description,
+            owner: clone.owner,
+            public: clone.public,
+            networks: networks,
+            hosts: hosts,
+            lab: lab.name.clone(),
+        }
+    }
+}
+
 inventory::submit! { Migrate::new(Template::migrations) }
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema)]
 pub struct Template {
@@ -256,6 +497,81 @@ pub struct Template {
     pub networks: Vec<FKey<Network>>, // User defined network
     pub hosts: Vec<HostConfig>,
     pub lab: FKey<Lab>,
+}
+
+impl Template {
+    async fn get_public_template(name: String, transaction: &mut EasyTransaction<'_>) -> Result<ExistingRow<Template>, anyhow::Error> {
+        let res = Template::select().where_field("name").equals(name.clone()).where_field("public").equals(true).run(transaction).await.expect("Expected to query for template");
+        match res.len() {
+            0 => return Err(anyhow::Error::msg(format!("Unable to find template with name: {name}"))),
+            1 => return Ok(res.get(0).expect("Expected to find template").clone()),
+            _ => return Err(anyhow::Error::msg(format!("Found multiple public templates with name: {name}")))
+        }
+    }
+
+    pub async fn import(transaction: &mut EasyTransaction<'_>, import_file_path: std::path::PathBuf, proj_path: Option<PathBuf>) -> Result<Option<ExistingRow<Self>>, anyhow::Error> {
+        
+        let lab = match Lab::get_by_name(transaction, 
+    proj_path.clone().expect("Expected project path").file_name().expect("Expected to find file name")
+        .to_str()
+        .expect("Expected host data dir for project to have a valid name")
+        .to_owned()).await {
+            Ok(opt_l) => {
+                match opt_l {
+                    Some(l) => l.id,
+                    None => {
+                        // In future import labs and try again
+                        return Err(anyhow::Error::msg("Specified lab does not exist"))
+                    }
+                }
+            },
+            Err(_) => {return Err(anyhow::Error::msg("Failed to find specified lab"))}
+        };
+
+        let importtemplate: ImportTemplate = serde_json::from_reader(File::open(import_file_path)?)?;
+
+        match importtemplate.public {
+            true => {
+                let mut template: Template = importtemplate.to_template(transaction, proj_path.expect("Expected project path")).await;
+                if let Ok(mut orig_template) = Template::get_public_template(template.name.clone(), transaction).await {
+                    template.id = orig_template.id;
+
+                    orig_template.mass_update(template).unwrap();
+
+                    orig_template.update(transaction).await.expect("Expected to update row");
+                    Ok(Some(orig_template))
+                } else {
+                    let res = NewRow::new(template.clone()).insert(transaction).await.expect("Expected to create new row");
+                    match res.get(transaction).await {
+                        Ok(t) => return Ok(Some(t)),
+                        Err(e) => return Err(anyhow::Error::msg(format!("Failed to insert template due to error: {}", e.to_string()))),
+                    }
+                }
+            },
+            false => return Ok(None),
+        }
+    }
+
+    pub async fn export(&self, transaction: &mut EasyTransaction<'_>) -> Result<(), anyhow::Error> {
+        match self.public {
+            true =>  {
+                let lab_name = self.lab.get(transaction).await.expect("Expected to find lab").name.clone();
+        
+                let mut template_file_path = PathBuf::from(format!("./config_data/laas-hosts/inventory/labs/{}/templates/{}", lab_name, self.name));
+                template_file_path.set_extension("json");
+
+                let mut template_file = File::create(template_file_path).expect("Expected to create template file");
+
+                let import_template = ImportTemplate::from_template(transaction, self).await;
+
+                match template_file.write(serde_json::to_string_pretty(&import_template)?.as_bytes()) {
+                    Ok(_) => Ok(()),
+                    Err(e) => Err(anyhow::Error::msg(format!("Failed to export host {}", self.name.clone()))),
+                }
+            },
+            false => return Ok(()), // Do not export non-public templates
+        }
+    }
 }
 
 impl DBTable for Template {
@@ -398,24 +714,6 @@ impl Template {
             .collect();
 
         Ok(results)
-    }
-
-    pub async fn get_by_name(
-        t: &mut EasyTransaction<'_>,
-        name: String,
-    ) -> Result<Vec<ExistingRow<Template>>, anyhow::Error> {
-        let table_name = Template::table_name();
-
-        let query = format!("SELECT * FROM {table_name} WHERE name = $1;");
-        let rows = t.query(&query, &[&name]).await?;
-        let vals: Result<Vec<_>, anyhow::Error> = rows
-            .into_iter()
-            .map(|row| Template::from_row(row))
-            .collect();
-
-        let vals = vals?;
-
-        Ok(vals)
     }
 
     pub async fn get_by_lab(
@@ -755,6 +1053,113 @@ pub struct Image {
     pub cobbler_name: String,
     pub public: bool,
     pub flavors: Vec<FKey<Flavor>>, // Vector of compatible flavor IDs
+}
+
+impl Named for Image {
+    fn name_columnnames() -> Vec<std::string::String> {
+        return vec!["name".to_owned()]
+    }
+
+    fn name_parts(&self) -> Vec<String> {
+        vec![self.name.clone()]
+    }
+}
+
+impl Lookup for Image {
+    
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ImportImage {
+    pub owner: String,
+    pub name: String,
+    pub deleted: bool,
+    pub cobbler_name: String,
+    pub public: bool,
+    pub flavors: Vec<String>,
+}
+
+impl ImportImage {
+    pub async fn to_image(&self, transaction: &mut EasyTransaction<'_>) -> Image {
+        let mut flavors: Vec<FKey<Flavor>> = Vec::new();
+        for flavor in self.flavors.clone() {
+            let mut flavor_path = PathBuf::from("./config_data/laas-hosts/inventory/flavors");
+            flavor_path.push(flavor.as_str());
+            flavor_path.set_extension("json");
+            flavors.push(Flavor::import(transaction, flavor_path.clone(), None).await.expect("Expected to import flavor at {flavor_path:?}").unwrap().id)
+        }
+        
+        let clone = self.clone();
+
+        Image {
+            id: FKey::new_id_dangling(),
+            owner: clone.owner,
+            name: clone.name,
+            deleted: clone.deleted,
+            cobbler_name: clone.cobbler_name,
+            public: clone.public,
+            flavors: flavors,
+        }
+    }
+
+    pub async fn from_image(transaction: &mut EasyTransaction<'_>, image: Image) -> ImportImage {
+        let clone = image.clone();
+        let mut flavors = Vec::new();
+        for flavor in clone.flavors {
+            tracing::info!("getting flavor name for flavor: {:?}  for image: {}", flavor, clone.name);
+            flavors.push(
+                flavor.get(transaction).await.expect("Expected to get flavor from FKey").name.clone()
+            );
+            tracing::info!("pushed flavor name to vec");
+        }
+
+        ImportImage {
+            owner: clone.owner,
+            name: clone.name,
+            deleted: clone.deleted,
+            cobbler_name: clone.cobbler_name,
+            public: clone.public,
+            flavors: flavors,
+        }
+    }
+}
+
+impl Importable for Image {
+    async fn import(transaction: &mut EasyTransaction<'_>, import_file_path: std::path::PathBuf, proj_path: Option<PathBuf>) -> Result<Option<ExistingRow<Self>>, anyhow::Error> {
+        let importimage: ImportImage = serde_json::from_reader(File::open(import_file_path)?)?;
+        let mut image: Image = importimage.to_image(transaction).await;
+
+        if let Ok(mut orig_image) = Image::lookup(transaction, Image::name_parts(&image)).await {
+            image.id = orig_image.id;
+
+            orig_image.mass_update(image).unwrap();
+
+            orig_image.update(transaction).await.expect("Expected to update row");
+            Ok(Some(orig_image))
+        } else {
+            let res = NewRow::new(image.clone()).insert(transaction).await.expect("Expected to create new row");
+
+            match res.get(transaction).await {
+                Ok(i) => Ok(Some(i)),
+                Err(e) => Err(anyhow::Error::msg(format!("Failed to import image due to error: {}", e.to_string()))),
+            }
+        }
+    }
+
+    async fn export(&self, transaction: &mut EasyTransaction<'_>) -> Result<(), anyhow::Error> {
+        let image_dir = PathBuf::from("./config_data/laas-hosts/inventory/images");
+        let mut image_file_path = image_dir;
+        image_file_path.push(self.name.clone());
+        image_file_path.set_extension("json");
+        let mut image_file = File::create(image_file_path).expect("Expected to create image file");
+
+        let import_image = ImportImage::from_image(transaction, self.clone()).await;
+
+        match image_file.write(serde_json::to_string_pretty(&import_image)?.as_bytes()) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(anyhow::Error::msg(format!("Failed to export image {}", self.name.clone()))),
+        }
+    }
 }
 
 impl DBTable for Image {

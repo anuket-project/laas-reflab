@@ -221,7 +221,7 @@ pub async fn send_test_email(
 
     match status {
         Situation::BookingExpired => booking_ended(&dummy_env, &dummy_info).await,
-        Situation::BookingCreated => booking_started(&dummy_env, &dummy_info).await,
+        Situation::BookingCreated => booking_started(&dummy_env, &dummy_info, None).await,
         Situation::BookingExpiring => booking_ending(&dummy_env, &dummy_info).await,
         Situation::RequestBookingExtension => request_booking_extension(&dummy_env, &dummy_info, &String::from("Sun, 16 Jun 2099 20:33:54 +0000"), &String::from("I need more time!")).await,
         _ => Err(vec![anyhow::Error::msg(
@@ -230,14 +230,14 @@ pub async fn send_test_email(
     }
 }
 
-pub async fn booking_started(env: &Env, info: &BookingInfo) -> Result<(), Vec<anyhow::Error>> {
+pub async fn booking_started(env: &Env, info: &BookingInfo, extra: Option<serde_json::Value>) -> Result<(), Vec<anyhow::Error>> {
     send_booking_notification(
         env,
         info,
         Situation::BookingCreated,
         "You Have Created a New Booking.".to_owned(),
         "You Have Been Added To a New Booking.".to_owned(),
-        None
+        extra
     )
     .await
 }

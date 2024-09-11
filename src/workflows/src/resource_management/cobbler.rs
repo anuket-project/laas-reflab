@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_json;
 
 use crate::{resource_management::mailbox::Endpoint, utils::python::*};
-use common::prelude::tracing;
+use common::prelude::{rand::{self, Rng, seq::SliceRandom}, tracing};
 use pyo3::types::IntoPyDict;
 use tascii::prelude::*;
 use tracing::warn;
@@ -38,7 +38,6 @@ impl CobblerConfig {
         let mut client = new_client().await.unwrap();
         let mut transaction = client.easy_transaction().await.unwrap();
 
-        tracing::error!("need to generate kernel args properly");
         let image = instance
             .config
             .image
@@ -70,6 +69,49 @@ impl CobblerConfig {
             image: image.cobbler_name,
         }
     }
+
+    pub async fn new_eve_config(
+        instance: dashboard::Instance,
+        _host: FKey<inventory::Host>,
+        selected_disk: Option<String>,
+    ) -> CobblerConfig {
+        let mut client = new_client().await.unwrap();
+        let mut transaction = client.easy_transaction().await.unwrap();
+
+        let image = instance
+            .config
+            .image
+            .get(&mut transaction)
+            .await
+            .unwrap()
+            .into_inner();
+
+            let kargs: Vec<(String, String)> = vec![
+                ("eve_nuke_disks".to_owned(), "sda".to_owned()), // Wipe all drives on the host
+                ("eve_install_disk".to_owned(), selected_disk.unwrap_or("sda".to_owned())), // install to first drive if not otherwise specified
+                ("eve_reboot_after_install".to_owned(), "false".to_owned()), // want to turn off host instead
+                // ("root".to_owned(), "/initrd.image".to_owned()),
+                // ("find_boot".to_owned(), "netboot".to_owned()),
+                // ("overlaytmpfs".to_owned(), "true".to_owned()),
+                // ("fastboot".to_owned(), "true".to_owned()),
+                // ("console".to_owned(), "tty0".to_owned()),
+                // ("console".to_owned(), "ttyS0,115200n8".to_owned()),
+                // ("initrd".to_owned(), "amd64.initrd.img".to_owned()),
+                // ("initrd".to_owned(), "amd64.installer.img".to_owned()),
+                // ("initrd".to_owned(), "amd64.initrd.bits".to_owned()),
+                // ("initrd".to_owned(), "amd64.rootfs.img".to_owned()),
+                // ("initrd".to_owned(), "initrd.bits".to_owned()),
+                // ("initrd".to_owned(), "rootfs.img".to_owned()),
+                // ("eve_soft_serial".to_owned(), generate_soft_serial(16)), // having trouble onboarding hosts with soft serials
+            ];
+    
+        transaction.commit().await.unwrap();
+
+        CobblerConfig {
+            kernel_args: kargs,
+            image: image.cobbler_name,
+        }
+    }
 }
 
 pub struct CobblerActions {}
@@ -77,13 +119,16 @@ pub struct CobblerActions {}
 impl ModuleInitializer for CobblerActions {
     fn init(py: Python<'_>) -> &PyAny {
         let config::CobblerConfig {
+            address,
             url,
             username,
             password,
+            api_username,
+            api_password,
         } = config::settings().cobbler.clone();
 
         let config: HashMap<&str, String> =
-            hashmap! { "url" => url, "user" => username, "pass" => password };
+            hashmap! { "url" => url, "user" => api_username, "pass" => api_password };
 
         let config_py: &pyo3::types::PyDict = config.into_py_dict(py);
 
@@ -169,4 +214,41 @@ impl AsyncRunnable for CobblerSync {
     fn retry_count(&self) -> usize {
         0
     }
+}
+
+pub fn generate_soft_serial(length: usize) -> String {
+    let mut rng = rand::thread_rng();
+
+    let numbers = Vec::from_iter('0'..='9');
+
+    let lowercase = Vec::from_iter('a'..='z');
+    let uppercase = Vec::from_iter('A'..='Z');
+
+    let inner_length = (length / 3) * 3 + 3; // div ceil
+
+    let mut s = String::with_capacity(inner_length);
+
+    for block in 0..(inner_length / 3) {
+        let block_start = block * 3;
+        let _block_end = block_start + 2;
+
+        let mut classes = [
+            numbers.as_slice(),
+            lowercase.as_slice(),
+            uppercase.as_slice(),
+        ];
+
+        // inefficient, but this is fine since this operation is rare
+        classes.shuffle(&mut rng);
+
+        for class in classes {
+            let idx: usize = rng.gen_range(0..class.len());
+
+            let c = class[idx];
+
+            s.push(c);
+        }
+    }
+
+    s[0..length].to_owned()
 }

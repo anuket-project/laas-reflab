@@ -14,12 +14,13 @@ use std::sync::Mutex;
 use config::Situation;
 use models::{
     dal::{new_client, AsEasyTransaction, FKey, ID},
-    dashboard::{self, Aggregate, Instance}, inventory::Host,
+    dashboard::{Aggregate, Instance},
+    inventory::Host,
 };
 
 use models::inventory;
 
-use common::prelude::{anyhow, chrono, crossbeam_channel, once_cell};
+use common::prelude::{anyhow, crossbeam_channel, once_cell};
 
 use crossbeam_channel::{Receiver, Sender};
 use models::dal::web::*;
@@ -48,7 +49,7 @@ pub enum Action {
     Reimage {
         host_id: FKey<Host>,
         inst_id: FKey<Instance>,
-        agg_id: FKey<Aggregate>
+        agg_id: FKey<Aggregate>,
     },
     NotifyTask {
         agg_id: FKey<Aggregate>,
@@ -91,46 +92,55 @@ impl Dispatcher {
     pub fn handler(self, recv: Receiver<Action>) {
         while let Ok(v) = recv.recv() {
             let task: RunnableHandle = match v {
-                Action::DeployBooking { agg_id } => {
-                    crate::deploy_booking::BookingTask {
-                        aggregate_id: agg_id,
-                    }.into()
+                Action::DeployBooking { agg_id } => crate::deploy_booking::BookingTask {
+                    aggregate_id: agg_id,
                 }
+                .into(),
                 Action::CleanupBooking { agg_id } => {
-                   crate::cleanup_booking::CleanupAggregate { agg_id }.into()
+                    crate::cleanup_booking::CleanupAggregate { agg_id }.into()
                 }
                 Action::AddUsers { agg_id, users } => {
                     crate::users::AddUsers { agg_id, users }.into()
                 }
-                Action::Reimage { agg_id, inst_id, host_id } => {
-                    DeployHost {
-                        host_id,
-                        aggregate_id: agg_id,
-                        using_instance: inst_id,
-                    }.into()
-                },
-                Action::NotifyTask { agg_id, situation, context } => {
-                    Notify { aggregate: agg_id, situation, extra_context: context }.into()
+                Action::Reimage {
+                    agg_id,
+                    inst_id,
+                    host_id,
+                } => DeployHost {
+                    host_id,
+                    aggregate_id: agg_id,
+                    using_instance: inst_id,
+                    distribution: None,
                 }
-                // Action::UpdateUser { agg_id, user } => {
-                  //     // TODO: Create task
-                  //     let task_id: LLID = self.rt.enroll(todo!());
-                  // },
-                  // Action::RemoveUser { agg_id, user } => {
-                  //     // TODO: Create task
-                  //     let task_id: LLID = self.rt.enroll(todo!());
-                  //     self.rt.set_target(task_id);
-                  // },
-                  // Action::AddInstance { agg_id, instance } => {
-                  //     // TODO: Create task
-                  //     let task_id: LLID = self.rt.enroll(todo!());
-                  //     self.rt.set_target(task_id);
-                  // },
-                  // Action::RemoveInstance { agg_id, instance } => {
-                  //     // TODO: Create task
-                  //     let task_id: LLID = self.rt.enroll(todo!());
-                  //     self.rt.set_target(task_id);
-                  // },
+                .into(),
+                Action::NotifyTask {
+                    agg_id,
+                    situation,
+                    context,
+                } => Notify {
+                    aggregate: agg_id,
+                    situation,
+                    extra_context: context,
+                }
+                .into(), // Action::UpdateUser { agg_id, user } => {
+                         //     // TODO: Create task
+                         //     let task_id: LLID = self.rt.enroll(todo!());
+                         // },
+                         // Action::RemoveUser { agg_id, user } => {
+                         //     // TODO: Create task
+                         //     let task_id: LLID = self.rt.enroll(todo!());
+                         //     self.rt.set_target(task_id);
+                         // },
+                         // Action::AddInstance { agg_id, instance } => {
+                         //     // TODO: Create task
+                         //     let task_id: LLID = self.rt.enroll(todo!());
+                         //     self.rt.set_target(task_id);
+                         // },
+                         // Action::RemoveInstance { agg_id, instance } => {
+                         //     // TODO: Create task
+                         //     let task_id: LLID = self.rt.enroll(todo!());
+                         //     self.rt.set_target(task_id);
+                         // },
             };
 
             let task_id = self.rt.enroll(task);

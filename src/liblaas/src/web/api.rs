@@ -2,6 +2,7 @@
 //! SPDX-License-Identifier: MIT
 use common::prelude::chrono::{DateTime, Utc};
 use common::prelude::tokio_postgres;
+use models::dashboard::NetworkBlob;
 use std::borrow::{Borrow, BorrowMut};
 use std::marker::PhantomData;
 use std::net::{Ipv4Addr, Ipv6Addr};
@@ -86,14 +87,6 @@ pub struct AggregateDescription {
 pub struct AllocationBlob {
     pub for_aggregate: Option<AggregateDescription>,
     pub reason: String,
-}
-
-/// Name and public
-#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema)]
-pub struct NetworkBlob {
-    ///
-    pub name: String,
-    pub public: bool,
 }
 
 /// corresponds to aggregation groups within the backplane,

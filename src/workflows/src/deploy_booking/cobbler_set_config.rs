@@ -66,16 +66,19 @@ impl AsyncRunnable for CobblerSetConfiguration {
             let host_name = host.server_name.clone();
 
             let config::CobblerConfig {
+                address,
                 url,
                 username,
                 password,
+                api_username,
+                api_password,
             } = config::settings().cobbler.clone();
 
             let locals = hashmap! {
                 "config" => hashmap! {
                     "url" => url.clone(),
-                    "user" => username,
-                    "password" => password,
+                    "user" => api_username,
+                    "password" => api_password,
                 }.into_py(py),
                 "cobbler_profile" => self.config.image.clone().into_py(py),
                 "cobbler_kargs" => self.config.kernel_args.clone().into_py(py),
@@ -96,7 +99,7 @@ if ca.profile_exists(cobbler_profile):
     ca.set_netboot(host_name)
     
 else:
-    raise Exception("profile did not exist, the provided profile was named" + cobbler_profile)
+    raise Exception("profile did not exist, the provided profile was named " + cobbler_profile)
             "#;
 
             tracing::info!("gives that the cobbler server URL is {}", url);

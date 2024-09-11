@@ -1,10 +1,6 @@
 // Copyright (c) 2023 University of New Hampshire
 // SPDX-License-Identifier: MIT
 #![doc = include_str!("../../README.md")]
-//! # LICENSE
-//!
-//! This software is licensed under the MIT license.
-//! Copyright (c) 2023 University of New Hampshire
 use client::remote::{cli_client_entry, cli_server_entry};
 use common::prelude::{
     axum::{self, Json},

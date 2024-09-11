@@ -9,6 +9,11 @@
           We have received your booking request and will begin the deployment
           process. Please review your booking information below.
         </p>
+        {% if extra.eve %}
+        <p>
+          To add your EVE-OS hosts to the lfedge sandbox please follow the instructions <a href="https://wiki.lfedge.org/display/LE/Getting+Started#GettingStarted-AddingHostsToSandbox">here</a>.
+        </p>
+        {% endif %}
       </div>
       {% else %}
       <h2 style="{{ styles.headerStyle }}">

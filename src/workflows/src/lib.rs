@@ -7,6 +7,7 @@
 
 pub mod cleanup_booking;
 pub mod deploy_booking;
+pub mod inspect_host;
 pub mod entry;
 pub mod resource_management;
 pub mod test_tascii;

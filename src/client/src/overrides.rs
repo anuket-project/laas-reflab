@@ -151,7 +151,7 @@ async fn handle_test_email_template(session: &Server) -> Result<(), anyhow::Erro
             Situation::BookingCreated,
             Situation::BookingExpiring,
             Situation::BookingExpired,
-            Situation::RequestBookingExtension
+            Situation::RequestBookingExtension,
         ],
     )
     .prompt(session)
@@ -250,6 +250,7 @@ async fn handle_redeploy(
         host_id,
         aggregate_id: agg,
         using_instance: inst,
+        distribution: None,
     };
 
     let id = tascii_rt.enroll(task.into());

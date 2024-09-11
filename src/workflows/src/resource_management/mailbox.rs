@@ -357,14 +357,10 @@ impl Mailbox {
         let mut client = new_client().await?;
         let mut transaction = client.easy_transaction().await?;
         let waiter = Mailbox::endpoint_for(instance);
-
         let mut inst = instance.get(&mut transaction).await?;
-
         inst.metadata
             .insert(usage.to_owned(), serde_json::to_value(waiter.endpoint())?);
-
         inst.update(&mut transaction).await?;
-
         transaction.commit().await?;
 
         Ok(waiter)

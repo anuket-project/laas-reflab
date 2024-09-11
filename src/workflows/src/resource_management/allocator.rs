@@ -326,7 +326,7 @@ impl Allocator {
 
         let (_, network_number) = network_name.split_at(split_index);
 
-        tracing::warn!("Getting static vlan for {network_number}");
+        tracing::warn!("Getting static vlan for {network_number}, full name: {network_name}");
         // jump!
 
         let network_number = network_number.parse::<i16>().expect("expected to convert &str to i16");

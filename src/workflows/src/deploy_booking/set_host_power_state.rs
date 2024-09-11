@@ -262,7 +262,22 @@ pub struct TimeoutConfig {
     pub retry_interval: u8,
     #[serde(default = "default_timeout_duration")]
     /// The total timeout duration for IPMI operations in seconds.
-    pub timeout_duration: u8,
+    pub timeout_duration: u16,
+}
+
+impl TimeoutConfig {
+    pub fn new(max: u8, interval: u8, timeout: Option<u16>) -> TimeoutConfig {
+        let t = match timeout {
+            Some(i) => i,
+            None => max as u16 * interval as u16,
+        };
+
+        TimeoutConfig {
+            max_retries: max,
+            retry_interval: interval,
+            timeout_duration: t,
+        }
+    }
 }
 
 /// Default number of retries for IPMI operations.
@@ -276,7 +291,7 @@ pub const fn default_retry_interval() -> u8 {
 }
 
 /// Default timeout duration for IPMI operations.
-pub const fn default_timeout_duration() -> u8 {
+pub const fn default_timeout_duration() -> u16 {
     30 // Seconds
 }
 
