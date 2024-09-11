@@ -12,13 +12,13 @@ use aide::axum::{
 use axum::{extract::Path, Json};
 use models::{
     dal::{web::*, *},
-    dashboard::{self, BondGroupConfig, HostConfig, Network, Template, VlanConnectionConfig},
+    dashboard::{self, BondGroupConfig, HostConfig, Network, Template, VlanConnectionConfig, NetworkBlob},
     inventory::{DataUnit, DataValue, Lab},
 };
 
 use axum::http::StatusCode;
 
-use crate::web::api::{self, NetworkBlob};
+use crate::web::api::{self};
 
 use super::{
     api::{BondgroupBlob, ConnectionBlob, HostConfigBlob, InterfaceBlob, TemplateBlob},
@@ -245,7 +245,7 @@ pub async fn make_template(
 
     let mut net_ids = HashMap::new();
 
-    for api::NetworkBlob { name, public } in networks {
+    for NetworkBlob { name, public } in networks {
         let net_id: FKey<Network> = FKey::new_id_dangling();
         net_ids.insert(name.clone(), net_id);
 

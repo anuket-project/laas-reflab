@@ -5,11 +5,11 @@ use common::prelude::{
     chrono::Utc, config::settings, itertools::Itertools, macaddr::MacAddr6, serde_json::Value, *,
 };
 
-use std::io::Write;
+use std::{fs::File, io::Write};
 
 use models::{
     allocation::{Allocation, AllocationReason, ResourceHandle, ResourceHandleInner},
-    dal::{new_client, AsEasyTransaction, DBTable, EasyTransaction, FKey, NewRow},
+    dal::{new_client, AsEasyTransaction, DBTable, EasyTransaction, ExistingRow, FKey, Importable, Lookup, Named, NewRow, ID},
     dashboard::{
         self, Aggregate, AggregateConfiguration, BondGroupConfig, BookingMetadata, Cifile,
         HostConfig, Image, Instance, LifeCycleState, Network, NetworkAssignmentMap,
@@ -194,441 +194,6 @@ pub async fn import_vlans_once(
     return Ok(());
 }
 
-pub async fn get_flavor(
-    _session: &Server,
-    mut transaction: &mut EasyTransaction<'_>,
-    flavor_name: String,
-) -> Result<(FKey<Flavor>, HashMap<String, FKey<InterfaceFlavor>>), anyhow::Error> {
-    match Flavor::get_by_name(&mut transaction, flavor_name).await {
-        Ok(v) => {
-            let ports = v.ports(&mut transaction).await?;
-
-            Ok((
-                v.id,
-                ports.into_iter().map(|p| (p.name.clone(), p.id)).collect(),
-            ))
-        }
-        Err(e) => Err(anyhow::Error::msg(format!(
-            "no existing flavor by that id existed, or db connection failed: {e:?}"
-        ))),
-    }
-}
-
-pub async fn get_or_import_flavor(
-    mut session: &Server,
-    mut transaction: &mut EasyTransaction<'_>,
-    host_data: &Value,
-    confluence_data: &Value,
-    image_data: &Value,
-    flavor_name: String,
-    origin: String,
-) -> Result<
-    (
-        FKey<Flavor>,
-        HashMap<std::string::String, FKey<InterfaceFlavor>>,
-    ),
-    anyhow::Error,
-> {
-    match get_flavor(session, &mut transaction, flavor_name.clone()).await {
-        Ok(v) => {
-            writeln!(
-                session,
-                "Found existing flavor for host {}, flavor is named {}",
-                host_data["hostname"].as_str().unwrap(),
-                flavor_name
-            )?;
-            return Ok(v);
-        }
-        Err(_) => {}
-    };
-
-    writeln!(session, "Creating flavor: {}", flavor_name.clone())?;
-    let mut ifaces = HashMap::new();
-
-    let ram: String = host_data["memory"].as_str().unwrap().to_owned();
-    let disk: String = host_data["disk"][0]["size"].as_str().unwrap().to_owned();
-
-    let flavor = Flavor {
-        id: FKey::new_id_dangling(),
-        name: flavor_name.clone(),
-        public: true,
-        arch: Arch::X86_64, // TODO
-        cpu_count: host_data["cpu"]["cpus"]
-            .as_i64()
-            .expect("Expected valid core count") as usize,
-        ram: DataValue::from_decimal(&ram[0..ram.len() - 1], DataUnit::Bytes).unwrap(),
-        root_size: DataValue::from_decimal(&disk[0..disk.len() - 3], DataUnit::Bytes).unwrap(),
-        disk_size: DataValue {
-            value: 0,
-            unit: DataUnit::Bytes,
-        },
-        swap_size: DataValue {
-            value: 0,
-            unit: DataUnit::Bytes,
-        },
-    };
-
-    let fk = NewRow::new(flavor.clone()).insert(&mut transaction).await?;
-
-    for (_interface_mac, iface) in host_data["interfaces"].as_object().unwrap() {
-        let iface_flav = InterfaceFlavor {
-            name: iface["name"].as_str().unwrap().to_owned(),
-            speed: DataValue::from_decimal(
-                iface
-                    .as_object()
-                    .unwrap()
-                    .get("speed")
-                    .unwrap()
-                    .as_i64()
-                    .unwrap_or_else(|| {
-                        writeln!(session, "Expected valid iface speed for host").unwrap();
-                        10000
-                    })
-                    .to_string()
-                    .as_str(),
-                DataUnit::BitsPerSecond,
-            )
-            .unwrap(),
-            id: FKey::new_id_dangling(),
-            on_flavor: fk,
-            cardtype: CardType::Unknown,
-        };
-
-        writeln!(
-            session,
-            "Creates interface for flavor with name {}",
-            iface_flav.name
-        )?;
-
-        ifaces.insert(iface_flav.name.clone(), iface_flav.id);
-
-        NewRow::new(iface_flav)
-            .insert(&mut transaction)
-            .await
-            .unwrap();
-
-        import_image_and_create_templates(
-            session,
-            &mut transaction,
-            host_data,
-            confluence_data,
-            image_data,
-            origin.clone(),
-            ifaces.clone(),
-            fk,
-        )
-        .await
-        .expect("Expected to create images and template for host");
-    }
-    Ok((fk, ifaces))
-}
-
-pub async fn import_image_and_create_templates(
-    mut session: &Server,
-    mut transaction: &mut EasyTransaction<'_>,
-    _host_data: &Value,
-    _confluence_data: &Value,
-    image_data: &Value,
-    origin: String,
-    ifaces: HashMap<String, FKey<InterfaceFlavor>>,
-    fk: FKey<Flavor>,
-) -> Result<(), anyhow::Error> {
-    let flavor_name = fk.get(&mut transaction).await.unwrap().name.clone();
-    let _ = writeln!(session, "Importing images for flavor: {flavor_name}");
-    for image in image_data.as_object().unwrap() {
-        for img_flavor in image.1["flavors"].as_array().unwrap() {
-            if img_flavor["name"].as_str().unwrap() == flavor_name.clone() {
-                match Image::get_by_name(&mut transaction, image.0.clone()).await {
-                    Ok(mut v) => {
-                        let _ = writeln!(
-                            session,
-                            "Adding flavor ({flavor_name}: {}) to {}",
-                            fk.into_id().to_string(),
-                            v.name
-                        );
-                        v.flavors.push(fk.clone());
-                        v.update(&mut transaction).await.unwrap();
-                    }
-                    Err(_e) => {
-                        let _ =
-                            writeln!(session, "Did not find existing image: {}", image.0.clone());
-                        let _iid = NewRow::new(Image {
-                            id: FKey::new_id_dangling(),
-                            owner: "admin".to_owned(),
-                            name: image.0.clone(),
-                            deleted: false,
-                            cobbler_name: image.1["cobbler_name"].as_str().unwrap().to_owned(),
-                            public: true,
-                            flavors: vec![fk.clone()],
-                        })
-                        .insert(&mut transaction)
-                        .await
-                        .expect("couldn't insert image");
-                    }
-                };
-                let net_id = FKey::new_id_dangling();
-
-                let first_iface = ifaces
-                    .get_key_value("ens1f0")
-                    .unwrap_or(
-                        ifaces
-                            .get_key_value("enP2p1s0v0")
-                            .unwrap_or(ifaces.iter().next().unwrap()),
-                    )
-                    .0;
-
-                let images =
-                    dashboard::Image::images_for_flavor(&mut transaction, fk.clone(), None)
-                        .await
-                        .expect("Expected to find images for flavor");
-
-                let mut desc: String = "Default template for ".to_owned();
-                for image in image_data.as_object().unwrap() {
-                    for img_flavor in image.1["flavors"].as_array().unwrap() {
-                        if img_flavor["name"].as_str().unwrap() == flavor_name.clone() {
-                            desc = img_flavor["description"].as_str().unwrap().to_owned();
-                        }
-                    }
-                }
-
-                if Template::get_by_name(&mut transaction, flavor_name.clone())
-                    .await
-                    .unwrap()
-                    .len()
-                    == 0
-                {
-                    match NewRow::new(Template {
-                        id: FKey::new_id_dangling(),
-                        name: flavor_name.clone(),
-                        deleted: false,
-                        description: desc,
-                        owner: None,
-                        public: false,
-                        networks: vec![NewRow::new(Network {
-                            id: net_id.clone(),
-                            name: "public".to_owned(),
-                            public: true,
-                        })
-                        .insert(&mut transaction)
-                        .await
-                        .expect("Expected to insert new network")],
-                        hosts: vec![HostConfig {
-                            hostname: "laas-host".to_owned(),
-                            flavor: fk,
-                            image: images.get(0).expect("Expected to find image").id,
-                            cifile: Vec::new(),
-                            connections: vec![BondGroupConfig {
-                                connects_to: vec![VlanConnectionConfig {
-                                    network: net_id.clone(),
-                                    tagged: true,
-                                }]
-                                .into_iter()
-                                .collect(),
-                                member_interfaces: vec![first_iface.clone()].into_iter().collect(),
-                            }],
-                        }],
-                        lab: Lab::get_by_name(&mut transaction, origin.clone())
-                            .await
-                            .expect("Expected to find lab")
-                            .expect("Expected lab to exist")
-                            .id,
-                    })
-                    .insert(&mut transaction)
-                    .await
-                    {
-                        Ok(_) => {
-                            let _ = writeln!(session, "Created new template for flavor");
-                        }
-                        Err(e) => {
-                            let _ = writeln!(
-                                session,
-                                "Error creating template for {origin} with error {}",
-                                e.to_string()
-                            );
-                        }
-                    }
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
-pub async fn import_host(
-    mut session: &Server,
-    mut transaction: &mut EasyTransaction<'_>,
-    import_path: PathBuf,
-    conf_path: PathBuf,
-    image_path: PathBuf,
-    origin: String,
-) -> Result<Host, anyhow::Error> {
-    let import_json: Value =
-        serde_json::from_str(&fs::read_to_string(import_path).expect("Host import not found"))
-            .expect("Invalid import format.");
-    let image_json: Value =
-        serde_json::from_str(&fs::read_to_string(image_path).expect("Image data not found"))
-            .expect("Invalid Image data format.");
-    let conf_json: Value = serde_json::from_str(
-        &fs::read_to_string(conf_path).expect("Host confluence data not found"),
-    )
-    .expect("Invalid confluence data format.");
-
-    let name: &str = import_json["hostname"].as_str().unwrap();
-
-    let _ = writeln!(session, "Importing host named {name}");
-
-    let flavor = conf_json[name]["flavor"]
-        .as_str()
-        .ok_or(anyhow::Error::msg("no flavor given for a host"))?
-        .to_owned();
-
-    let (flavor_id, flavor_ifaces) = get_or_import_flavor(
-        session,
-        &mut transaction,
-        &import_json,
-        &conf_json,
-        &image_json,
-        flavor,
-        origin.clone(),
-    )
-    .await?;
-
-    // Handle host creation or update
-    let host = Host::get_by_name(&mut transaction, name.to_owned()).await;
-    let host = match host {
-        Ok(mut h) => {
-            h.server_name = name.to_owned();
-            h.arch = Arch::from_string(import_json["cpu"]["arch"].as_str().unwrap().to_owned())
-                .expect("Expected valid arch");
-            h.flavor = flavor_id;
-            h.serial = conf_json[name]["serial"].as_str().unwrap().to_owned();
-            h.ipmi_fqdn = conf_json[name]["ipmi_fqdn"].as_str().unwrap().to_owned();
-            h.iol_id = conf_json[name]["iol_id"]
-                .as_str()
-                .expect("Expected valid u64")
-                .to_owned()
-                .parse()
-                .unwrap();
-            h.ipmi_mac =
-                models::macaddr::MacAddress::from_str(import_json["ipmi"]["mac"].as_str().unwrap())
-                    .unwrap();
-            h.ipmi_user = conf_json[name]["ipmi_user"].as_str().unwrap().to_owned();
-            h.ipmi_pass = conf_json[name]["ipmi_pass"].as_str().unwrap().to_owned();
-            h.id;
-            h.fqdn = name.to_owned();
-
-            h.update(transaction).await?;
-
-            // TODO: need to figure out a way of re-syncing ports in this section, no good way of
-            // doing this truly automatically though
-            h.id
-        }
-        Err(_e) => {
-            let host = NewRow::new(Host {
-                id: FKey::new_id_dangling(),
-                server_name: name.to_owned(),
-                arch: Arch::from_string(import_json["cpu"]["arch"].as_str().unwrap().to_owned())
-                    .expect("Expected valid arch"),
-                flavor: flavor_id,
-                serial: conf_json[name]["serial"].as_str().unwrap().to_owned(),
-                ipmi_fqdn: conf_json[name]["ipmi_fqdn"].as_str().unwrap().to_owned(),
-                iol_id: conf_json[name]["iol_id"]
-                    .as_str()
-                    .expect("Expected valid u64")
-                    .to_owned()
-                    .parse()
-                    .unwrap(),
-                ipmi_mac: models::macaddr::MacAddress::from_str(
-                    import_json["ipmi"]["mac"].as_str().unwrap(),
-                )
-                .unwrap(),
-                ipmi_user: conf_json[name]["ipmi_user"].as_str().unwrap().to_owned(),
-                ipmi_pass: conf_json[name]["ipmi_pass"].as_str().unwrap().to_owned(),
-                fqdn: name.to_owned(),
-                projects: vec![origin],
-            })
-            .insert(&mut transaction)
-            .await?;
-
-            let lab = match Lab::get_by_name(transaction, "anuket".to_string()).await {
-                Ok(o) => match o {
-                    Some(lab) => lab.id,
-                    None => return Err(anyhow::Error::msg("Lab does not exist".to_string())),
-                },
-                Err(e) => return Err(anyhow::Error::msg(e.to_string())),
-            };
-
-            models::allocation::ResourceHandle::add_resource(
-                &mut transaction,
-                ResourceHandleInner::Host(host),
-                lab,
-            )
-            .await
-            .expect("Expected to make host allocatable");
-
-            for (_mac, data) in import_json["interfaces"].as_object().unwrap() {
-                //
-                let switch = inventory::Switch::get_by_ip(
-                    &mut transaction,
-                    data["switch"].as_str().unwrap().to_owned(),
-                )
-                .await
-                .unwrap()
-                .expect("Switch didnt' exist as expected");
-
-                let portname = data["name"].as_str().unwrap().to_owned();
-
-                let hp = HostPort {
-                    id: FKey::new_id_dangling(),
-                    name: portname.clone(),
-                    mac: MacAddr6::from_str(data["mac"].as_str().unwrap())
-                        .expect("Invalid mac addr for hostport"),
-                    bus_addr: data["busaddr"].as_str().unwrap().to_owned(),
-                    on_host: host,
-                    speed: DataValue::from_decimal(
-                        data["speed"]
-                            .as_i64()
-                            .unwrap_or_else(|| {
-                                let _ = writeln!(session, "Expected valid iface speed for host");
-                                10000
-                            })
-                            .to_string()
-                            .as_str(),
-                        DataUnit::MegaBitsPerSecond,
-                    )
-                    .ok_or(anyhow::Error::msg("Expected valid speed to convert"))?,
-                    is_a: *flavor_ifaces
-                        .get(&portname)
-                        .ok_or_else(|| {
-                            let _ =
-                                writeln!(session,
-                                "flavor_ifaces is {flavor_ifaces:?}, asked for portname {portname}"
-                            );
-                            panic!()
-                        })
-                        .unwrap(),
-                    switch: switch.name.clone(),
-                    switchport: Some(
-                        SwitchPort::get_or_create_port(
-                            transaction,
-                            switch.id,
-                            data["port"].as_str().unwrap().to_owned(),
-                        )
-                        .await?
-                        .id,
-                    ),
-                };
-
-                NewRow::new(hp).insert(transaction).await?;
-            }
-
-            host
-        }
-    };
-
-    return Ok(host.get(&mut transaction).await.unwrap().into_inner());
-}
-
 pub async fn import_switches(mut session: &Server, path: PathBuf) -> Result<(), anyhow::Error> {
     let mut client = new_client().await?;
     let mut transaction = client.easy_transaction().await?;
@@ -776,8 +341,11 @@ async fn create_switch_os(
         .expect("couldn't insert switch_os"))
 }
 
-pub async fn import_proj(mut session: &Server, t: &mut EasyTransaction<'_>, proj: PathBuf) {
-    for entry in proj.as_path().read_dir().unwrap() {
+pub async fn import_proj_hosts(mut session: &Server, t: &mut EasyTransaction<'_>, proj: PathBuf) {
+    let mut hosts_dir = proj.clone();
+    hosts_dir.push("hosts");
+
+    for entry in hosts_dir.as_path().read_dir().unwrap() {
         let mut transaction = t
             .transaction()
             .await
@@ -794,25 +362,24 @@ pub async fn import_proj(mut session: &Server, t: &mut EasyTransaction<'_>, proj
         {
             //panic!("We had a host");
             let host_file_path = entry.path();
-            let h = import_host(
-                session,
-                &mut transaction,
-                host_file_path,
-                PathBuf::from("./config_data/laas-hosts/tascii/host_confluence.json"),
-                PathBuf::from("./config_data/laas-hosts/tascii/images.json"),
-                proj.file_name()
-                    .expect("Expected dir to be named")
-                    .to_str()
-                    .to_owned()
-                    .unwrap()
-                    .to_owned(),
-            )
-            .await;
+            let h = Host::import(&mut transaction, host_file_path, Some(proj.clone())).await;
 
             match h {
-                Ok(v) => {
-                    transaction.commit().await.unwrap();
-                    let _ = writeln!(session, "Successfully imported {}\n", v.server_name);
+                Ok(o) => {
+                    match o {
+                        Some(e) =>  {
+                            transaction.commit().await.unwrap();
+                            let _ = writeln!(session, "Successfully imported {}\n", e.server_name);
+                        },
+                        None => {
+                            let _ = writeln!(
+                                session,
+                                "Error importing {:?}, host not found\n",
+                                entry.path()
+                            );
+                            transaction.rollback().await.unwrap();
+                        },
+                    }
                 }
 
                 Err(e) => {
@@ -825,24 +392,29 @@ pub async fn import_proj(mut session: &Server, t: &mut EasyTransaction<'_>, proj
                 }
             }
         } else {
-            let _ = writeln!(session, "Entry wasn't a file");
+            let _ = writeln!(session, "Entry '{:?}' wasn't a file", entry.path());
         }
     }
     let _ = writeln!(session, "Finished importing hosts");
 }
 
-pub async fn import_hosts(mut session: &Server) {
-    let inven = PathBuf::from("./config_data/laas-hosts/inventory/");
+pub async fn export_hosts(mut session: &Server, t: &mut EasyTransaction<'_>) {
+    let inven = PathBuf::from("./config_data/laas-hosts/inventory/labs");
 
     for p in inven.read_dir().unwrap() {
-        let dir = p.unwrap();
-        let project = dir
-            .file_name()
-            .to_str()
-            .expect("Expected host data dir for project to have a valid name")
-            .to_owned();
+        let proj_dir = p.unwrap();
+        export_proj_hosts(session, t, proj_dir.path().file_name().expect("Expected to get filename").to_str().expect("Expected to convert filename to string slice").to_string()).await;
+    }
+    let _ = writeln!(session, "Finished exporting hosts");
+}
+
+pub async fn import_hosts(mut session: &Server) {
+    let inven = PathBuf::from("./config_data/laas-hosts/inventory/labs");
+
+    for p in inven.read_dir().unwrap() {
+        let proj_dir = p.unwrap();
         let mut client = new_client().await.unwrap();
-        for entry in dir.path().read_dir().unwrap() {
+        for entry in proj_dir.path().read_dir().unwrap() {
             let entry = entry.unwrap();
             if entry.path().is_file()
                 && entry
@@ -856,20 +428,25 @@ pub async fn import_hosts(mut session: &Server) {
                 let mut transaction = client.easy_transaction().await.unwrap();
                 //panic!("We had a host");
                 let host_file_path = entry.path();
-                let h = import_host(
-                    session,
-                    &mut transaction,
-                    host_file_path,
-                    PathBuf::from("./config_data/laas-hosts/tascii/host_confluence.json"),
-                    PathBuf::from("./config_data/laas-hosts/tascii/images.json"),
-                    project.clone(),
-                )
-                .await;
+                let h =
+                    Host::import(&mut transaction, host_file_path, Some(proj_dir.path())).await;
 
                 match h {
-                    Ok(v) => {
-                        transaction.commit().await.unwrap();
-                        let _ = writeln!(session, "Successfully imported {}\n", v.server_name);
+                    Ok(o) => {
+                        match o {
+                            Some(h) => {
+                                transaction.commit().await.unwrap();
+                                let _ = writeln!(session, "Successfully imported {}\n", h.server_name);
+                            },
+                            None => {
+                                let _ = writeln!(
+                                    session,
+                                    "Error importing {:?}, host not found\n",
+                                    entry.path()
+                                );
+                                transaction.rollback().await.unwrap();
+                            },
+                        }
                     }
 
                     Err(e) => {
@@ -888,6 +465,37 @@ pub async fn import_hosts(mut session: &Server) {
         }
     }
     let _ = writeln!(session, "Finished importing hosts");
+}
+
+pub async fn export_proj_hosts(mut session: &Server, t: &mut EasyTransaction<'_>, proj: String) {
+    let handles = ResourceHandle::select().where_field("lab").equals(proj).where_field("tracks_resource_type").equals("host").run(t).await.expect("expected to find handles");
+    for handle in handles {
+        let mut transaction = t
+            .transaction()
+            .await
+            .expect("Expected to get a child transaction");
+
+            let host = match handle.tracks {
+                ResourceHandleInner::Host(h) => {h.get(&mut transaction).await.expect("Expected to get host")},
+                _ => panic!("Query returned unexpected resource type!!")
+            };
+
+        match host.export(&mut transaction).await {
+            Ok(_) => {
+                transaction.commit().await.unwrap();
+                let _ = writeln!(session, "Successfully exported {}\n", host.server_name);
+            },
+            Err(e) => {
+                let _ = writeln!(
+                    session,
+                    "Error exporting {}, got error {e:?}\n",
+                    host.server_name
+                );
+                transaction.rollback().await.unwrap();
+            },
+        }
+    }
+    let _ = writeln!(session, "Finished exporting hosts");
 }
 
 pub async fn import_vlans(mut session: &Server) -> Result<(), anyhow::Error> {
@@ -947,6 +555,220 @@ async fn allocate_host(
         Ok((vlan, _handle)) => Ok(vlan),
         Err(e) => Err(format!("error getting resource: {e:?}")),
     }
+}
+
+pub async fn export_proj_templates(mut session: &Server, t: &mut EasyTransaction<'_>, proj: String) {
+    let mut lab_vec = Lab::select().where_field("name").equals(proj).run(t).await.expect("Expected to query for lab");
+    let lab = match lab_vec.len() {
+        0 => {panic!("No labs found")},
+        1 => {lab_vec.pop().expect("Expected to find lab")},
+        _ => {panic!("Too many labs found, got: {lab_vec:?}")},
+    };
+
+    for template in Template::select().where_field("public").equals(true).where_field("lab").equals(lab.id).run(t).await.expect("Expected to query for templates") {
+        let mut transaction = t
+            .transaction()
+            .await
+            .expect("Expected to get a child transaction");
+
+        match template.export(&mut transaction).await {
+            Ok(_) => {
+                transaction.commit().await.unwrap();
+                let _ = writeln!(session, "Successfully exported {}\n", template.name);
+            },
+            Err(e) => {
+                let _ = writeln!(
+                    session,
+                    "Error exporting {}, got error {e:?}\n",
+                    template.name
+                );
+                transaction.rollback().await.unwrap();
+            },
+        }
+    }
+    let _ = writeln!(session, "Finished exporting templates");
+}
+
+pub async fn export_templates(mut session: &Server, t: &mut EasyTransaction<'_>) {
+    let inven = PathBuf::from("./config_data/laas-hosts/inventory/labs");
+
+    for p in inven.read_dir().unwrap() {
+        let proj_dir = p.unwrap();
+        export_proj_templates(session, t, proj_dir.path().file_name().expect("Expected to get filename").to_str().expect("Expected to convert filename to string slice").to_string()).await;
+    }
+    let _ = writeln!(session, "Finished exporting templates");
+}
+
+pub async fn import_proj_templates(mut session: &Server, t: &mut EasyTransaction<'_>, proj: PathBuf) {
+    let mut template_dir = proj.clone();
+    template_dir.push("templates");
+
+    for entry in template_dir.as_path().read_dir().unwrap() {
+        let mut transaction = t
+            .transaction()
+            .await
+            .expect("Expected to get a child transaction");
+        let entry = entry.unwrap();
+        if entry.path().is_file()
+            && entry
+                .path()
+                .extension()
+                .unwrap()
+                .to_str()
+                .unwrap_or("bad")
+                .contains("json")
+        {
+            //panic!("We had a template");
+            let template_file_path = entry.path();
+            let t = Template::import(&mut transaction, template_file_path, Some(proj.clone())).await;
+
+            match t {
+                Ok(o) => {
+                    match o {
+                        Some(e) =>  {
+                            transaction.commit().await.unwrap();
+                            let _ = writeln!(session, "Successfully imported {}\n", e.name);
+                        },
+                        None => {
+                            let _ = writeln!(
+                                session,
+                                "Error importing {:?}, template not found\n",
+                                entry.path()
+                            );
+                            transaction.rollback().await.unwrap();
+                        },
+                    }
+                }
+
+                Err(e) => {
+                    let _ = writeln!(
+                        session,
+                        "Error importing {:?}, got error {e:?}\n",
+                        entry.path()
+                    );
+                    transaction.rollback().await.unwrap();
+                }
+            }
+        } else {
+            let _ = writeln!(session, "Entry '{:?}' wasn't a file", entry.path());
+        }
+    }
+    let _ = writeln!(session, "Finished importing templates");
+}
+
+pub async fn import_templates(mut session: &Server) {
+    let inven = PathBuf::from("./config_data/laas-hosts/inventory/labs");
+
+    for p in inven.read_dir().unwrap() {
+        let proj_dir = p.unwrap();
+        let mut client = new_client().await.unwrap();
+        for entry in proj_dir.path().read_dir().unwrap() {
+            let entry = entry.unwrap();
+            if entry.path().is_file()
+                && entry
+                    .path()
+                    .extension()
+                    .unwrap()
+                    .to_str()
+                    .unwrap_or("bad")
+                    .contains("json")
+            {
+                let mut transaction = client.easy_transaction().await.unwrap();
+                //panic!("We had a template");
+                let template_file_path = entry.path();
+                let t =
+                    Template::import(&mut transaction, template_file_path, Some(proj_dir.path())).await;
+
+                match t {
+                    Ok(o) => {
+                        match o {
+                            Some(t) => {
+                                transaction.commit().await.unwrap();
+                                let _ = writeln!(session, "Successfully imported {}\n", t.name);
+                            },
+                            None => {
+                                let _ = writeln!(
+                                    session,
+                                    "Error importing {:?}, template not found\n",
+                                    entry.path()
+                                );
+                                transaction.rollback().await.unwrap();
+                            },
+                        }
+                    }
+
+                    Err(e) => {
+                        let _ = writeln!(
+                            session,
+                            "Error importing {:?}, got error {e:?}\n",
+                            entry.path()
+                        );
+                        transaction.rollback().await.unwrap();
+                        //return;
+                    }
+                }
+            } else {
+                let _ = writeln!(session, "Entry wasn't a file");
+            }
+        }
+    }
+    let _ = writeln!(session, "Finished importing templates");
+}
+
+pub async fn import_images(mut session: &Server) {
+    let inven = PathBuf::from("./config_data/laas-hosts/inventory/images");
+
+    for entry in inven.read_dir().expect("Expected to read dir") {
+        let mut client = new_client().await.unwrap();
+        let entry = entry.unwrap();
+        if entry.path().is_file()
+            && entry
+                .path()
+                .extension()
+                .unwrap()
+                .to_str()
+                .unwrap_or("bad")
+                .contains("json")
+        {
+            let mut transaction = client.easy_transaction().await.unwrap();
+            //panic!("We had a image");
+            let image_file_path = entry.path();
+            let t =
+                Image::import(&mut transaction, image_file_path, None).await;
+
+            match t {
+                Ok(o) => {
+                    match o {
+                        Some(t) => {
+                            transaction.commit().await.unwrap();
+                            let _ = writeln!(session, "Successfully imported {}\n", t.name);
+                        },
+                        None => {
+                            let _ = writeln!(
+                                session,
+                                "Error importing {:?}, image not found\n",
+                                entry.path()
+                            );
+                            transaction.rollback().await.unwrap();
+                        },
+                    }
+                }
+
+                Err(e) => {
+                    let _ = writeln!(
+                        session,
+                        "Error importing {:?}, got error {e:?}\n",
+                        entry.path()
+                    );
+                    transaction.rollback().await.unwrap();
+                    //return;
+                }
+            }
+        } else {
+            let _ = writeln!(session, "Entry wasn't a file");
+        }
+    }
+    let _ = writeln!(session, "Finished importing images");
 }
 
 pub async fn import_bookings(mut session: &Server, booking_path: PathBuf) {

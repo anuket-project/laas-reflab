@@ -118,7 +118,7 @@ pub struct IPMIFQDNResponse {
 pub async fn instance_power_state(
     Path(instance_llid): Path<Uuid>,
 ) -> Result<Json<PowerStateResponse>, ApiPowerStateError> {
-    info!("Fetching power state for instance ID: {:?}", instance_llid);
+    //info!("Fetching power state for instance ID: {:?}", instance_llid);
 
     let instance = fetch_instance(&instance_llid).await?;
 
@@ -128,7 +128,7 @@ pub async fn instance_power_state(
     }
 
     if let Some(host) = fetch_host(&instance).await? {
-        info!("Fetching power state from host: {}", host.ipmi_fqdn);
+        //info!("Fetching power state from host: {}", host.ipmi_fqdn);
         let power_state = get_host_power_state(&HostConfig::try_from(host)?).await?;
 
         Ok(Json(PowerStateResponse { power_state }))

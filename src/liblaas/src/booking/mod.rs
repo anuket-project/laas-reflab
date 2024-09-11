@@ -77,6 +77,7 @@ pub async fn make_aggregate(
         lab: blob.origin.clone(),
         project: blob.metadata.project.clone().unwrap_or("None".to_string()),
         purpose: blob.metadata.purpose.clone().unwrap_or("None".to_string()),
+        mock: false,
 
         // defaults to current time.
         ..Default::default()

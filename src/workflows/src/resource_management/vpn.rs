@@ -1,19 +1,14 @@
 //! Copyright (c) 2023 University of New Hampshire
 //! SPDX-License-Identifier: MIT
 
-use common::prelude::{futures::executor, itertools::Itertools, *};
+use common::prelude::*;
 use models::{
-    dal::{web::*, *},
+    dal::*,
     dashboard::Aggregate, inventory::Lab,
 };
-use serde::{self, Deserialize, Serialize};
-use tascii::{
-    task_trait::{AsyncRunnable, TaskIdentifier},
-};
-use users::*;
-
-
-use super::allocator;
+use serde::{Deserialize, Serialize};
+use tascii::task_trait::{AsyncRunnable, TaskIdentifier};
+use users::ipa;
 
 tascii::mark_task!(SyncVPN);
 #[derive(Clone, Debug, Serialize, Deserialize, Hash)]

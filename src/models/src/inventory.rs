@@ -1,7 +1,7 @@
 //! Copyright (c) 2023 University of New Hampshire
 //! SPDX-License-Identifier: MIT
 
-use common::prelude::{itertools::Itertools, macaddr::MacAddr6, *, chrono::{DateTime, Utc}, axum::async_trait, serde_json::Value};
+use common::prelude::{axum::async_trait, chrono::{DateTime, Utc}, itertools::Itertools, macaddr::MacAddr6, serde_json::Value, tower_http::cors::any, *};
 use dal::{
     web::{AnyWay, *},
     *,
@@ -11,19 +11,18 @@ use serde::{Deserialize, Serialize};
 use strum_macros::Display;
 use tokio_postgres::types::{ToSql, FromSql, private::BytesMut};
 use std::{
-    collections::HashMap,
-    net::{Ipv4Addr, Ipv6Addr}, str::Split, cmp::Ordering,
+    cmp::Ordering, collections::HashMap, fs::File, io::Write, net::{Ipv4Addr, Ipv6Addr}, path::PathBuf, str::{FromStr, Split}
 };
 
-use crate::{allocation::ResourceHandle, dashboard::Image};
+use crate::{allocation::{ResourceHandle, ResourceHandleInner}, dashboard::Image};
 
-#[derive(Serialize, Deserialize, Debug, Default, Clone, Hash, Copy, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, Hash, Copy, JsonSchema, PartialEq, Eq)]
 pub struct DataValue {
     pub value: u64,
     pub unit: DataUnit,
 }
 
-#[derive(Serialize, Deserialize, Debug, Default, Clone, Hash, Copy, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, Hash, Copy, JsonSchema, PartialEq, Eq)]
 pub enum DataUnit {
     #[default]
     Unknown,
@@ -75,6 +74,8 @@ pub struct Flavor {
     pub root_size: DataValue,
     pub disk_size: DataValue,
     pub swap_size: DataValue,
+    pub brand: String,
+    pub model: String,
 }
 
 impl DBTable for Flavor {
@@ -112,6 +113,19 @@ impl DBTable for Flavor {
                 depends_on: vec!["create_flavor_0001"],
                 apply: Apply::SQL(format!("CREATE INDEX flavor_name_index ON flavors (name);")),
             },
+            Migration {
+                unique_name: "add_brand_and_model_flavors_0003",
+                description: "add brand and model names for flavors",
+                depends_on: vec!["index_flavor_0002"],
+                apply: Apply::SQLMulti(vec![
+                    "ALTER TABLE flavors ADD IF NOT EXISTS brand VARCHAR(1000);".to_owned(),
+                    "ALTER TABLE flavors ADD IF NOT EXISTS model VARCHAR(1000);".to_owned(),
+                    "UPDATE flavors SET brand = ''".to_owned(),
+                    "UPDATE flavors SET model = '' ;".to_owned(),
+                    "ALTER TABLE flavors ALTER COLUMN brand SET NOT NULL;".to_owned(),
+                    "ALTER TABLE flavors ALTER COLUMN model SET NOT NULL;".to_owned(),
+                    ]),
+            },
         ]
     }
 
@@ -131,8 +145,9 @@ impl DBTable for Flavor {
             ("root_size", self.root_size.to_sqlval()?),
             ("disk_size", self.disk_size.to_sqlval()?),
             ("swap_size", self.swap_size.to_sqlval()?),
+            ("brand", Box::new(self.brand.clone())),
+            ("model", Box::new(self.model.clone())),
         ];
-
         Ok(c.into_iter().collect())
     }
 
@@ -150,24 +165,115 @@ impl DBTable for Flavor {
             root_size: DataValue::from_sqlval(row.try_get("root_size")?)?,
             disk_size: DataValue::from_sqlval(row.try_get("disk_size")?)?,
             swap_size: DataValue::from_sqlval(row.try_get("swap_size")?)?,
+            brand: row.try_get("brand")?,
+            model: row.try_get("model")?,
         }))
     }
 }
 
-impl Flavor {
-    pub async fn get_by_name(
-        t: &mut EasyTransaction<'_>,
-        name: String,
-    ) -> Result<ExistingRow<Flavor>, anyhow::Error> {
-        let tn = <Self as DBTable>::table_name();
-        let q = format!("SELECT * FROM {tn} WHERE name = $1;");
-        let row = t.query_opt(&q, &[&name]).await.anyway()?;
-        let row = row.ok_or("no flavor by that name existed").anyway()?;
-        let s = Self::from_row(row)?;
-
-        Ok(s)
+impl Named for Flavor {
+    fn name_columnnames() -> Vec<String> {
+        return vec!["name".to_owned()]
     }
 
+    fn name_parts(&self) -> Vec<String> {
+        vec![self.name.clone()]
+    }
+}
+
+impl Lookup for Flavor {
+    
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ImportFlavor {
+    pub arch: Arch,
+    pub name: String,
+    pub public: bool,
+    pub cpu_count: usize,
+    pub ram: DataValue,
+    pub root_size: DataValue,
+    pub disk_size: DataValue,
+    pub swap_size: DataValue,
+    pub brand: String,
+    pub model: String,
+}
+
+impl ImportFlavor {
+    pub async fn to_flavor(&self, transaction: &mut EasyTransaction<'_>) -> Flavor {
+        let clone = self.clone();
+
+        Flavor {
+            id: FKey::new_id_dangling(),
+            arch: clone.arch,
+            name: clone.name,
+            public: clone.public,
+            cpu_count: clone.cpu_count,
+            ram: clone.ram,
+            root_size: clone.root_size,
+            disk_size: clone.disk_size,
+            swap_size: clone.swap_size,
+            brand: clone.brand,
+            model: clone.model,
+        }
+    }
+
+    pub fn from_flavor(flavor: &Flavor) -> ImportFlavor {
+        ImportFlavor {
+            arch: flavor.arch,
+            name: flavor.name.clone(),
+            public: flavor.public,
+            cpu_count: flavor.cpu_count,
+            ram: flavor.ram,
+            root_size: flavor.root_size,
+            disk_size: flavor.disk_size,
+            swap_size: flavor.swap_size,
+            brand: flavor.brand.clone(),
+            model: flavor.model.clone(),
+        }
+    }
+}
+
+impl Importable for Flavor {
+    async fn import(transaction: &mut EasyTransaction<'_>, import_file_path: std::path::PathBuf, proj_path: Option<PathBuf>) -> Result<Option<ExistingRow<Self>>, anyhow::Error> {
+        let importflavor: ImportFlavor = serde_json::from_reader(File::open(import_file_path)?)?;
+        let mut flavor: Flavor = importflavor.to_flavor(transaction).await;
+
+        if let Ok(mut orig_flavor) = Flavor::lookup(transaction, Flavor::name_parts(&flavor)).await {
+            flavor.id = orig_flavor.id;
+
+            orig_flavor.mass_update(flavor).unwrap();
+
+            orig_flavor.update(transaction).await.expect("Expected to update row");
+            Ok(Some(orig_flavor))
+        } else {
+            let res = NewRow::new(flavor.clone()).insert(transaction).await.expect("Expected to create new row");
+
+            match res.get(transaction).await {
+                Ok(f) => Ok(Some(f)),
+                Err(e) => return Err(anyhow::Error::msg(format!("Failed to insert flavor due to error: {}", e.to_string()))),
+            }
+        }
+    }
+
+    async fn export(&self, transaction: &mut EasyTransaction<'_>) -> Result<(), anyhow::Error> {
+        let flavor_dir = PathBuf::from("./config_data/laas-hosts/inventory/flavors");
+        let mut flavor_file_path = flavor_dir;
+        flavor_file_path.push(self.name.clone());
+        flavor_file_path.set_extension("json");
+        let mut flavor_file = File::create(flavor_file_path).expect("Expected to create flavor file");
+
+        let import_flavor = ImportFlavor::from_flavor(self);
+
+        match flavor_file.write(serde_json::to_string_pretty(&import_flavor)?.as_bytes()) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(anyhow::Error::msg(format!("Failed to export flavor {}", self.name.clone()))),
+        }
+    }
+}
+
+
+impl Flavor {
     pub async fn ports(
         &self,
         transaction: &mut EasyTransaction<'_>,
@@ -343,6 +449,181 @@ pub struct Host {
     pub ipmi_pass: String,
     pub fqdn: String,
     pub projects: Vec<String>,
+    pub sda_uefi_device: Option<String>,
+}
+
+impl Named for Host {
+    fn name_parts(&self) -> Vec<String> {
+        vec![self.server_name.clone()]
+    }
+
+    fn name_columnnames() -> Vec<String> {
+        vec!["server_name".to_owned()]
+    }
+}
+
+impl Lookup for Host {
+
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ImportHost {
+    pub server_name: String,
+    pub arch: Arch,
+    pub flavor: String, // Flavor used during provisioning
+    pub serial: String,
+    pub ipmi_fqdn: String,
+    pub iol_id: String,
+    pub ipmi_mac: eui48::MacAddress,
+    pub ipmi_user: String,
+    pub ipmi_pass: String,
+    pub fqdn: String,
+    pub projects: Vec<String>,
+    pub sda_uefi_device: Option<String>
+}
+
+impl ImportHost {
+    pub async fn to_host(&self, transaction: &mut EasyTransaction<'_>, proj_path: PathBuf) -> Host {
+        let mut flavor_path = proj_path.clone();
+        //get back to inventory dir
+        flavor_path.pop();
+        flavor_path.pop();
+        flavor_path.push("flavors");
+        flavor_path.push(self.flavor.as_str());
+        flavor_path.set_extension("json");
+
+        let flavor = match Flavor::import(transaction, flavor_path.clone(), None).await {
+            Ok(of) => {
+                match of {
+                    Some(f) => f.id,
+                    None => panic!("Imported flavor does not exist"),
+                }
+            },
+            Err(e) => panic!("Failed to import flavor at '{flavor_path:?}' due to error: {e:?}")
+        };
+
+        Host {
+            id: FKey::new_id_dangling(),
+            server_name: self.server_name.clone(),
+            arch: self.arch.clone(),
+            flavor,
+            serial: self.serial.clone(),
+            ipmi_fqdn: self.ipmi_fqdn.clone(),
+            iol_id: self.iol_id.clone(),
+            ipmi_mac: self.ipmi_mac.clone(),
+            ipmi_user: self.ipmi_user.clone(),
+            ipmi_pass: self.ipmi_pass.clone(),
+            fqdn: self.fqdn.clone(),
+            projects: self.projects.clone(),
+            sda_uefi_device: self.sda_uefi_device.clone(),
+        }
+    }
+
+    pub async fn from_host(transaction: &mut EasyTransaction<'_>, host: &Host) -> ImportHost {
+        let clone = host.clone();
+        let flavor = clone.flavor.get(transaction).await.expect("Expected to get flavor");
+        ImportHost {
+            server_name: clone.server_name,
+            arch: clone.arch,
+            flavor: flavor.name.clone(),
+            serial: clone.serial,
+            ipmi_fqdn: clone.ipmi_fqdn,
+            iol_id: clone.iol_id,
+            ipmi_mac: clone.ipmi_mac,
+            ipmi_user: clone.ipmi_user,
+            ipmi_pass: clone.ipmi_pass,
+            fqdn: clone.fqdn,
+            projects: clone.projects,
+            sda_uefi_device: clone.sda_uefi_device,
+        }
+    }
+}
+
+impl Importable for Host {
+    async fn import(transaction: &mut EasyTransaction<'_>, import_file_path: std::path::PathBuf, proj_path: Option<PathBuf>) -> Result<Option<ExistingRow<Self>>, anyhow::Error> {
+        let lab = match Lab::get_by_name(transaction, 
+    proj_path.clone().expect("Expected project path").file_name().expect("Expected to find file name")
+        .to_str()
+        .expect("Expected host data dir for project to have a valid name")
+        .to_owned()).await {
+            Ok(opt_l) => {
+                match opt_l {
+                    Some(l) => l.id,
+                    None => {
+                        // In future import labs and try again
+                        return Err(anyhow::Error::msg("Specified lab does not exist"))
+                    }
+                }
+            },
+            Err(_) => {return Err(anyhow::Error::msg("Failed to find specified lab"))}
+        };
+        let host_info: Value = serde_json::from_reader(File::open(import_file_path)?)?;
+        
+        let importhost: ImportHost = serde_json::from_value(host_info.get("host").expect("Expected to get host from host info").clone()).expect("Expected to serialize ImportHost");
+        
+        let host_connections: Vec<HostPort> = serde_json::from_value(host_info.get("connections").expect("Expected to get host from host info").clone()).expect("Expected to serialize ImportHost");
+        
+        for port in host_connections.clone() {
+            match port.id.get(transaction).await {
+                Ok(mut p) => p.mass_update(port).expect("Expected to update HostPort"),
+                Err(_) => {NewRow::new(port).insert(transaction).await.expect("Expected to insert new HostPort");},
+            }
+        }
+
+        let mut host: Host = importhost.to_host(transaction, proj_path.expect("Expected project path")).await;
+
+        if let Ok(mut orig_host) = Host::get_by_name(transaction, host.server_name.clone()).await {
+            host.id = orig_host.id;
+            orig_host.mass_update(host).unwrap();
+            orig_host.update(transaction).await.expect("Expected to update row");
+
+            let orig_connections = HostPort::all_for_host(transaction, orig_host.id.clone()).await.expect("Expected to find ports for host");
+            for port in orig_connections {
+                if !host_connections.contains(&port) {
+                    port.id.get(transaction).await.expect("Expected to get HostPort").delete(transaction).await.expect("Expected to remove old HostPort");
+                }
+            }
+
+            Ok(Some(orig_host))
+        } else {
+            let res = NewRow::new(host.clone()).insert(transaction).await.expect("Expected to create new row");
+
+            let _rh = ResourceHandle::add_resource(transaction, 
+                ResourceHandleInner::Host(res), lab)
+                .await
+                .expect("Couldn't create tracking handle for vlan");
+            match res.get(transaction).await {
+                Ok(h) => todo!(),
+                Err(e) => Err(anyhow::Error::msg(format!("Failed to import host due to error: {}", e.to_string()))),
+            }
+        }
+    }
+
+    async fn export(&self, transaction: &mut EasyTransaction<'_>) -> Result<(), anyhow::Error> {
+        let res_handle = ResourceHandle::handle_for_host(transaction, self.id).await.expect("Expected to find handle for host");
+        let lab_name = res_handle.lab.expect("Expected handle to have lab").get(transaction).await.expect("Expected to find lab").name.clone();
+        
+        let mut host_file_path = PathBuf::from(format!("./config_data/laas-hosts/inventory/labs/{}/hosts/{}", lab_name, self.server_name));
+        host_file_path.set_extension("json");
+
+        let mut host_file = File::create(host_file_path).expect("Expected to create host file");
+
+        let import_host = ImportHost::from_host(transaction, self).await;
+
+        let import_connection_list = HostPort::all_for_host(transaction, self.id).await.expect("Expected to find host");
+
+        let host_info = serde_json::Value::from_str(
+            format!("{{\"host\": {}, \"connections\": {}}}", 
+                serde_json::to_string_pretty(&import_host)?, 
+                serde_json::to_string_pretty(&import_connection_list)?
+            ).as_str()).expect("Expected to serialize host info");
+        
+
+        match host_file.write(serde_json::to_string_pretty(&host_info)?.as_bytes()) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(anyhow::Error::msg(format!("Failed to export host {}", self.server_name.clone()))),
+        }
+    }
 }
 
 impl DBTable for Host {
@@ -381,6 +662,12 @@ impl DBTable for Host {
                 depends_on: vec!["create_hosts_0001"],
                 apply: Apply::SQL(format!("ALTER TABLE hosts DROP COLUMN sp1_mac;")),
             },
+            Migration {
+                unique_name: "add_sda_uefi_device_0003",
+                description: "add optional field to note the UEFI device name that corresponds to the first block device, used for provisioning hosts that don't create UEFI entries",
+                depends_on: vec!["remove_sp1_mac_column_hosts_0002"],
+                apply: Apply::SQL(format!("ALTER TABLE hosts ADD COLUMN IF NOT EXISTS sda_uefi_device VARCHAR(100);")),
+            },
         ]
     }
 
@@ -402,6 +689,8 @@ impl DBTable for Host {
             ipmi_pass: row.try_get("ipmi_pass")?,
             fqdn: row.try_get("fqdn")?,
             projects: serde_json::from_value(row.try_get("projects")?)?,
+            sda_uefi_device: row.try_get("sda_uefi_device")?,
+            
         }))
     }
 
@@ -420,6 +709,7 @@ impl DBTable for Host {
             ("ipmi_pass", Box::new(clone.ipmi_pass)),
             ("fqdn", Box::new(clone.fqdn)),
             ("projects", Box::new(serde_json::to_value(clone.projects)?)),
+            ("sda_uefi_device", Box::new(clone.sda_uefi_device)),
         ];
 
         Ok(c.into_iter().collect())
@@ -486,6 +776,15 @@ impl Arch {
             "x86" => Some(Arch::X86),
             "x86_64" => Some(Arch::X86_64),
             "aarch64" => Some(Arch::Aarch64),
+            _ => None,
+        }
+    }
+
+    pub fn from_string_fuzzy(s: String) -> Option<Arch> {
+        match s {
+            _ if s.contains("x86_64") => Some(Arch::X86_64),
+            _ if s.contains("x86") => Some(Arch::X86),
+            _ if s.contains("aarch64") => Some(Arch::Aarch64),
             _ => None,
         }
     }
@@ -1154,7 +1453,7 @@ impl DBTable for SwitchOS {
 }
 
 inventory::submit! { Migrate::new(HostPort::migrations) }
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
 pub struct HostPort {
     pub id: FKey<HostPort>,
 
@@ -1432,7 +1731,8 @@ impl DBTable for Vlan {
                         public_config JSONB
             );"
             )),
-        }]
+        },
+        ]
     }
 }
 
@@ -1455,6 +1755,7 @@ pub enum BootTo {
     Network,
     #[default]
     Disk,
+    SpecificDisk,
 }
 
 impl std::fmt::Display for BootTo {
@@ -1462,6 +1763,7 @@ impl std::fmt::Display for BootTo {
         match self {
             Self::Network => write!(f, "Network"),
             Self::Disk => write!(f, "Disk"),
+            Self::SpecificDisk => write!(f, "Specific Disk"),
         }
     }
 }

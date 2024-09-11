@@ -3,11 +3,11 @@
 
 #![allow(non_snake_case, non_camel_case_types)]
 
-use common::prelude::{reqwest, tokio, tracing};
+use common::prelude::{anyhow, reqwest, tokio, tracing};
 use models::inventory::*;
 use serde::{Deserialize, Serialize};
 use serde_xml_rs::from_str;
-use std::{fmt::Display, process::Command, time::Duration, *};
+use std::{cmp::Ordering, fmt::Display, process::Command, time::Duration, *};
 use tascii::{prelude::*, task_trait::AsyncRunnable};
 
 use models::dal::{new_client, AsEasyTransaction, FKey, ID};
@@ -128,19 +128,33 @@ impl AsyncRunnable for SetBoot {
 // Helper functions
 
 
-async fn ilo_persistent_boot(host_url: &str, host: Host, boot_to: BootTo) -> Result<(), ()> {
+async fn ilo_persistent_boot(host_url: &str, host: Host, boot_to: BootTo) -> Result<(), anyhow::Error> {
     tracing::info!("Attempting to set persistent boot through the ILO.");
     // Get all boot devices for a given host, then set the persistent boot order
-    let mut boot_device_list: Vec<BootDevice> = xml_to_boot_device_list(
+    let mut boot_device_list: Vec<BootDevice> = match xml_to_boot_device_list(
         run_ilo_command(host_url, &host, ILOCommand::GetPersistentBoot)
             .await
             .unwrap(),
-    )?;
+    ) {
+        Ok(l) => l,
+        Err(e) => return Err(anyhow::Error::msg(format!("Failed to get boot device list for host {}", host.server_name))),
+    };
 
     tracing::warn!("Boot device list is {boot_device_list:?}");
     match boot_to {
         BootTo::Network => boot_device_list = network_first_order(boot_device_list),
-        BootTo::Disk => boot_device_list = network_last_order(boot_device_list),
+        BootTo::Disk => {
+            boot_device_list = match network_last_order(boot_device_list, None) {
+                Ok(l) => l,
+                Err(e) => return Err(e),
+            }
+        },
+        BootTo::SpecificDisk => {
+            boot_device_list = match network_last_order(boot_device_list, Some(host.clone())) {
+                Ok(l) => l,
+                Err(e) => return Err(e),
+            }
+        },
     }
 
     tracing::info!("Sets order for server to {boot_device_list:?}");
@@ -149,28 +163,34 @@ async fn ilo_persistent_boot(host_url: &str, host: Host, boot_to: BootTo) -> Res
 
     tracing::info!("Sends command with boot order to host:\n{boot_order}");
 
-    let res = run_ilo_command(host_url, &host, ILOCommand::SetPersistentBoot(boot_order)).await?;
+    let res = match run_ilo_command(host_url, &host, ILOCommand::SetPersistentBoot(boot_order)).await {
+        Ok(s) => s,
+        Err(_) => return Err(anyhow::Error::msg("Failed to run ilo command, URL '{host_url}' may be incorrect")),
+    };
 
-    tracing::info!("Result of set persistent boot is {res:?}");
+    tracing::info!("Result of set persistent boot is {res}");
 
     Ok(())
 }
 
-async fn ilo_one_time_boot(host_url: &str, host: Host, boot_to: BootTo) -> Result<(), ()> {
+async fn ilo_one_time_boot(host_url: &str, host: Host, boot_to: BootTo) -> Result<(), anyhow::Error> {
     tracing::info!("Attempting to set one time boot through the ILO.");
 
-    let res = run_ilo_command(
+    let res = match run_ilo_command(
         host_url,
         &host,
         ILOCommand::SetOneTimeBoot(
             match boot_to {
                 BootTo::Network => "NETWORK",
-                BootTo::Disk => "HDD",
+                BootTo::Disk | BootTo::SpecificDisk => "HDD",
             }
             .to_owned(),
         ),
     )
-    .await?;
+    .await {
+        Ok(s) => s,
+        Err(_) => return Err(anyhow::Error::msg(format!("Failed to set one time boot to {boot_to} for {} at URL {host_url}", host.server_name))),
+    };
 
     tracing::info!("Result of set one time boot is {res:?}");
 
@@ -181,9 +201,9 @@ async fn ilo_one_time_boot(host_url: &str, host: Host, boot_to: BootTo) -> Resul
  * Try to set the boot using xmlrpc and RIBCL
  * If this fails, the host probably isn't an HPE host so just switch over to using ipmitool commands instead
  */
-async fn set_hpe_boot(host_url: &str, host: Host, persistent: bool, boot_to: BootTo) -> Result<(), ()> {
+async fn set_hpe_boot(host_url: &str, host: Host, persistent: bool, boot_to: BootTo) -> Result<(), anyhow::Error> {
 
-    let result: Result<(), ()>;
+    let result: Result<(), anyhow::Error>;
     if persistent {
         result = ilo_persistent_boot(host_url, host.clone(), boot_to).await;
     } else {
@@ -199,11 +219,11 @@ async fn set_hpe_boot(host_url: &str, host: Host, persistent: bool, boot_to: Boo
     }
 }
 
-async fn set_ipmi_boot(host_url: &str, host: Host, persistent: bool, boot_to: BootTo) -> Result<(), ()> {
+async fn set_ipmi_boot(host_url: &str, host: Host, persistent: bool, boot_to: BootTo) -> Result<(), anyhow::Error> {
     tracing::info!("Setting IPMI boot for {host:?} with persistent {persistent} and boot_to {boot_to}");
     let bdev = match boot_to {
         BootTo::Network => "pxe",
-        BootTo::Disk => "disk",
+        BootTo::Disk | BootTo::SpecificDisk => "disk",
     };
 
     let mut opts = String::from("options=efiboot");
@@ -363,10 +383,18 @@ fn network_first_order(mut devices: Vec<BootDevice>) -> Vec<BootDevice> {
     devices
 }
 
-fn network_last_order(mut devices: Vec<BootDevice>) -> Vec<BootDevice> {
-    devices.sort_by(|a, b| order(a, b, false));
+fn network_last_order(mut devices: Vec<BootDevice>, host: Option<Host>) -> Result<Vec<BootDevice>, anyhow::Error> {
+    match host {
+        Some(h) => {
+            match h.sda_uefi_device {
+                Some(d) => devices.sort_by(|a, b| sort_device_to_top(a, b, d.clone())),
+                None => return Err(anyhow::Error::msg("Attempting to boot a specific drive, but none are specified for this host")),
+            }
+        },
+        None => devices.sort_by(|a, b| order(a, b, false)),
+    }
 
-    devices
+    Ok(devices)
 }
 
 fn xml_to_boot_device_list(xml: String) -> Result<Vec<BootDevice>, ()> {
@@ -398,4 +426,18 @@ fn boot_device_list_to_string(devices: Vec<BootDevice>) -> String {
     }
 
     ret
+}
+
+fn sort_device_to_top(a: &(String, String), b: &(String, String), device: String) -> cmp::Ordering {
+    let a_d = a.1.to_ascii_lowercase();
+    let b_d = b.1.to_ascii_lowercase();
+
+    let f = |_a: &String, _b: &String| match (a_d.contains(device.as_str()), b_d.contains(device.as_str())) {
+        (true, true) => Ordering::Equal,
+        (true, false) => Ordering::Greater,
+        (false, true) => Ordering::Less,
+        (false, false) => Ordering::Equal,
+    };
+
+    f(&a_d, &b_d)
 }

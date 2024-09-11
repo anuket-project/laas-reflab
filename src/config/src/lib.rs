@@ -22,6 +22,7 @@ pub struct LibLaaSConfig {
     pub notifications: NotificationConfig,
     pub cobbler: CobblerConfig,
     pub ipa: Vec<IPAConfig>,
+    pub eve: EveConfig,
     pub projects: HashMap<String, ProjectConfig>,
     #[serde(default)]
     pub metrics: Option<MetricsConfig>,
@@ -146,9 +147,12 @@ pub struct NotificationConfig {
 }
 #[derive(Debug, Deserialize, Clone)]
 pub struct CobblerConfig {
+    pub address: String,
     pub url: String,
     pub username: String,
     pub password: String,
+    pub api_username: String,
+    pub api_password: String,
 }
 #[derive(Debug, Deserialize, Clone)]
 pub struct IPAConfig {
@@ -156,6 +160,13 @@ pub struct IPAConfig {
     pub username: String,
     pub password: String,
     pub certificate_path: PathBuf,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct EveConfig {
+    pub url: String,
+    pub api_key: String,
+    pub onboarding_key: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
