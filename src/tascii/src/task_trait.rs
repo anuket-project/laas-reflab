@@ -5,6 +5,7 @@ use std::{any::type_name, hash::Hash, panic::RefUnwindSafe, time::Duration};
 
 use dal::ID;
 
+use schemars::JsonSchema;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::{
@@ -25,6 +26,7 @@ pub trait Runnable:
     + TaskRegistered
     + 'static
     + RefUnwindSafe
+    + JsonSchema
 {
     type Output: TaskSafe;
 
@@ -78,6 +80,7 @@ pub trait AsyncRunnable:
     + TaskRegistered
     + 'static
     + RefUnwindSafe
+    + JsonSchema
 {
     type Output: TaskSafe;
 

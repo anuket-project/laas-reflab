@@ -7,6 +7,7 @@ use std::{
 
 use dal::ID;
 
+use schemars::{schema::RootSchema, schema_for, JsonSchema};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{debug, info};
@@ -54,6 +55,8 @@ pub(crate) trait DynRunnable: Send + std::fmt::Debug + Sync {
     fn oneshot(&self) -> Result<StrongUntypedOneshotHandle, anyhow::Error>;
 
     fn unmarshal(&self, h: SimpleOneshotHandle) -> StrongUntypedOneshotHandle;
+
+    fn schema(&self) -> RootSchema;
 
     fn complete_with(
         &self,
@@ -185,6 +188,10 @@ where
 
             debug!("Task {run_id} unblocked and is returning");
         });
+    }
+
+    fn schema(&self) -> RootSchema {
+        schema_for!(R)
     }
 
     fn on_error(&self) -> Box<dyn Fn(StrongUntypedOneshotHandle, TaskError) -> Result<(), ()>> {
