@@ -1205,7 +1205,7 @@ impl<'a> EasyTransaction<'a> {
             .take()
             .ok_or(anyhow::Error::msg("no inner existed to roll back"))?;
 
-        inner.commit().await.anyway()?;
+        inner.rollback().await.anyway()?;
 
         Ok(())
     }
