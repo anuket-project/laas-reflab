@@ -9,7 +9,7 @@ services:
     ports:
       - "${LAAS_MAILBOX_PORT:-3001}:${LAAS_MAILBOX_PORT:-3001}"
     volumes:
-      - config_data:/usr/src/liblaas/config_data
+      - config_data:/etc/laas-reflab/
 
   db:
     image: postgres
