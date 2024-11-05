@@ -45,6 +45,7 @@ RUN apt-get update && apt-get install -y python3.11-dev postgresql-client ipmito
 
 COPY --from=builder /app/target/release/laas-reflab /usr/local/bin
 COPY --from=builder /app/migrations /app/migrations
+COPY templates /app/templates
 
 ENTRYPOINT ["/usr/local/bin/laas-reflab", "--server"]
 
