@@ -140,6 +140,7 @@ pub struct NotificationConfig {
 
     pub admin_send_to_email: Option<Email>,
     pub templates_directory: String,
+    pub vpn_config_path: PathBuf,
 }
 #[derive(Debug, Deserialize, Clone)]
 pub struct CobblerConfig {

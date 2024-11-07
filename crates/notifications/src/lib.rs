@@ -16,7 +16,14 @@ use std::{
 use tera::Tera;
 pub mod email;
 
-use common::prelude::{anyhow, chrono::{self, Utc}, futures, itertools::Itertools, serde_json::json, tracing};
+use common::prelude::{
+    anyhow,
+    chrono::{self, Utc},
+    futures,
+    itertools::Itertools,
+    serde_json::json,
+    tracing,
+};
 use config::{settings, RenderTarget, Situation};
 
 pub type Username = String;
@@ -101,7 +108,7 @@ pub async fn send_booking_notification(
     situation: Situation,
     owner_title: String,
     collab_title: String,
-    extra: Option<serde_json::Value>
+    extra: Option<serde_json::Value>,
 ) -> Result<(), Vec<anyhow::Error>> {
     let users = info
         .collaborators
@@ -230,14 +237,18 @@ pub async fn send_test_email(
     }
 }
 
-pub async fn booking_started(env: &Env, info: &BookingInfo, extra: Option<serde_json::Value>) -> Result<(), Vec<anyhow::Error>> {
+pub async fn booking_started(
+    env: &Env,
+    info: &BookingInfo,
+    extra: Option<serde_json::Value>,
+) -> Result<(), Vec<anyhow::Error>> {
     send_booking_notification(
         env,
         info,
         Situation::BookingCreated,
         "You Have Created a New Booking.".to_owned(),
         "You Have Been Added To a New Booking.".to_owned(),
-        extra
+        extra,
     )
     .await
 }
@@ -251,7 +262,7 @@ pub async fn booking_ending(env: &Env, info: &BookingInfo) -> Result<(), Vec<any
         "A Booking You Collaborate On Is About to Expire.".to_owned(),
         Some(json!({
             "days": (info.end_date.unwrap_or(Utc::now()) - Utc::now()).num_days()
-        }))
+        })),
     )
     .await
 }
@@ -263,7 +274,7 @@ pub async fn booking_ended(env: &Env, info: &BookingInfo) -> Result<(), Vec<anyh
         Situation::BookingExpired,
         "Your Booking Has Expired.".to_owned(),
         "A Booking You Collaborate On Has Expired.".to_owned(),
-        None
+        None,
     )
     .await
 }
@@ -353,7 +364,6 @@ pub async fn request_booking_extension(
     extension_date: &String,
     extension_reason: &String,
 ) -> Result<(), Vec<anyhow::Error>> {
-
     let styles = read_styles(
         settings()
             .projects
@@ -393,10 +403,21 @@ pub async fn request_booking_extension(
     context.insert("extension_reason", extension_reason);
     context.insert("extension_date", extension_date);
 
-    tracing::error!("it needs to get send to {}", config::settings().notifications.admin_send_to_email.clone().expect("expected admin email address").as_address_string());
+    tracing::error!(
+        "it needs to get send to {}",
+        config::settings()
+            .notifications
+            .admin_send_to_email
+            .clone()
+            .expect("expected admin email address")
+            .as_address_string()
+    );
 
     let notification = Notification {
-        title: format!("Booking Extension Request ({} - {})", info.project, info.purpose),
+        title: format!(
+            "Booking Extension Request ({} - {})",
+            info.project, info.purpose
+        ),
         send_to: format!("N/A"), // Ignored by the send_to_admins_email_template() function.
         by_methods: vec![Method::Email()],
         situation: Situation::RequestBookingExtension,
@@ -405,15 +426,13 @@ pub async fn request_booking_extension(
         attachment: None,
     };
 
-match send_to_admins_email_template(env, notification).await {
-    Ok(_) => {
-        Ok(())
+    match send_to_admins_email_template(env, notification).await {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            tracing::error!("Failed to send email with error {e:#?}");
+            Err(vec![e])
+        }
     }
-    Err(e) => {
-        tracing::error!("Failed to send email with error {e:#?}");
-        Err(vec![e])
-    }
-}
 }
 
 /// Send email containing ipa username, temp password, openvpn config, and instructions
@@ -433,8 +452,16 @@ pub async fn send_new_account_notification(
         }))
         .expect("Expected to create context for notification"),
         attachment: Some(AttachmentInfo {
-            name: "os-vpn-client.ovpn".to_owned(),
-            path: PathBuf::from("./config_data/os-vpn-client.ovpn"),
+            name: settings()
+                .notifications
+                .vpn_config_path
+                .file_name()
+                .expect("expected a file name")
+                .to_str()
+                .expect("expected a string")
+                .to_owned(),
+
+            path: settings().notifications.vpn_config_path.clone(),
         }),
     };
 
@@ -479,12 +506,14 @@ pub struct AccessInfo {
 // }
 
 static TERA: once_cell::sync::Lazy<tera::Tera> =
-    once_cell::sync::Lazy::new(|| match Tera::new(&settings().notifications.templates_directory) {
-        Ok(t) => t,
-        Err(e) => {
-            panic!("Couldn't create templating instance, failure: {e}")
-        }
-    });
+    once_cell::sync::Lazy::new(
+        || match Tera::new(&settings().notifications.templates_directory) {
+            Ok(t) => t,
+            Err(e) => {
+                panic!("Couldn't create templating instance, failure: {e}")
+            }
+        },
+    );
 
 pub mod templates {
     pub fn retrieve(

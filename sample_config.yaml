@@ -38,6 +38,7 @@ notifications:
     username: example
     domain: mail.com
   templates_directory: templates/**/*.html
+  vpn_config_path: /etc/laas-reflab/os-vpn-client.ovpn
 
 cobbler:
   url: http://cobbler.example.com/cobbler_api
