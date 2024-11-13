@@ -1,5 +1,7 @@
 # LibLaas
 
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/anuket-project/laas-reflab/badge)](https://scorecard.dev/viewer/?uri=github.com/anuket-project/laas-reflab)
+
 LibLaas is a service designed to manage the testing, deployment and provisioning of server instances for LaaS (Lab as a Service) testing related
 to the LFEdge and Anuket projects. LibLaas was originally built to fit within the IOL's infrastructure and technology stack, but is designed
 to be general purpose and should support any infrastructure as long as it is appropriately configured.
