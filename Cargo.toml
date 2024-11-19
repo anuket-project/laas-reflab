@@ -87,7 +87,7 @@ sqlx = { features = [
 
 
 # errors/logging
-anyhow = "1.0.68"
+anyhow = "1.0.93"
 backtrace = "*"
 thiserror = "1.0.32"
 tracing = "0.1.40"
