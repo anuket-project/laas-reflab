@@ -53,7 +53,7 @@ axum = { version = "0.6.20", features = ["http2", "macros"] }
 axum-extra = "0.5.0"
 axum-jsonschema = { version = "0.5.0", features = ["aide"] }
 axum-macros = "0.3.1"
-hyper = { version = "0.14.20", features = ["full"] }
+hyper = { version = "0.14.31", features = ["full"] }
 reqwest = { version = "0.11", features = [
   "json",
   "cookies",
