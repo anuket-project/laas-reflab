@@ -841,7 +841,7 @@ impl DeployHost {
     ) -> Result<(), TaskError> {
         self.log(
             "Set Up IPMI Accounts",
-            "IPMI accounts are being added to {host_name}",
+            &format!("IPMI accounts are being added to {host_name}"),
             StatusSentiment::InProgress,
         )
         .await;
