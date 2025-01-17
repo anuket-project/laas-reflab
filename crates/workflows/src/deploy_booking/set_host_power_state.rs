@@ -222,7 +222,7 @@ pub enum PowerStateError {
 /// };
 /// ```
 pub struct HostConfig {
-    /// The Fully Qualified Domain Name of the host.
+    /// The Fully Qualified Domain Name of the IPMI for the host.
     pub fqdn: String,
     /// The IPMI username of the host.
     pub user: String,

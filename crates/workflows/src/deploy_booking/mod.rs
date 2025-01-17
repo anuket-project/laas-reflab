@@ -12,7 +12,6 @@ pub mod cobbler_set_config;
 pub mod cobbler_start_provision;
 pub mod configure_networking;
 pub mod deploy_host;
-pub mod manage_eve_nodes;
 pub mod net_config;
 pub mod notify;
 pub mod reachable;

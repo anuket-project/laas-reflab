@@ -143,14 +143,28 @@ pub struct NotificationConfig {
     pub vpn_config_path: PathBuf,
 }
 #[derive(Debug, Deserialize, Clone)]
-pub struct CobblerConfig {
-    pub address: String,
+pub struct CobblerAPIConfig {
     pub url: String,
     pub username: String,
-    pub password: String,
-    pub api_username: String,
-    pub api_password: String,
+    pub password: String
 }
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct CobblerSSHConfig {
+    pub address: String,
+    pub port: i32,
+    pub user: String,
+    pub password: String,
+    pub writable_directory: String, // i.e. /tmp
+    pub system_directory: String // i.e. /srv/tftpboot/grub/system
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct CobblerConfig {
+    pub api: CobblerAPIConfig,
+    pub ssh: CobblerSSHConfig
+}
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct IPAConfig {
     pub url: String,

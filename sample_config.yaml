@@ -41,9 +41,18 @@ notifications:
   vpn_config_path: /etc/laas-reflab/os-vpn-client.ovpn
 
 cobbler:
-  url: http://cobbler.example.com/cobbler_api
-  username: username
-  password: password
+  api:
+    url: http://cobbler.example.com/cobbler_api
+    username: username
+    password: password
+
+  ssh:
+    address: 127.0.0.1
+    port: 22
+    user: username
+    password: password
+    writable_directory: /tmp
+    system_directory: /srv/tftpboot/grub/system
 
 ipa:
   - url: https://ipa.example.com
@@ -51,7 +60,7 @@ ipa:
     password: password
     certificate_path: config_data/os-ipa-ca.crt
 
-  -  url: https://ipa2.example.com
+  - url: https://ipa2.example.com
     username: username
     password: password
     certificate_path: config_data/os-ipa-ca.crt

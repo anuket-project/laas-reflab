@@ -89,6 +89,7 @@ pub struct InstanceStatus {
     logs: Vec<InstanceStatusUpdate>,
     assigned_host_info: Option<AssignedHostInfo>,
     host_alias: String,
+    soft_serial: Option<String> // Not ideal but adding this here is the path of least resistance
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -263,6 +264,7 @@ async fn booking_status(Path(agg_id): Path<Uuid>) -> Result<Json<BookingStatus>,
             assigned_host_info,
             host_alias: inst_hn,
             logs,
+            soft_serial: instance.metadata.get("soft_serial").map(|x| x.to_string()),
         };
 
         statuses.insert(instance.id, inst_stat);

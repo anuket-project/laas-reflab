@@ -14,8 +14,7 @@ use crate::resource_management::{cobbler::CobblerConfig, mailbox::Endpoint};
 #[derive(Debug, Hash, Clone, Serialize, Deserialize)]
 pub struct CobblerSetConfiguration {
     pub host_id: FKey<Host>,
-    pub config: CobblerConfig,
-    pub endpoint: Endpoint,
+    pub config: CobblerConfig
 }
 
 #[pyclass]
@@ -34,10 +33,9 @@ impl AsyncRunnable for CobblerSetConfiguration {
 
     async fn run(&mut self, _context: &Context) -> Result<Self::Output, TaskError> {
         tracing::info!(
-            "setting cobbler configuration for host {:?}, config is: {:#?}, and is available at {:?}",
+            "setting cobbler configuration for host {:?}, config is: {:#?}",
             self.host_id,
-            self.config,
-            self.endpoint
+            self.config
         );
 
         let mut client = new_client().await.unwrap();
@@ -59,19 +57,15 @@ impl AsyncRunnable for CobblerSetConfiguration {
             let host_name = host.server_name.clone();
 
             let config::CobblerConfig {
-                address,
-                url,
-                username,
-                password,
-                api_username,
-                api_password,
+                api,
+                ssh
             } = config::settings().cobbler.clone();
 
             let locals = hashmap! {
                 "config" => hashmap! {
-                    "url" => url.clone(),
-                    "user" => api_username,
-                    "password" => api_password,
+                    "url" => api.url.clone(),
+                    "user" => api.username.clone(),
+                    "password" => api.password.clone(),
                 }.into_py(py),
                 "cobbler_profile" => self.config.image.clone().into_py(py),
                 "cobbler_kargs" => self.config.kernel_args.clone().into_py(py),
@@ -95,7 +89,7 @@ else:
     raise Exception("profile did not exist, the provided profile was named " + cobbler_profile)
             "#;
 
-            tracing::info!("gives that the cobbler server URL is {}", url);
+            tracing::info!("gives that the cobbler server URL is {}", api.url);
             tracing::info!("sets the cobbler image to {}", self.config.image);
 
             let pyres = py.run(expr, None, Some(locals));

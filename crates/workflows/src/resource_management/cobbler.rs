@@ -1,8 +1,9 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, path::Path};
 
+use config::settings;
 use dal::{new_client, AsEasyTransaction, DBTable, FKey, ID};
 
-use models::{dashboard, inventory};
+use models::{dashboard, inventory::{self, Host}};
 use pyo3::{prelude::*, types::PyAny};
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -14,7 +15,7 @@ use common::prelude::{
 };
 use pyo3::types::IntoPyDict;
 use tascii::prelude::*;
-use tracing::warn;
+use tracing::{info, warn};
 
 use maplit::hashmap;
 
@@ -27,92 +28,39 @@ pub struct CobblerConfig {
 }
 
 impl CobblerConfig {
-    pub async fn new(
-        instance: dashboard::Instance,
+    pub fn new(
+        image_cobbler_name: String,
+        instance_id: FKey<dashboard::Instance>,
         _host: FKey<inventory::Host>,
-        mailbox_endpoint: Endpoint,
-        preimage_endpoint: Endpoint,
+        mailbox_endpoint: Option<Endpoint>,
+        preimage_endpoint: Option<Endpoint>,
     ) -> CobblerConfig {
-        let mut client = new_client().await.unwrap();
-        let mut transaction = client.easy_transaction().await.unwrap();
-
-        let image = instance
-            .config
-            .image
-            .get(&mut transaction)
-            .await
-            .unwrap()
-            .into_inner();
 
         let ci_url = format!(
             "{}/{}",
             config::settings().mailbox.external_url.clone(),
-            instance.id.into_id(),
+            instance_id.into_id(),
         );
 
-        let msg_url = format!("{}/push", mailbox_endpoint.to_url());
-        let preimage_url = format!("{}/push", preimage_endpoint.to_url());
-
-        let kargs: Vec<(String, String)> = vec![
+        let mut kargs: Vec<(String, String)> = vec![
             ("post-install-cinit".to_owned(), ci_url),
             ("provision_id".to_owned(), ID::new().to_string()),
-            ("inbox_target".to_owned(), msg_url),
-            ("pre_image_target".to_owned(), preimage_url),
         ];
 
-        transaction.commit().await.unwrap();
+        if let Some(mailbox_endpoint) = mailbox_endpoint {
+            kargs.push(("inbox_target".to_owned(), format!("{}/push", mailbox_endpoint.to_url())));
+        }
+
+        if let Some(preimage_endpoint) = preimage_endpoint {
+            kargs.push(("pre_image_target".to_owned(), format!("{}/push", preimage_endpoint.to_url())));
+        }
 
         CobblerConfig {
             kernel_args: kargs,
-            image: image.cobbler_name,
+            image: image_cobbler_name,
         }
     }
 
-    pub async fn new_eve_config(
-        instance: dashboard::Instance,
-        _host: FKey<inventory::Host>,
-        selected_disk: Option<String>,
-    ) -> CobblerConfig {
-        let mut client = new_client().await.unwrap();
-        let mut transaction = client.easy_transaction().await.unwrap();
-
-        let image = instance
-            .config
-            .image
-            .get(&mut transaction)
-            .await
-            .unwrap()
-            .into_inner();
-
-        let kargs: Vec<(String, String)> = vec![
-            ("eve_nuke_disks".to_owned(), "sda".to_owned()), // Wipe all drives on the host
-            (
-                "eve_install_disk".to_owned(),
-                selected_disk.unwrap_or("sda".to_owned()),
-            ), // install to first drive if not otherwise specified
-            ("eve_reboot_after_install".to_owned(), "false".to_owned()), // want to turn off host instead
-                                                                         // ("root".to_owned(), "/initrd.image".to_owned()),
-                                                                         // ("find_boot".to_owned(), "netboot".to_owned()),
-                                                                         // ("overlaytmpfs".to_owned(), "true".to_owned()),
-                                                                         // ("fastboot".to_owned(), "true".to_owned()),
-                                                                         // ("console".to_owned(), "tty0".to_owned()),
-                                                                         // ("console".to_owned(), "ttyS0,115200n8".to_owned()),
-                                                                         // ("initrd".to_owned(), "amd64.initrd.img".to_owned()),
-                                                                         // ("initrd".to_owned(), "amd64.installer.img".to_owned()),
-                                                                         // ("initrd".to_owned(), "amd64.initrd.bits".to_owned()),
-                                                                         // ("initrd".to_owned(), "amd64.rootfs.img".to_owned()),
-                                                                         // ("initrd".to_owned(), "initrd.bits".to_owned()),
-                                                                         // ("initrd".to_owned(), "rootfs.img".to_owned()),
-                                                                         // ("eve_soft_serial".to_owned(), generate_soft_serial(16)), // having trouble onboarding hosts with soft serials
-        ];
-
-        transaction.commit().await.unwrap();
-
-        CobblerConfig {
-            kernel_args: kargs,
-            image: image.cobbler_name,
-        }
-    }
 }
 
 pub struct CobblerActions {}
@@ -120,16 +68,12 @@ pub struct CobblerActions {}
 impl ModuleInitializer for CobblerActions {
     fn init(py: Python<'_>) -> &PyAny {
         let config::CobblerConfig {
-            address,
-            url,
-            username,
-            password,
-            api_username,
-            api_password,
+            api,
+            ssh
         } = config::settings().cobbler.clone();
 
         let config: HashMap<&str, String> =
-            hashmap! { "url" => url, "user" => api_username, "pass" => api_password };
+            hashmap! { "url" => api.url, "user" => api.username, "pass" => api.password };
 
         let config_py: &pyo3::types::PyDict = config.into_py_dict(py);
 
@@ -252,4 +196,78 @@ pub fn generate_soft_serial(length: usize) -> String {
     }
 
     s[0..length].to_owned()
+}
+
+/// Uses SFTP and SSH to override the system grub config files for a given host on cobbler.
+/// This is useful for distros such as EVE-OS which require custom templated grub config files that cannot be
+/// generated by cobbler directly.
+///
+/// # Arguments
+///
+/// * `host` - Host to update grub configs for
+/// * `config_content` - Text content to write to the grub config file (i.e. a rendered jinja template)
+///
+/// # Returns
+///
+/// Returns [`Ok`] or [`anyhow::Error`]
+///
+pub async fn override_system_grub_config(host: &Host, config_content: &str) -> Result<(), anyhow::Error> {
+
+    let mut client = new_client().await?;
+    let mut transaction = client.easy_transaction().await?;
+
+    // Get mac addresses
+    let host_ports = host.ports(&mut transaction).await?;
+    
+    let mac_address_filenames: Vec<String> =
+        host_ports
+        .iter()
+        .map(|host_port| format!("{}", host_port.mac).to_ascii_lowercase())
+        .collect();
+
+    // Push files to cobbler via ssh
+    let cobbler = settings().cobbler.clone();
+    let mut session =
+        ssh2::Session::new().expect("Failed to create a new SSH session for cobbler.");
+    let connection = std::net::TcpStream::connect(format!("{}:{}", cobbler.ssh.address, cobbler.ssh.port)).expect(
+        format!("Failed to open TCP stream to cobbler at {}:{}.", cobbler.ssh.address, cobbler.ssh.port).as_str(),
+    );
+
+
+    session.set_tcp_stream(connection);
+    session.handshake().unwrap();
+    session
+        .userauth_password(&cobbler.ssh.user, &cobbler.ssh.password)
+        .expect("SSH basic authentication failed");
+
+    let sftp = session.sftp().expect("Expected to open sftp session");
+
+    let writable_directory = &cobbler.ssh.writable_directory; // /tmp
+    let system_directory = &cobbler.ssh.system_directory; // /srv/tftpboot/grub/system
+
+    for filename in &mac_address_filenames {
+
+        // Cannot sftp with elevated privileges, so we need to place in an accessible directory first then move after.
+        let remote_temp_path = &format!("{writable_directory}/{filename}");
+
+        std::io::Write::write_all(&mut sftp.open_mode(
+            Path::new(&remote_temp_path),
+            ssh2::OpenFlags::CREATE | ssh2::OpenFlags::WRITE | ssh2::OpenFlags::TRUNCATE,
+            0o644,
+            ssh2::OpenType::File
+        ).unwrap(), config_content.as_bytes()).unwrap();
+
+        info!("Writing grub config to {}", &remote_temp_path);
+
+        // Channels cannot be reused
+        let mut channel = session
+        .channel_session()?;
+
+        info!("Copying grub config from {remote_temp_path} to {system_directory}");
+
+        channel.exec(&format!("sudo cp {remote_temp_path} {system_directory}"))?;
+    }
+
+    Ok(())
+
 }
