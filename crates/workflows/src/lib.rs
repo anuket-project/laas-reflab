@@ -6,6 +6,7 @@
 //#![allow(dead_code, unused_variables, unused_imports, unused_mut)]
 
 pub mod cleanup_booking;
+pub mod configure_networking;
 pub mod deploy_booking;
 pub mod entry;
 pub mod inspect_host;

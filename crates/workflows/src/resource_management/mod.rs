@@ -7,6 +7,5 @@ pub mod cisco;
 pub mod cobbler;
 pub mod ipmi_accounts;
 pub mod mailbox;
-pub mod network;
-pub mod vpn;
 pub mod sonic;
+pub mod vpn;

@@ -1,7 +1,3 @@
-//! Copyright (c) 2023 University of New Hampshire
-//! SPDX-License-Identifier: MIT
-
-use common::prelude::tracing;
 use dal::{new_client, AsEasyTransaction, FKey};
 use models::{
     dashboard::{Aggregate, Instance, StatusSentiment},
@@ -12,10 +8,8 @@ use serde::{self, Deserialize, Serialize};
 use tascii::prelude::*;
 
 use crate::{
-    deploy_booking::{
-        configure_networking::ConfigureNetworking,
-        net_config::empty_network_config, set_host_power_state::SetPower,
-    },
+    configure_networking::{empty_network_config, ConfigureNetworking},
+    deploy_booking::set_host_power_state::SetPower,
     resource_management::ipmi_accounts::DeleteIPMIAccount,
     retry_for,
 };

@@ -32,6 +32,8 @@ RUN apt-get update && apt-get install -y python3-dev python3.11-dev && rm -rf /v
 
 COPY rust-toolchain.toml Cargo.toml Cargo.lock ./
 COPY src src
+# I think this is not needed as the .sqlx directory is copied inside the individ crates directory.
+# COPY .sqlx .sqlx
 COPY crates crates
 COPY migrations migrations
 

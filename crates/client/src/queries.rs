@@ -1,7 +1,8 @@
 use crate::remote::{Select, Server, Text};
 use crate::{areyousure, get_lab, select_host};
 use common::prelude::anyhow;
-use dal::{new_client, AsEasyTransaction, DBTable, EasyTransaction, FKey};
+use dal::{get_db_pool, new_client, AsEasyTransaction, DBTable, EasyTransaction, FKey};
+use sqlx::{Pool, Postgres};
 
 use models::{
     allocator::{Allocation, ResourceHandle},
@@ -35,6 +36,8 @@ pub enum Queries {
     HostPowerState,
     #[strum(serialize = "Find Leaked Bookings")]
     LeakedBooking,
+    #[strum(serialize = "Query BMC/IPMI VLAN for Host")]
+    BMCVlan,
 }
 
 pub async fn query(session: &Server) -> Result<(), anyhow::Error> {
@@ -50,6 +53,7 @@ pub async fn query(session: &Server) -> Result<(), anyhow::Error> {
         Queries::Aggregate => handle_aggregate_query(session).await,
         Queries::Config => handle_config_query(session).await,
         Queries::LeakedBooking => handle_leaked_query(session).await,
+        Queries::BMCVlan => handle_bmc_vlan_query(session).await,
     }
 }
 
@@ -445,6 +449,40 @@ async fn handle_leaked_query(mut session: &Server) -> Result<(), anyhow::Error> 
 
         let _ = writeln!(session, "Aggregate ID: {agg_id}, Allocation ID: {alloc_id}, Resource Type: {resource_type}, Expected End: {expected_end}");
     }
+    Ok(())
+}
+
+pub async fn handle_bmc_vlan_query(mut session: &Server) -> Result<(), anyhow::Error> {
+    let pool = get_db_pool().await?;
+
+    let host_name = Text::new("Enter the hostname (e.g., hpe1):")
+        .prompt(session)
+        .map_err(|e| anyhow::anyhow!("Failed to read input: {}", e))?;
+
+    let rows = sqlx::query!(
+        "SELECT hp.bmc_vlan_id, hp.mac, s.name as switch_name, sp.name AS switchport_name 
+         FROM host_ports hp
+         JOIN hosts h ON hp.on_host = h.id
+         JOIN switchports sp ON hp.switchport = sp.id
+         JOIN switches s ON sp.for_switch = s.id
+         WHERE h.server_name = $1",
+        host_name
+    )
+    .fetch_all(&pool)
+    .await?;
+
+    if rows.is_empty() {
+        writeln!(session, "No host ports found for {}", host_name)?;
+    } else {
+        for row in rows {
+            writeln!(
+                session,
+                "Host: {} | Switchport: {} | MAC: {:?} | BMC VLAN: {:?}",
+                host_name, row.switchport_name, row.mac, row.bmc_vlan_id
+            )?;
+        }
+    }
+
     Ok(())
 }
 

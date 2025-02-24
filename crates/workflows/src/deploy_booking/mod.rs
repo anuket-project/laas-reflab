@@ -10,9 +10,7 @@ use common::prelude::{itertools::Itertools, parking_lot::Mutex, *};
 
 pub mod cobbler_set_config;
 pub mod cobbler_start_provision;
-pub mod configure_networking;
 pub mod deploy_host;
-pub mod net_config;
 pub mod notify;
 pub mod reachable;
 pub mod set_boot;

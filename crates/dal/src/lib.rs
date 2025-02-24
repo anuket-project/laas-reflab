@@ -26,13 +26,11 @@ use serde::de::DeserializeOwned;
 use tokio_postgres::{types::ToSql, Client, NoTls, Transaction};
 
 use crate::web::{AnyWay, AnyWaySpecStr};
-use sqlx::postgres::PgPoolOptions;
+use sqlx::{postgres::PgPoolOptions, PgPool};
 
 pub trait ToSqlObject = ToSql + Send + Sync + 'static;
 
-pub async fn initialize() -> Result<(), Vec<Error>> {
-    tracing::warn!("Setting up the database connection pool");
-
+pub async fn get_db_pool() -> Result<PgPool, sqlx::Error> {
     let db_config = settings().database.clone();
 
     let connection_str = format!(
@@ -44,13 +42,15 @@ pub async fn initialize() -> Result<(), Vec<Error>> {
         db_config.database_name
     );
 
-    // Create the pool
-    let pool = PgPoolOptions::new()
+    PgPoolOptions::new()
         .max_connections(2)
         .connect(&connection_str)
         .await
-        .map_err(|e| vec![e.into()])?;
+}
+pub async fn initialize() -> Result<(), Vec<Error>> {
+    tracing::warn!("Setting up the database connection pool");
 
+    let pool = get_db_pool().await.map_err(|e| vec![e.into()])?;
     tracing::warn!("Migrations running");
 
     if let Err(e) = sqlx::migrate!("../../migrations").run(&pool).await {

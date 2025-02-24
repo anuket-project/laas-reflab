@@ -1,36 +1,34 @@
 use common::prelude::{
     anyhow,
     tokio::time::{sleep, Duration},
-    tracing::{self, error, info, trace, warn},
+    tracing::{error, info, trace, warn},
 };
 
-use config::{self, settings};
 use dal::{new_client, AsEasyTransaction, FKey, ID};
 use metrics::prelude::*;
 
 use models::{
     dashboard::{Aggregate, StatusSentiment},
-    inventory::{Arch, BootTo, Host, HostPort, Lab},
+    inventory::{BootTo, Host, Lab},
     EasyLog,
 };
 use notifications::{email::send_to_admins, templates::render_eve_grub_config};
 use serde::{Deserialize, Serialize};
-use ssh2::Session;
 
-use std::{
-    io::Write, net::TcpStream, path::Path, sync::{atomic::AtomicBool, Arc}
-};
+use std::sync::{atomic::AtomicBool, Arc};
 use strum_macros::EnumString;
 use tascii::{prelude::*, task_trait::AsyncRunnable};
 
-use super::{
-    net_config::{mgmt_network_config, prod_network_config},
-    set_boot::SetBoot,
-    set_host_power_state::SetPower,
-};
+use super::{set_boot::SetBoot, set_host_power_state::SetPower};
 use crate::{
+    configure_networking::{
+        mgmt_network_config, mgmt_network_config_with_public, prod_network_config,
+        ConfigureNetworking,
+    },
     deploy_booking::{
-        cobbler_set_config::*, configure_networking::ConfigureNetworking, net_config::mgmt_network_config_with_public, set_host_power_state::{confirm_power_state, HostConfig, PowerState, TimeoutConfig}, wait_host_os_reachable::WaitHostOSReachable
+        cobbler_set_config::*,
+        set_host_power_state::{confirm_power_state, HostConfig, PowerState, TimeoutConfig},
+        wait_host_os_reachable::WaitHostOSReachable,
     },
     resource_management::{
         cobbler::*,
@@ -349,11 +347,11 @@ impl DeployHost {
     }
 
     async fn fetch_instance_image(&mut self) -> Result<models::dashboard::Image, anyhow::Error> {
-
         let mut client = new_client().await.unwrap();
         let mut transaction = client.easy_transaction().await.unwrap();
 
-        let image = self.using_instance
+        let image = self
+            .using_instance
             .get(&mut transaction)
             .await?
             .config
@@ -368,7 +366,6 @@ impl DeployHost {
     }
 
     async fn fetch_instance_host(&mut self) -> Result<Host, anyhow::Error> {
-
         let mut client = new_client().await?;
         let mut transaction = client.easy_transaction().await?;
 
@@ -380,7 +377,6 @@ impl DeployHost {
 
     /// Updates the 'soft_serial' key with the provided value in the instance metadata.
     async fn set_soft_serial(&mut self, value: &str) -> Result<(), anyhow::Error> {
-
         let mut client = new_client().await?;
         let mut transaction = client.easy_transaction().await?;
         let mut inst = self.using_instance.get(&mut transaction).await?;
@@ -405,9 +401,7 @@ impl DeployHost {
         .await;
 
         match self.get_workflow_distro().await? {
-            WorkflowDistro::Eve => {
-                self.prepare_eve_environment(context, host_name).await
-            },
+            WorkflowDistro::Eve => self.prepare_eve_environment(context, host_name).await,
             _ => {
                 self.log(
                     "Host environment ready",
@@ -415,7 +409,7 @@ impl DeployHost {
                     StatusSentiment::InProgress,
                 )
                 .await;
-            Ok(())
+                Ok(())
             }
         }
     }
@@ -423,7 +417,7 @@ impl DeployHost {
     async fn prepare_eve_environment(
         &mut self,
         context: &Context,
-        host_name: &str
+        host_name: &str,
     ) -> Result<(), TaskError> {
         const PREINSTALL_IMAGE_NAME: &'static str = "ubuntu_wipefs-x86_64";
 
@@ -436,15 +430,15 @@ impl DeployHost {
         .await;
 
         // Todo - handle alternate case for aarch64
-        let wipefs_cobbler_join_handle = context.spawn(CobblerSetConfiguration{
+        let wipefs_cobbler_join_handle = context.spawn(CobblerSetConfiguration {
             host_id: self.host_id,
             config: CobblerConfig::new(
-            PREINSTALL_IMAGE_NAME.to_string(),
+                PREINSTALL_IMAGE_NAME.to_string(),
                 self.using_instance,
                 self.host_id,
                 None,
-                None
-            )
+                None,
+            ),
         });
 
         // Set device to PXE boot
@@ -493,7 +487,7 @@ impl DeployHost {
             StatusSentiment::InProgress,
         )
         .await;
-        
+
         // Power on and wait for early commands to run
         self.set_power_on(context, host_name).await?;
 
@@ -522,10 +516,16 @@ impl DeployHost {
                 user: host.ipmi_user,
                 password: host.ipmi_pass,
             },
-            &TimeoutConfig{ max_retries: 20, retry_interval: 30, timeout_duration: 600 },
+            &TimeoutConfig {
+                max_retries: 20,
+                retry_interval: 30,
+                timeout_duration: 600,
+            },
             Some(Duration::from_secs(60)),
-            PowerState::Off
-        ).await.unwrap();
+            PowerState::Off,
+        )
+        .await
+        .unwrap();
 
         self.log(
             "Host environment ready",
@@ -539,7 +539,6 @@ impl DeployHost {
 
     /// Generates a soft serial number, renders the grub config, and pushes to cobbler
     async fn configure_cobbler_for_eve(&mut self) -> Result<(), TaskError> {
-
         self.log(
             "Preparing netinstaller",
             "configuring EVE-OS installer arguments",
@@ -551,13 +550,13 @@ impl DeployHost {
         self.set_soft_serial(&soft_serial).await?;
 
         // Render template
-        let grub_config_content =
-        render_eve_grub_config(
+        let grub_config_content = render_eve_grub_config(
             &self.fetch_host_details().await.unwrap().1,
             &self.fetch_instance_image().await.unwrap().cobbler_name, // ex: "eveos-12.0.4-lts-x86_64"
             "sda",
-            &soft_serial
-        ).unwrap();
+            &soft_serial,
+        )
+        .unwrap();
 
         // Push to cobbler
         let host = self.fetch_instance_host().await.unwrap();
@@ -592,12 +591,12 @@ impl DeployHost {
         let cobbler_config_jh = context.spawn(CobblerSetConfiguration {
             host_id: self.host_id,
             config: CobblerConfig::new(
-self.fetch_instance_image().await?.cobbler_name,
-            self.using_instance,
-                    self.host_id,
-                    Some(postimage_endpoint),
-                    Some(preimage_endpoint),
-                )
+                self.fetch_instance_image().await?.cobbler_name,
+                self.using_instance,
+                self.host_id,
+                Some(postimage_endpoint),
+                Some(preimage_endpoint),
+            ),
         });
 
         warn!("setting boot dev for {} to network boot", host_name);
@@ -814,10 +813,16 @@ self.fetch_instance_image().await?.cobbler_name,
                         user: host.ipmi_user,
                         password: host.ipmi_pass,
                     },
-                    &TimeoutConfig{ max_retries: 20, retry_interval: 30, timeout_duration: 600 },
+                    &TimeoutConfig {
+                        max_retries: 20,
+                        retry_interval: 30,
+                        timeout_duration: 600,
+                    },
                     Some(Duration::from_secs(60)),
-                    PowerState::Off
-                ).await.unwrap();
+                    PowerState::Off,
+                )
+                .await
+                .unwrap();
             }
             _ => {
                 let inst_id = self.using_instance;

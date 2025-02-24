@@ -17,6 +17,7 @@ pub struct HostPort {
     pub mac: MacAddr6,
     pub switch: String,
     pub bus_addr: String,
+    pub bmc_vlan_id: Option<i16>,
 
     pub is_a: FKey<InterfaceFlavor>,
 }
@@ -43,6 +44,7 @@ impl DBTable for HostPort {
             mac,
             switch: row.try_get("switch")?,
             bus_addr: row.try_get("bus_addr")?,
+            bmc_vlan_id: row.try_get("bmc_vlan_id")?,
             is_a: row.try_get("is_a")?,
         }))
     }
@@ -62,6 +64,7 @@ impl DBTable for HostPort {
             ("mac", Box::new(mac)),
             ("switch", Box::new(clone.switch)),
             ("bus_addr", Box::new(clone.bus_addr)),
+            ("bmc_vlan_id", Box::new(clone.bmc_vlan_id)),
             ("is_a", Box::new(self.is_a)),
         ];
 

@@ -8,10 +8,8 @@ use tascii::{prelude::*, task_trait::AsyncRunnable};
 
 use common::prelude::macaddr;
 
-use crate::resource_management::{
-    cisco::{self},
-    network::NetworkConfig,
-};
+use super::types::NetworkConfig;
+use crate::resource_management::cisco::{self};
 
 #[derive(Serialize, Deserialize)]
 pub enum MacAddr {
@@ -52,29 +50,29 @@ impl AsyncRunnable for ConfigureNetworking {
     }
 }
 
-#[derive(Debug, Clone, Hash, Serialize, Deserialize)]
-pub struct ApplyNetworkConfig {
-    pub net_config: NetworkConfig,
-    pub host: ID,
-}
-
-tascii::mark_task!(ApplyNetworkConfig);
-impl Runnable for ApplyNetworkConfig {
-    type Output = bool;
-
-    fn run(&mut self, _context: &Context) -> Result<Self::Output, TaskError> {
-        todo!()
-    }
-
-    fn identifier() -> TaskIdentifier {
-        TaskIdentifier::named("ApplyNetworkConfigTask").versioned(1)
-    }
-
-    fn timeout() -> std::time::Duration {
-        std::time::Duration::from_secs_f64(120.0)
-    }
-
-    fn retry_count(&self) -> usize {
-        0
-    }
-}
+// #[derive(Debug, Clone, Hash, Serialize, Deserialize)]
+// pub struct ApplyNetworkConfig {
+//     pub net_config: NetworkConfig,
+//     pub host: ID,
+// }
+//
+// tascii::mark_task!(ApplyNetworkConfig);
+// impl Runnable for ApplyNetworkConfig {
+//     type Output = bool;
+//
+//     fn run(&mut self, _context: &Context) -> Result<Self::Output, TaskError> {
+//         todo!()
+//     }
+//
+//     fn identifier() -> TaskIdentifier {
+//         TaskIdentifier::named("ApplyNetworkConfigTask").versioned(1)
+//     }
+//
+//     fn timeout() -> std::time::Duration {
+//         std::time::Duration::from_secs_f64(120.0)
+//     }
+//
+//     fn retry_count(&self) -> usize {
+//         0
+//     }
+// }
