@@ -255,15 +255,15 @@ async fn main() {
 
     let l = LocalSet::new();
 
-    l.spawn_local(async { mh.await });
-    l.spawn_local(async { wh.await });
+    l.spawn_local(mh);
+    l.spawn_local(wh);
 
     let (liblaas_tx, mut liblaas_rx) = mpsc::channel(5);
 
     l.spawn_local(async move {
         loop {
             let liblaas_tx = liblaas_tx.clone();
-            let res = cli_server_entry(tascii_rt, liblaas_tx).await;
+            let _ = cli_server_entry(tascii_rt, liblaas_tx).await;
         }
     });
 

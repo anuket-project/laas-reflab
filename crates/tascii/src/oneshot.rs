@@ -498,6 +498,10 @@ impl<T: TaskSafe> DBTable for DatabaseObjectWrapper<T> {
         self.id.into_id()
     }
 
+    fn id_mut(&mut self) -> &mut ID {
+        self.id.into_id_mut()
+    }
+
     fn table_name() -> &'static str {
         "tascii_database_objects"
     }

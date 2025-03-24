@@ -1,19 +1,22 @@
 use dal::*;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::str::FromStr;
-use std::{collections::HashMap, fs::File, io::Write, path::PathBuf};
 
 use crate::inventory::{Arch, DataValue};
 
 mod extra_info;
+mod import;
 mod interface;
 
 pub use extra_info::ExtraFlavorInfo;
+pub use import::ImportFlavor;
 pub use interface::{CardType, InterfaceFlavor};
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+// Flavor io used to create an instance
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Default)]
 pub struct Flavor {
-    pub id: FKey<Flavor>, // Flavor io used to create an instance
+    pub id: FKey<Flavor>,
 
     pub arch: Arch,
     pub name: String,
@@ -34,6 +37,10 @@ impl DBTable for Flavor {
 
     fn id(&self) -> ID {
         self.id.into_id()
+    }
+
+    fn id_mut(&mut self) -> &mut ID {
+        self.id.into_id_mut()
     }
 
     fn to_rowlike(&self) -> Result<HashMap<&str, Box<dyn ToSqlObject>>, anyhow::Error> {
@@ -62,7 +69,7 @@ impl DBTable for Flavor {
             arch: Arch::from_str(row.try_get("arch")?)?,
             name: row.try_get("name")?,
             public: row.try_get("public")?,
-            cpu_count: serde_json::from_value::<i64>(row.try_get("cpu_count")?)?.min(0) as usize,
+            cpu_count: serde_json::from_value::<i64>(row.try_get("cpu_count")?)? as usize,
             ram: DataValue::from_sqlval(row.try_get("ram")?)?,
             root_size: DataValue::from_sqlval(row.try_get("root_size")?)?,
             disk_size: DataValue::from_sqlval(row.try_get("disk_size")?)?,
@@ -70,6 +77,15 @@ impl DBTable for Flavor {
             brand: row.try_get("brand")?,
             model: row.try_get("model")?,
         }))
+    }
+}
+
+impl Flavor {
+    pub async fn ports(
+        &self,
+        transaction: &mut EasyTransaction<'_>,
+    ) -> Result<Vec<ExistingRow<InterfaceFlavor>>, anyhow::Error> {
+        InterfaceFlavor::all_for_flavor(transaction, self.id).await
     }
 }
 
@@ -85,116 +101,94 @@ impl Named for Flavor {
 
 impl Lookup for Flavor {}
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct ImportFlavor {
-    pub arch: Arch,
-    pub name: String,
-    pub public: bool,
-    pub cpu_count: usize,
-    pub ram: DataValue,
-    pub root_size: DataValue,
-    pub disk_size: DataValue,
-    pub swap_size: DataValue,
-    pub brand: String,
-    pub model: String,
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+    use testing_utils::block_on_runtime;
 
-impl ImportFlavor {
-    pub async fn to_flavor(&self, _transaction: &mut EasyTransaction<'_>) -> Flavor {
-        let clone = self.clone();
+    impl Arbitrary for Flavor {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
 
-        Flavor {
-            id: FKey::new_id_dangling(),
-            arch: clone.arch,
-            name: clone.name,
-            public: clone.public,
-            cpu_count: clone.cpu_count,
-            ram: clone.ram,
-            root_size: clone.root_size,
-            disk_size: clone.disk_size,
-            swap_size: clone.swap_size,
-            brand: clone.brand,
-            model: clone.model,
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            (
+                any::<FKey<Flavor>>(), // id
+                any::<Arch>(),         // arch
+                any::<String>(),       // name
+                any::<bool>(),         // public
+                (1..=128usize),        // cpu_count
+                any::<DataValue>(),    // ram
+                any::<DataValue>(),    // root_size
+                any::<DataValue>(),    // disk_size
+                any::<DataValue>(),    // swap_size
+                any::<String>(),       // brand
+                any::<String>(),       // model
+            )
+                .prop_map(
+                    |(
+                        id,
+                        arch,
+                        name,
+                        public,
+                        cpu_count,
+                        ram,
+                        root_size,
+                        disk_size,
+                        swap_size,
+                        brand,
+                        model,
+                    )| Flavor {
+                        id,
+                        arch,
+                        name,
+                        public,
+                        cpu_count,
+                        ram,
+                        root_size,
+                        disk_size,
+                        swap_size,
+                        brand,
+                        model,
+                    },
+                )
+                .boxed()
         }
     }
 
-    pub fn from_flavor(flavor: &Flavor) -> ImportFlavor {
-        ImportFlavor {
-            arch: flavor.arch,
-            name: flavor.name.clone(),
-            public: flavor.public,
-            cpu_count: flavor.cpu_count,
-            ram: flavor.ram,
-            root_size: flavor.root_size,
-            disk_size: flavor.disk_size,
-            swap_size: flavor.swap_size,
-            brand: flavor.brand.clone(),
-            model: flavor.model.clone(),
+    proptest! {
+        #[test]
+        fn test_flavor_model(flavor in any::<Flavor>()) {
+            block_on_runtime!({
+                let client = new_client().await;
+                prop_assert!(client.is_ok(), "DB connection failed: {:?}", client.err());
+                let mut client = client.unwrap();
+
+                let transaction = client.easy_transaction().await;
+                prop_assert!(transaction.is_ok(), "Transaction creation failed: {:?}", transaction.err());
+                let mut transaction = transaction.unwrap();
+
+                let new_row = NewRow::new(flavor.clone());
+                let insert_result = new_row.insert(&mut transaction).await;
+                prop_assert!(insert_result.is_ok(), "Insert failed: {:?}", insert_result.err());
+
+
+                let retrieved_flavor = Flavor::select()
+                    .where_field("id")
+                    .equals(flavor.id)
+                    .run(&mut transaction)
+                    .await;
+
+                prop_assert!(retrieved_flavor.is_ok(), "Retrieval failed: {:?}", retrieved_flavor.err());
+
+                let first_flavor = retrieved_flavor.unwrap().into_iter().next();
+                prop_assert!(first_flavor.is_some(), "No flavor found");
+
+                let retrieved = first_flavor.unwrap().clone().into_inner();
+                prop_assert_eq!(&retrieved, &flavor);
+
+                Ok(())
+            })?
         }
-    }
-}
-
-impl Importable for Flavor {
-    async fn import(
-        transaction: &mut EasyTransaction<'_>,
-        import_file_path: std::path::PathBuf,
-        _proj_path: Option<PathBuf>,
-    ) -> Result<Option<ExistingRow<Self>>, anyhow::Error> {
-        let importflavor: ImportFlavor = serde_json::from_reader(File::open(import_file_path)?)?;
-        let mut flavor: Flavor = importflavor.to_flavor(transaction).await;
-
-        if let Ok(mut orig_flavor) = Flavor::lookup(transaction, Flavor::name_parts(&flavor)).await
-        {
-            flavor.id = orig_flavor.id;
-
-            orig_flavor.mass_update(flavor).unwrap();
-
-            orig_flavor
-                .update(transaction)
-                .await
-                .expect("Expected to update row");
-            Ok(Some(orig_flavor))
-        } else {
-            let res = NewRow::new(flavor.clone())
-                .insert(transaction)
-                .await
-                .expect("Expected to create new row");
-
-            match res.get(transaction).await {
-                Ok(f) => Ok(Some(f)),
-                Err(e) => Err(anyhow::Error::msg(format!(
-                    "Failed to insert flavor due to error: {}",
-                    e
-                ))),
-            }
-        }
-    }
-
-    async fn export(&self, _transaction: &mut EasyTransaction<'_>) -> Result<(), anyhow::Error> {
-        let flavor_dir = PathBuf::from("./config_data/laas-hosts/inventory/flavors");
-        let mut flavor_file_path = flavor_dir;
-        flavor_file_path.push(self.name.clone());
-        flavor_file_path.set_extension("json");
-        let mut flavor_file =
-            File::create(flavor_file_path).expect("Expected to create flavor file");
-
-        let import_flavor = ImportFlavor::from_flavor(self);
-
-        match flavor_file.write_all(serde_json::to_string_pretty(&import_flavor)?.as_bytes()) {
-            Ok(_) => Ok(()),
-            Err(_) => Err(anyhow::Error::msg(format!(
-                "Failed to export flavor {}",
-                self.name.clone()
-            ))),
-        }
-    }
-}
-
-impl Flavor {
-    pub async fn ports(
-        &self,
-        transaction: &mut EasyTransaction<'_>,
-    ) -> Result<Vec<ExistingRow<InterfaceFlavor>>, anyhow::Error> {
-        InterfaceFlavor::all_for_flavor(transaction, self.id).await
     }
 }

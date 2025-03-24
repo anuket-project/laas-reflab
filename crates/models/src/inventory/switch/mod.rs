@@ -38,6 +38,10 @@ impl DBTable for Switch {
         self.id.into_id()
     }
 
+    fn id_mut(&mut self) -> &mut ID {
+        self.id.into_id_mut()
+    }
+
     fn table_name() -> &'static str {
         "switches"
     }
@@ -100,5 +104,96 @@ impl Switch {
             None => None,
             Some(row) => Some(Self::from_row(row)?),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::collection::vec;
+    use proptest::option::of;
+    use proptest::prelude::*;
+    use testing_utils::block_on_runtime;
+
+    impl Arbitrary for Switch {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            (
+                any::<FKey<Switch>>(),                         // id
+                any::<String>(),                               // name
+                any::<String>(),                               // ip
+                any::<String>(),                               // user
+                any::<String>(),                               // pass
+                of(Just(FKey::<SwitchOS>::new_id_dangling())), // switch_os
+                vec(any::<i16>(), 0..10),                      // management_vlans
+                any::<i16>(),                                  // ipmi_vlan
+                vec(any::<i16>(), 0..10),                      // public_vlans
+            )
+                .prop_map(
+                    |(
+                        id,
+                        name,
+                        ip,
+                        user,
+                        pass,
+                        switch_os,
+                        management_vlans,
+                        ipmi_vlan,
+                        public_vlans,
+                    )| {
+                        Switch {
+                            id,
+                            name,
+                            ip,
+                            user,
+                            pass,
+                            switch_os,
+                            management_vlans,
+                            ipmi_vlan,
+                            public_vlans,
+                        }
+                    },
+                )
+                .boxed()
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn test_switch_model(switch in any::<Switch>()) {
+            block_on_runtime!({
+                let client = new_client().await;
+                prop_assert!(client.is_ok(), "DB connection failed: {:?}", client.err());
+                let mut client = client.unwrap();
+
+                let transaction = client.easy_transaction().await;
+                prop_assert!(transaction.is_ok(), "Transaction creation failed: {:?}", transaction.err());
+                let mut transaction = transaction.unwrap();
+
+                let new_row = NewRow::new(switch.clone());
+                let insert_result = new_row.insert(&mut transaction).await;
+                prop_assert!(insert_result.is_ok(), "Insert failed: {:?}", insert_result.err());
+
+                let retrieved_switch = Switch::select()
+                    .where_field("id")
+                    .equals(switch.id)
+                    .run(&mut transaction)
+                    .await;
+
+                prop_assert!(retrieved_switch.is_ok(), "Retrieval failed: {:?}", retrieved_switch.err());
+                let retrieved_switch = retrieved_switch.unwrap();
+
+                let first_switch = retrieved_switch.first();
+                prop_assert!(first_switch.is_some(), "No switch found, empty result");
+
+                let retrieved_switch = first_switch.unwrap().clone().into_inner();
+
+                prop_assert_eq!(retrieved_switch, switch);
+
+                Ok(())
+            })?
+        }
     }
 }

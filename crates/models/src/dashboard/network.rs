@@ -11,7 +11,7 @@ pub struct NetworkBlob {
     pub public: bool,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Eq, PartialEq, Default)]
 pub struct Network {
     pub id: FKey<Network>,
     pub name: String,
@@ -21,6 +21,10 @@ pub struct Network {
 impl DBTable for Network {
     fn id(&self) -> ID {
         self.id.into_id()
+    }
+
+    fn id_mut(&mut self) -> &mut ID {
+        self.id.into_id_mut()
     }
 
     fn table_name() -> &'static str {
@@ -89,6 +93,60 @@ pub async fn import_net(net: NetworkBlob, transaction: &mut EasyTransaction<'_>)
                 .insert(transaction)
                 .await
                 .expect("Expected to insert new network")
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+    use testing_utils::block_on_runtime;
+
+    impl Arbitrary for Network {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+            (
+                any::<FKey<Network>>(), // id
+                any::<String>(),        // name
+                any::<bool>(),          // public
+            )
+                .prop_map(|(id, name, public)| Network { id, name, public })
+                .boxed()
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn test_network_model(network in any::<Network>()) {
+            block_on_runtime!({
+                let client = new_client().await;
+                prop_assert!(client.is_ok(), "DB connection failed: {:?}", client.err());
+                let mut client = client.unwrap();
+
+                let transaction = client.easy_transaction().await;
+                prop_assert!(transaction.is_ok(), "Transaction creation failed: {:?}", transaction.err());
+                let mut transaction = transaction.unwrap();
+
+
+                let new_row = NewRow::new(network.clone());
+                let insert_result = new_row.insert(&mut transaction).await;
+                prop_assert!(insert_result.is_ok(), "Insert failed: {:?}", insert_result.err());
+
+                let retrieved_network_result = Network::select().where_field("id").equals(network.id).run(&mut transaction)
+                    .await;
+                prop_assert!(retrieved_network_result.is_ok(), "Retrieval failed: {:?}", retrieved_network_result.err());
+
+                let first_network = retrieved_network_result.unwrap().into_iter().next();
+                prop_assert!(first_network.is_some(), "No host found, empty result");
+
+                let retrieved_network = first_network.unwrap().clone().into_inner();
+                prop_assert_eq!(retrieved_network, network);
+
+                Ok(())
+            })?
         }
     }
 }

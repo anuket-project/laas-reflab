@@ -1,0 +1,42 @@
+[env]
+DATABASE_NAME = "liblaas"
+DATABASE_USER = "postgres"
+DATABASE_PASSWORD = "password"
+DATABASE_PORT = "5432"
+DATABASE_HOST = "localhost"
+DATABASE_URL = "postgres://${DATABASE_USER}:${DATABASE_PASSWORD}@${DATABASE_HOST}:${DATABASE_PORT}/${DATABASE_NAME}"
+RUST_BACKTRACE = 0
+
+POSTGRES_IMAGE = "postgres:15-alpine"
+CONTAINER_NAME = "test_db"
+
+[tasks.create-docker-db]
+# requires docker
+workspace = false
+script_runner = "@shell"
+script = '''
+docker stop ${CONTAINER_NAME} > /dev/null 2>&1 || true
+docker rm ${CONTAINER_NAME} > /dev/null 2>&1 || true
+docker run \
+  --name ${CONTAINER_NAME} \
+  -e POSTGRES_USER=${DATABASE_USER} \
+  -e POSTGRES_DB=${DATABASE_NAME} \
+  -e POSTGRES_PASSWORD=${DATABASE_PASSWORD} \
+  -p ${DATABASE_PORT}:5432 \
+  -d \
+  ${POSTGRES_IMAGE} \
+  -N 1000
+'''
+
+[tasks.migrate]
+workspace = false
+install_crate = "sqlx-cli"
+command = "cargo"
+args = ["sqlx", "migrate", "run", "--database-url", "${DATABASE_URL}"]
+env = { "DATABASE_URL" = "${DATABASE_URL}" }
+
+[tasks.nextest]
+args = ["nextest", "run", "--workspace"]
+command = "cargo"
+workspace = false
+install_crate = "cargo-nextest"

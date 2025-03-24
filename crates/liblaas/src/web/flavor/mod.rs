@@ -232,7 +232,6 @@ pub async fn list_hosts(
             .await
             .expect("Expected lab to exist")
             .lab
-            .unwrap()
             .get(&mut transaction)
             .await
             .expect("Expected lab to exist")

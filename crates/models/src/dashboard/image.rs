@@ -8,10 +8,9 @@ use std::collections::HashMap;
 
 use crate::inventory::Flavor;
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
 pub struct Image {
     pub id: FKey<Image>, // id of image used for booking
-
     pub owner: String,
     pub name: String, // name of image
     pub deleted: bool,
@@ -161,6 +160,10 @@ impl DBTable for Image {
         self.id.into_id()
     }
 
+    fn id_mut(&mut self) -> &mut ID {
+        self.id.into_id_mut()
+    }
+
     fn table_name() -> &'static str {
         "images"
     }
@@ -261,6 +264,75 @@ impl Image {
                 .collect();
 
             Ok(results)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use prop::collection::vec;
+    use proptest::prelude::*;
+    use testing_utils::block_on_runtime;
+
+    impl Arbitrary for Image {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            (
+                any::<FKey<Image>>(),             // id
+                "[a-zA-Z]{1,20}",                 // owner
+                "[a-zA-Z]{1,20}",                 // name
+                any::<bool>(),                    // deleted
+                "[a-zA-Z]{1,20}",                 // cobbler_name
+                any::<bool>(),                    // public
+                vec(any::<FKey<Flavor>>(), 0..3), // flavors
+            )
+                .prop_map(
+                    |(id, owner, name, deleted, cobbler_name, public, flavors)| Image {
+                        id,
+                        owner,
+                        name,
+                        deleted,
+                        cobbler_name,
+                        public,
+                        flavors,
+                    },
+                )
+                .boxed()
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn test_image_model(image in any::<Image>()) {
+            block_on_runtime!({
+                let client = new_client().await;
+                prop_assert!(client.is_ok(), "DB connection failed: {:?}", client.err());
+                let mut client = client.unwrap();
+
+                let transaction = client.easy_transaction().await;
+                prop_assert!(transaction.is_ok(), "Transaction creation failed: {:?}", transaction.err());
+                let mut transaction = transaction.unwrap();
+
+
+                let new_row = NewRow::new(image.clone());
+                let insert_result = new_row.insert(&mut transaction).await;
+                prop_assert!(insert_result.is_ok(), "Insert failed: {:?}", insert_result.err());
+
+                let retrieved_image_result = Image::select().where_field("id").equals(image.id).run(&mut transaction)
+                    .await;
+                prop_assert!(retrieved_image_result.is_ok(), "Retrieval failed: {:?}", retrieved_image_result.err());
+
+                let first_image = retrieved_image_result.unwrap().into_iter().next();
+                prop_assert!(first_image.is_some(), "No host found, empty result");
+
+                let retrieved_image = first_image.unwrap().clone().into_inner();
+                prop_assert_eq!(retrieved_image, image);
+
+                Ok(())
+            })?
         }
     }
 }

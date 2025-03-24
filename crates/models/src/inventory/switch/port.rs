@@ -17,6 +17,10 @@ impl DBTable for SwitchPort {
         self.id.into_id()
     }
 
+    fn id_mut(&mut self) -> &mut ID {
+        self.id.into_id_mut()
+    }
+
     fn table_name() -> &'static str {
         "switchports"
     }
@@ -65,6 +69,71 @@ impl SwitchPort {
 
                 Ok(NewRow::new(sp).insert(t).await?.get(t).await?)
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+    use testing_utils::block_on_runtime;
+
+    impl Arbitrary for SwitchPort {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            (
+                any::<FKey<SwitchPort>>(), // id
+                any::<FKey<Switch>>(),     // for_switch
+                "[a-zA-Z0-9-]{1,50}",      // name
+            )
+                .prop_map(|(id, for_switch, name)| SwitchPort {
+                    id,
+                    for_switch,
+                    name,
+                })
+                .boxed()
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn test_switch_port_model(switch_port in any::<SwitchPort>()) {
+            block_on_runtime!({
+                let client = new_client().await;
+                prop_assert!(client.is_ok(), "DB connection failed: {:?}", client.err());
+                let mut client = client.unwrap();
+
+                let transaction = client.easy_transaction().await;
+                prop_assert!(transaction.is_ok(), "Transaction creation failed: {:?}", transaction.err());
+                let mut transaction = transaction.unwrap();
+
+                let new_row = NewRow::new(switch_port.clone());
+                let insert_result = new_row.insert(&mut transaction).await;
+                prop_assert!(insert_result.is_ok(), "Insert failed: {:?}", insert_result.err());
+
+                let retrieved_switch_port = SwitchPort::select()
+                    .where_field("id")
+                    .equals(switch_port.id)
+                    .run(&mut transaction)
+                    .await;
+
+                prop_assert!(retrieved_switch_port.is_ok(), "Retrieval failed: {:?}", retrieved_switch_port.err());
+                let retrieved_switch_port = retrieved_switch_port.unwrap();
+
+                let first_switch_port = retrieved_switch_port.first();
+                prop_assert!(first_switch_port.is_some(), "No SwitchPort found, empty result");
+
+                let retrieved_switch_port = first_switch_port.unwrap().clone().into_inner();
+
+                prop_assert_eq!(retrieved_switch_port.id, switch_port.id);
+                prop_assert_eq!(retrieved_switch_port.for_switch, switch_port.for_switch);
+                prop_assert_eq!(retrieved_switch_port.name, switch_port.name);
+
+                Ok(())
+            })?
         }
     }
 }

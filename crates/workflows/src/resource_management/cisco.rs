@@ -1,5 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
+use anyhow::{anyhow, Result};
 use common::prelude::{dashmap::DashMap, lazy_static, parking_lot, tracing};
 use lazy_static::lazy_static;
 use models::inventory::{HostPort, Switch, SwitchPort};
@@ -210,15 +211,21 @@ async fn process_bondgroup(
     let mut for_switch = None;
 
     for member in bondgroup.member_host_ports.iter() {
-        if let Some(switch) = validate_hostport(member, transaction).await {
-            for_switch = match for_switch {
-                None => Some(switch),
-                Some(prior) => {
-                    assert_eq!(prior, switch);
-                    Some(prior)
+        let switch = validate_hostport(member, transaction)
+            .await
+            .expect("Failed to validate host port");
+
+        // update `for_switch`
+        for_switch = match for_switch {
+            None => Some(switch),
+            Some(prior) => {
+                // ensure that all switches are the same
+                if prior != switch {
+                    panic!("All switches must be the same for a bond group");
                 }
-            };
-        }
+                Some(prior)
+            }
+        };
     }
 
     if let Some(for_switch) = for_switch {
@@ -235,29 +242,41 @@ async fn process_bondgroup(
 async fn validate_hostport(
     member: &FKey<HostPort>,
     transaction: &mut EasyTransaction<'_>,
-) -> Option<FKey<Switch>> {
-    let host_port = member.get(transaction).await.unwrap();
-    if let Some(switch_port) = host_port.switchport {
-        let switch_port = switch_port.get(transaction).await.unwrap();
-        let switch_os = &switch_port
-            .for_switch
-            .get(transaction)
-            .await
-            .unwrap()
-            .switch_os
-            .unwrap()
-            .get(transaction)
-            .await
-            .expect("Expected to get OS")
-            .os_type;
+) -> Result<FKey<Switch>> {
+    // fetch the `HostPort`
+    let host_port = member
+        .get(transaction)
+        .await
+        .map_err(|e| anyhow!("Failed to get HostPort: {}", e))?;
 
-        if switch_os != "NXOS" {
-            return None;
-        }
+    // fetch the associated `SwitchPort` from the host port
+    let switch_port = host_port
+        .switchport
+        .get(transaction)
+        .await
+        .map_err(|e| anyhow!("Failed to get SwitchPort: {}", e))?;
 
-        return Some(switch_port.for_switch);
+    // fetch the associated `Switch` from the switch port
+    let switch = switch_port
+        .for_switch
+        .get(transaction)
+        .await
+        .map_err(|e| anyhow!("Failed to get Switch: {}", e))?;
+
+    // fetch the associated `SwitchOS` from the swictch
+    let switch_os = switch
+        .switch_os
+        .ok_or_else(|| anyhow!("SwitchOS is not set for the Switch"))?
+        .get(transaction)
+        .await
+        .map_err(|e| anyhow!("Failed to get SwitchOS: {}", e))?;
+
+    // check if the OS type is "NXOS"
+    if switch_os.os_type != "NXOS" {
+        return Err(anyhow!("Switch OS type is not NXOS"));
     }
-    None
+
+    Ok(switch_port.for_switch)
 }
 
 async fn process_ports(
@@ -285,7 +304,6 @@ async fn configure_port(
         .await
         .unwrap()
         .switchport
-        .unwrap()
         .get(transaction)
         .await
         .unwrap();

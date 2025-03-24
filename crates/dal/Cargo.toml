@@ -14,6 +14,7 @@ sha2 = { workspace = true }
 base16ct = { workspace = true }
 inventory = { workspace = true }
 backtrace = { workspace = true }
+proptest = { workspace = true }
 
 sqlx = { workspace = true }
 url = { workspace = true }

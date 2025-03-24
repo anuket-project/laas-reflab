@@ -1,8 +1,10 @@
 use serde::{Deserialize, Serialize};
 use strum_macros::{Display, EnumString};
-
-#[derive(Serialize, Deserialize, Clone, Debug, Hash, Copy, EnumString, Display)]
+#[derive(
+    Serialize, Deserialize, Clone, Debug, Hash, Copy, EnumString, Display, Eq, PartialEq, Default,
+)]
 pub enum Arch {
+    #[default]
     #[strum(serialize = "x86")]
     X86,
     #[strum(serialize = "x86_64")]
@@ -21,6 +23,21 @@ impl Arch {
             Some(Arch::Aarch64)
         } else {
             None
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    impl Arbitrary for Arch {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            prop_oneof![Just(Arch::X86), Just(Arch::X86_64), Just(Arch::Aarch64),].boxed()
         }
     }
 }
