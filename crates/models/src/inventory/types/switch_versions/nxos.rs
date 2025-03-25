@@ -66,6 +66,7 @@ impl FromStr for NxosVersion {
 mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
+    use proptest::option::of;
     use proptest::prelude::*;
     use proptest::string::string_regex;
 
@@ -74,9 +75,15 @@ mod tests {
         type Strategy = BoxedStrategy<Self>;
 
         fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-            let train_strat = string_regex("[A-Z][A-Z0-9]{0,9}").unwrap();
+            let train_strat = of(string_regex("[A-Z][A-Z0-9]{0,9}").unwrap());
 
-            (0u32..9999, 0u32..9999, 0u32..9999, train_strat, 0u32..9999)
+            (
+                0u32..9999,
+                0u32..9999,
+                0u32..9999,
+                train_strat,
+                of(0u32..9999),
+            )
                 .prop_map(|(major, minor, maintenance, train, rebuild)| NxosVersion {
                     major,
                     minor,
@@ -110,4 +117,3 @@ mod tests {
         assert_eq!(parsed.to_string(), max_version);
     }
 }
-

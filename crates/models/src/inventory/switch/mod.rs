@@ -11,15 +11,11 @@ pub use port::SwitchPort;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Switch {
     pub id: FKey<Switch>,
-
     pub name: String,
     pub ip: String,
     pub user: String,
     pub pass: String,
     pub switch_os: Option<FKey<SwitchOS>>,
-    pub management_vlans: Vec<i16>,
-    pub ipmi_vlan: i16,
-    pub public_vlans: Vec<i16>,
 }
 
 impl PartialEq for Switch {
@@ -54,9 +50,6 @@ impl DBTable for Switch {
             user: row.try_get("switch_user")?,
             pass: row.try_get("switch_pass")?,
             switch_os: row.try_get("switch_os")?,
-            management_vlans: row.try_get("management_vlans")?,
-            ipmi_vlan: row.try_get("ipmi_vlan")?,
-            public_vlans: row.try_get("public_vlans")?,
         }))
     }
 
@@ -69,9 +62,6 @@ impl DBTable for Switch {
             ("switch_user", Box::new(clone.user)),
             ("switch_pass", Box::new(clone.pass)),
             ("switch_os", Box::new(clone.switch_os)),
-            ("management_vlans", Box::new(clone.management_vlans)),
-            ("ipmi_vlan", Box::new(clone.ipmi_vlan)),
-            ("public_vlans", Box::new(clone.public_vlans)),
         ];
 
         Ok(c.into_iter().collect())
@@ -127,35 +117,15 @@ mod tests {
                 any::<String>(),                               // user
                 any::<String>(),                               // pass
                 of(Just(FKey::<SwitchOS>::new_id_dangling())), // switch_os
-                vec(any::<i16>(), 0..10),                      // management_vlans
-                any::<i16>(),                                  // ipmi_vlan
-                vec(any::<i16>(), 0..10),                      // public_vlans
             )
-                .prop_map(
-                    |(
-                        id,
-                        name,
-                        ip,
-                        user,
-                        pass,
-                        switch_os,
-                        management_vlans,
-                        ipmi_vlan,
-                        public_vlans,
-                    )| {
-                        Switch {
-                            id,
-                            name,
-                            ip,
-                            user,
-                            pass,
-                            switch_os,
-                            management_vlans,
-                            ipmi_vlan,
-                            public_vlans,
-                        }
-                    },
-                )
+                .prop_map(|(id, name, ip, user, pass, switch_os)| Switch {
+                    id,
+                    name,
+                    ip,
+                    user,
+                    pass,
+                    switch_os,
+                })
                 .boxed()
         }
     }

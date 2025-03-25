@@ -17,6 +17,7 @@ pub struct HostPort {
     pub switch: String,
     pub bus_addr: String,
     pub bmc_vlan_id: Option<i16>,
+    pub management_vlan_id: Option<i16>,
     pub is_a: FKey<InterfaceFlavor>,
 }
 
@@ -47,6 +48,7 @@ impl DBTable for HostPort {
             switch: row.try_get("switch")?,
             bus_addr: row.try_get("bus_addr")?,
             bmc_vlan_id: row.try_get("bmc_vlan_id")?,
+            management_vlan_id: row.try_get("management_vlan_id")?,
             is_a: row.try_get("is_a")?,
         }))
     }
@@ -109,6 +111,7 @@ mod test {
             "[a-zA-Z0-9]{1,20}",            // switch
             "[a-zA-Z0-9]{1,20}",            // bus_addr
             of(i16::MIN..i16::MAX),         // bmc_vlan_id
+            of(i16::MIN..i16::MAX),         // management_vlan_id
             any::<FKey<InterfaceFlavor>>(), // is_a
         )
             .prop_map(
@@ -122,6 +125,7 @@ mod test {
                     switch,
                     bus_addr,
                     bmc_vlan_id,
+                    management_vlan_id,
                     is_a,
                 )| HostPort {
                     id,
@@ -133,6 +137,7 @@ mod test {
                     switch: switch.to_string(),
                     bus_addr: bus_addr.to_string(),
                     bmc_vlan_id,
+                    management_vlan_id,
                     is_a,
                 },
             )

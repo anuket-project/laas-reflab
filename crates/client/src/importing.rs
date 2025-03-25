@@ -256,29 +256,6 @@ pub async fn import_switches(mut session: &Server, path: PathBuf) -> Result<(), 
                     }
                 }
             },
-            management_vlans: switch_data["mgmt_vlans"]
-                .as_array()
-                .expect("Expected management vlan array to exist")
-                .into_iter()
-                .map(|f| {
-                    f.as_i64()
-                        .expect("Expected management vlan array to contain an integer")
-                        as i16
-                })
-                .collect_vec(),
-            ipmi_vlan: switch_data["ipmi_vlan"]
-                .as_i64()
-                .expect("Expected ipmi vlan to be an integer") as i16,
-            public_vlans: switch_data["public_vlans"]
-                .as_array()
-                .expect("Expected public vlan array to exist")
-                .into_iter()
-                .map(|f| {
-                    f.as_i64()
-                        .expect("Expected public vlan array to contain an integer")
-                        as i16
-                })
-                .collect_vec(),
         };
 
         let res =

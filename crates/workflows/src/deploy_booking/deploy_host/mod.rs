@@ -752,17 +752,7 @@ impl DeployHost {
             // need mgmt nets set before we can try ipmi managing the host
             context
                 .spawn(ConfigureNetworking {
-                    net_config: match self.get_workflow_distro().await? {
-                        WorkflowDistro::Eve => {
-                            mgmt_network_config_with_public(
-                                self.host_id,
-                                self.using_instance,
-                                &mut transaction,
-                            )
-                            .await
-                        }
-                        _ => mgmt_network_config(self.host_id, &mut transaction).await,
-                    },
+                    net_config: mgmt_network_config(self.host_id, &mut transaction).await,
                 })
                 .join()?;
         } else {

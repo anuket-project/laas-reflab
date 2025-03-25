@@ -14,25 +14,24 @@ pub async fn mgmt_network_config(
     host_id: FKey<Host>,
     t: &mut EasyTransaction<'_>,
 ) -> NetworkConfig {
-    // set each iface to 98 + 99, no bond groups
     let host = host_id
         .get(t)
         .await
         .expect("host did not exist by given fk?");
     let mut builder = NetworkConfigBuilder::new();
     for port in host.ports(t).await.expect("didn't get ports?") {
-        builder = builder.bond(
-            BondGroup::new()
-                .with_vlan(VlanConnection::from_pair(t, 99, true).await)
-                .with_vlan(VlanConnection::from_pair(t, 98, false).await)
-                .with_port(port.id),
-        );
+        let mut bg = BondGroup::new().with_port(port.id);
+        if let Some(bmc_vlan) = port.bmc_vlan_id {
+            bg = bg.with_vlan(VlanConnection::from_pair(t, bmc_vlan, true).await);
+        }
+        if let Some(mgmt_vlan) = port.management_vlan_id {
+            bg = bg.with_vlan(VlanConnection::from_pair(t, mgmt_vlan, false).await);
+        }
+        builder = builder.bond(bg);
     }
 
     let v = builder.persist(false).build();
-
     info!("built a network config for the host: {v:#?}");
-
     v
 }
 
