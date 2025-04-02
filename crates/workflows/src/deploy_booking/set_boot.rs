@@ -415,6 +415,8 @@ fn network_last_order(
     mut devices: Vec<BootDevice>,
     host: Option<Host>,
 ) -> Result<Vec<BootDevice>, anyhow::Error> {
+
+    // This should be refactored or documented better. Nothing implies that providing Some(host) means specific disk boot.
     match host {
         Some(h) => match h.sda_uefi_device {
             Some(d) => devices.sort_by(|a, b| sort_device_to_top(a, b, d.clone())),

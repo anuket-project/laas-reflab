@@ -15,6 +15,7 @@ tracing-subscriber = "0.3"
 backtrace-on-stack-overflow = "*"
 clap = "*"
 
+# local workspaces/crates
 common = { path = "crates/common" }
 client = { path = "crates/client" }
 config = { path = "crates/config" }
@@ -133,3 +134,8 @@ tar = "*"                                            # tarball utils
 tera = "1.19.1"                                      # jinja like templating engine
 ureq = { version = "2.6", features = ["json"] }      # HTTP client
 url = "*"                                            # URL parsing
+
+# testing
+proptest = { version = "1.6.0" }
+color-eyre = "0.6.3"
+pretty_assertions = "1.4.1"

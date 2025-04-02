@@ -57,6 +57,10 @@ impl DBTable for RuntimeTask {
         self.id.into_id()
     }
 
+    fn id_mut(&mut self) -> &mut dal::ID {
+        self.id.into_id_mut()
+    }
+
     fn from_row(row: Row) -> Result<dal::ExistingRow<Self>, anyhow::Error> {
         let task: RunnableHandle = serde_json::from_value(row.try_get("proto")?)?;
 

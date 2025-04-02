@@ -3,7 +3,7 @@ use dal::{new_client, AsEasyTransaction, FKey};
 
 use models::inventory::Switch;
 
-use super::network::NetworkConfig;
+use crate::configure_networking::NetworkConfig;
 use serde::{Deserialize, Serialize};
 
 use ssh2::Session;

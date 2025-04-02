@@ -50,3 +50,20 @@ pub struct InstanceProvData {
     pub ipmi_create: bool,
     pub networks: Vec<NetworkProvData>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    impl Arbitrary for ProvEvent {
+        type Strategy = BoxedStrategy<Self>;
+        type Parameters = ();
+
+        fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+            (any::<String>(), any::<String>())
+                .prop_map(|(event, details)| ProvEvent { event, details })
+                .boxed()
+        }
+    }
+}

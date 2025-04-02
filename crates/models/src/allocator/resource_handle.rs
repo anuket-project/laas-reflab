@@ -16,11 +16,11 @@ use crate::{
     inventory::*,
 };
 
-#[derive(Deserialize, Serialize, Debug, Clone, Hash)]
+#[derive(Deserialize, Serialize, Debug, Clone, Hash, Eq, PartialEq, Default)]
 pub struct ResourceHandle {
     pub id: FKey<ResourceHandle>,
     pub tracks: ResourceHandleInner,
-    pub lab: Option<FKey<Lab>>,
+    pub lab: FKey<Lab>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Hash, Copy)]
@@ -29,11 +29,17 @@ pub enum ResourceHandleInner {
     PrivateVlan(FKey<Vlan>),
     PublicVlan(FKey<Vlan>),
     VPNAccess(FKey<VPNToken>),
-    /*VPNAccess {
-        access_token_id: llid::LLID,
-        username: String,
-        project: String,
-    },*/
+    // VPNAccess {
+    //     access_token_id: llid::LLID,
+    //     username: String,
+    //     project: String,
+    // }
+}
+
+impl Default for ResourceHandleInner {
+    fn default() -> Self {
+        ResourceHandleInner::Host(FKey::default())
+    }
 }
 
 impl DBTable for ResourceHandle {
@@ -43,6 +49,10 @@ impl DBTable for ResourceHandle {
 
     fn id(&self) -> ID {
         self.id.into_id()
+    }
+
+    fn id_mut(&mut self) -> &mut ID {
+        self.id.into_id_mut()
     }
 
     fn from_row(row: tokio_postgres::Row) -> Result<ExistingRow<Self>, anyhow::Error> {
@@ -710,9 +720,89 @@ impl ResourceHandle {
         NewRow::new(Self {
             id: FKey::new_id_dangling(),
             tracks: resource,
-            lab: Some(lab),
+            lab,
         })
         .insert(transaction)
         .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+    use testing_utils::block_on_runtime;
+
+    impl Arbitrary for ResourceHandle {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+            (
+                any::<FKey<ResourceHandle>>(), // id
+                any::<ResourceHandleInner>(),  // tracks
+                any::<FKey<Lab>>(),            // lab
+            )
+                .prop_map(|(id, tracks, lab)| ResourceHandle { id, tracks, lab })
+                .boxed()
+        }
+    }
+
+    impl Arbitrary for ResourceHandleInner {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+            prop_oneof![
+                Just(ResourceHandleInner::Host(FKey::<Host>::new_id_dangling())),
+                Just(ResourceHandleInner::PrivateVlan(
+                    FKey::<Vlan>::new_id_dangling()
+                )),
+                Just(ResourceHandleInner::PublicVlan(
+                    FKey::<Vlan>::new_id_dangling()
+                )),
+                Just(ResourceHandleInner::VPNAccess(
+                    FKey::<VPNToken>::new_id_dangling()
+                )),
+            ]
+            .boxed()
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn test_resource_handle_model(resource_handle in ResourceHandle::arbitrary()) {
+            block_on_runtime!({
+                let client = new_client().await;
+                prop_assert!(client.is_ok(), "DB connection failed: {:?}", client.err());
+                let mut client = client.unwrap();
+
+                let transaction = client.easy_transaction().await;
+                prop_assert!(transaction.is_ok(), "Transaction creation failed: {:?}", transaction.err());
+                let mut transaction = transaction.unwrap();
+
+                let new_row = NewRow::new(resource_handle.clone());
+                let insert_result = new_row.insert(&mut transaction).await;
+                prop_assert!(insert_result.is_ok(), "Insert failed: {:?}", insert_result.err());
+
+                let retrieved_result = ResourceHandle::select()
+                    .where_field("id")
+                    .equals(resource_handle.id)
+                    .run(&mut transaction)
+                    .await;
+
+                prop_assert!(retrieved_result.is_ok(), "Retrieval failed: {:?}", retrieved_result.err());
+                let retrieved_handles = retrieved_result.unwrap();
+
+                let retrieved_handle = retrieved_handles.first();
+                prop_assert!(retrieved_handle.is_some(), "No Allocation found, empty result");
+
+                let retrieved_handle = retrieved_handle.unwrap().clone().into_inner();
+                prop_assert_eq!(retrieved_handle, resource_handle);
+
+                Ok(())
+
+            })?
+        }
     }
 }

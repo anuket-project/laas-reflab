@@ -208,10 +208,7 @@ impl Allocator {
         let res = ResourceHandle::allocate_one(
             &self.token,
             &mut t,
-            ResourceRequestInner::SpecificHost {
-                host,
-                lab: lab.expect("Expected to find specific host!"),
-            },
+            ResourceRequestInner::SpecificHost { host, lab },
             Some(for_aggregate),
             reason,
             &self.except_resources(),

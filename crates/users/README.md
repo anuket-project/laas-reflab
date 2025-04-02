@@ -9,8 +9,6 @@ functions hit the IPA API and return data for use in the rest of the application
 only authorization and authentication is performed through IPA. This is why [`laas-reflab`]
 should only be exposed in its current state to a trusted network/frontend service.
 
-> _"I'm sorry this exists, I'll do better next time." ~ Raven_
-
 [`users`]: self
 [`IPA`]: https://www.freeipa.org/page/Main_Page
 [`laas-reflab`]: ../laas_reflab/index.html

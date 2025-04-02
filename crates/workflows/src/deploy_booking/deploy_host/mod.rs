@@ -1,10 +1,9 @@
 use common::prelude::{
     anyhow,
     tokio::time::{sleep, Duration},
-    tracing::{self, error, info, trace, warn},
+    tracing::{error, info, trace, warn},
 };
 
-use config::{self, settings};
 use dal::{new_client, AsEasyTransaction, FKey, ID};
 use metrics::prelude::*;
 
@@ -13,26 +12,23 @@ use models::{
     inventory::{BootTo, Host, Lab},
     EasyLog,
 };
-use notifications::email::send_to_admins;
+use notifications::{email::send_to_admins, templates::render_eve_grub_config};
 use serde::{Deserialize, Serialize};
-use ssh2::Session;
 
-use std::{
-    net::TcpStream,
-    sync::{atomic::AtomicBool, Arc},
-};
+use std::sync::{atomic::AtomicBool, Arc};
 use strum_macros::EnumString;
 use tascii::{prelude::*, task_trait::AsyncRunnable};
 
-use super::{
-    net_config::{mgmt_network_config, prod_network_config},
-    set_boot::SetBoot,
-    set_host_power_state::SetPower,
-};
+use super::{set_boot::SetBoot, set_host_power_state::SetPower};
 use crate::{
+    configure_networking::{
+        mgmt_network_config, mgmt_network_config_with_public, prod_network_config,
+        ConfigureNetworking,
+    },
     deploy_booking::{
-        cobbler_set_config::*, configure_networking::ConfigureNetworking,
-        net_config::mgmt_network_config_with_public, wait_host_os_reachable::WaitHostOSReachable,
+        cobbler_set_config::*,
+        set_host_power_state::{confirm_power_state, HostConfig, PowerState, TimeoutConfig},
+        wait_host_os_reachable::WaitHostOSReachable,
     },
     resource_management::{
         cobbler::*,
@@ -215,6 +211,8 @@ impl DeployHost {
         let (preimage_waiter, imaging_waiter, mut post_boot_waiter, mut post_provision_waiter) =
             self.generate_endpoints().await;
 
+        self.prepare_host_environment(context, host_name).await?;
+
         self.configure_cobbler_and_set_boot(
             context,
             preimage_waiter.endpoint(),
@@ -343,7 +341,228 @@ impl DeployHost {
             .unwrap()
             .into_inner();
 
+        transaction.commit().await?;
+
         Ok((aggregate, host_name, lab))
+    }
+
+    async fn fetch_instance_image(&mut self) -> Result<models::dashboard::Image, anyhow::Error> {
+        let mut client = new_client().await.unwrap();
+        let mut transaction = client.easy_transaction().await.unwrap();
+
+        let image = self
+            .using_instance
+            .get(&mut transaction)
+            .await?
+            .config
+            .image
+            .get(&mut transaction)
+            .await?
+            .into_inner();
+
+        transaction.commit().await?;
+
+        Ok(image)
+    }
+
+    async fn fetch_instance_host(&mut self) -> Result<Host, anyhow::Error> {
+        let mut client = new_client().await?;
+        let mut transaction = client.easy_transaction().await?;
+
+        let host = self.host_id.get(&mut transaction).await?;
+        transaction.commit().await.unwrap();
+
+        Ok(host.into_inner())
+    }
+
+    /// Updates the 'soft_serial' key with the provided value in the instance metadata.
+    async fn set_soft_serial(&mut self, value: &str) -> Result<(), anyhow::Error> {
+        let mut client = new_client().await?;
+        let mut transaction = client.easy_transaction().await?;
+        let mut inst = self.using_instance.get(&mut transaction).await?;
+        inst.metadata
+            .insert("soft_serial".to_owned(), serde_json::to_value(value)?);
+        inst.update(&mut transaction).await?;
+        transaction.commit().await?;
+
+        Ok(())
+    }
+
+    async fn prepare_host_environment(
+        &mut self,
+        context: &Context,
+        host_name: &str,
+    ) -> Result<(), TaskError> {
+        self.log(
+            "Preparing host environment",
+            "performing additional operations to ensure a clean installation",
+            StatusSentiment::InProgress,
+        )
+        .await;
+
+        match self.get_workflow_distro().await? {
+            WorkflowDistro::Eve => self.prepare_eve_environment(context, host_name).await,
+            _ => {
+                self.log(
+                    "Host environment ready",
+                    "no additional preparations are needed to install this operating system",
+                    StatusSentiment::InProgress,
+                )
+                .await;
+                Ok(())
+            }
+        }
+    }
+
+    async fn prepare_eve_environment(
+        &mut self,
+        context: &Context,
+        host_name: &str,
+    ) -> Result<(), TaskError> {
+        const PREINSTALL_IMAGE_NAME: &'static str = "ubuntu_wipefs-x86_64";
+
+        // Set to wipefs image, which will wipe disk filesystems upon PXE booting
+        self.log(
+            "Setting EVE-OS pre-install image",
+            "configuring netboot for EVE-OS pre-install environment",
+            StatusSentiment::InProgress,
+        )
+        .await;
+
+        // Todo - handle alternate case for aarch64
+        let wipefs_cobbler_join_handle = context.spawn(CobblerSetConfiguration {
+            host_id: self.host_id,
+            config: CobblerConfig::new(
+                PREINSTALL_IMAGE_NAME.to_string(),
+                self.using_instance,
+                self.host_id,
+                None,
+                None,
+            ),
+        });
+
+        // Set device to PXE boot
+        self.log(
+            "Setting PXE boot device",
+            "requesting PXE boot from the BMC",
+            StatusSentiment::InProgress,
+        )
+        .await;
+
+        let res = retry_for(
+            SetBoot {
+                host_id: self.host_id,
+                persistent: true,
+                boot_to: BootTo::Network,
+            },
+            context,
+            5,
+            10,
+        );
+
+        info!("set boot res: {:?}", res);
+
+        sleep(Duration::from_secs(2)).await;
+
+        self.log(
+            "Powering Host Off",
+            "power host off to boot into the EVE-OS pre-install environment",
+            StatusSentiment::InProgress,
+        )
+        .await;
+
+        retry_for(SetPower::off(self.host_id), context, 5, 10)?;
+
+        self.log(
+            "Waiting for provisioning server",
+            "checking boot device configuration",
+            StatusSentiment::InProgress,
+        )
+        .await;
+        wipefs_cobbler_join_handle.join()?;
+
+        self.log(
+            "Powering host on",
+            "booting into pre-install environment",
+            StatusSentiment::InProgress,
+        )
+        .await;
+
+        // Power on and wait for early commands to run
+        self.set_power_on(context, host_name).await?;
+
+        self.log(
+            "Performing pre-install cleanup",
+            "finalizing environment for EVE-OS install",
+            StatusSentiment::InProgress,
+        )
+        .await;
+
+        sleep(Duration::from_secs(3 * 60)).await;
+
+        self.log(
+            "Confirming host state",
+            "checking results of pre-install cleanup",
+            StatusSentiment::InProgress,
+        )
+        .await;
+
+        // todo - create a new mailbox target that is hit by the early script after wiping disks. For now wait until host is powered off.
+        let host = self.fetch_instance_host().await?;
+
+        confirm_power_state(
+            &HostConfig {
+                fqdn: host.ipmi_fqdn,
+                user: host.ipmi_user,
+                password: host.ipmi_pass,
+            },
+            &TimeoutConfig {
+                max_retries: 20,
+                retry_interval: 30,
+                timeout_duration: 600,
+            },
+            Some(Duration::from_secs(60)),
+            PowerState::Off,
+        )
+        .await
+        .unwrap();
+
+        self.log(
+            "Host environment ready",
+            "EVE-OS is now ready to be installed",
+            StatusSentiment::InProgress,
+        )
+        .await;
+
+        Ok(())
+    }
+
+    /// Generates a soft serial number, renders the grub config, and pushes to cobbler
+    async fn configure_cobbler_for_eve(&mut self) -> Result<(), TaskError> {
+        self.log(
+            "Preparing netinstaller",
+            "configuring EVE-OS installer arguments",
+            StatusSentiment::InProgress,
+        )
+        .await;
+
+        let soft_serial = generate_soft_serial(16);
+        self.set_soft_serial(&soft_serial).await?;
+
+        // Render template
+        let grub_config_content = render_eve_grub_config(
+            &self.fetch_host_details().await.unwrap().1,
+            &self.fetch_instance_image().await.unwrap().cobbler_name, // ex: "eveos-12.0.4-lts-x86_64"
+            "sda",
+            &soft_serial,
+        )
+        .unwrap();
+
+        // Push to cobbler
+        let host = self.fetch_instance_host().await.unwrap();
+        override_system_grub_config(&host, &grub_config_content).await?;
+
+        Ok(())
     }
 
     async fn configure_cobbler_and_set_boot(
@@ -356,6 +575,8 @@ impl DeployHost {
         let mut client = new_client().await.unwrap();
         let mut transaction = client.easy_transaction().await.unwrap();
 
+        // Note - careful of too many open transactions at once. If things unexpectly stop working, check that first
+
         info!("made endpoint for host: {:?}", postimage_endpoint);
 
         self.log(
@@ -365,36 +586,17 @@ impl DeployHost {
         )
         .await;
 
-        let wfd = self.get_workflow_distro().await?;
+        let workflow_distro = self.get_workflow_distro().await?;
 
         let cobbler_config_jh = context.spawn(CobblerSetConfiguration {
             host_id: self.host_id,
-            config: match wfd {
-                WorkflowDistro::Eve => {
-                    CobblerConfig::new_eve_config(
-                        self.using_instance
-                            .get(&mut transaction)
-                            .await?
-                            .into_inner(),
-                        self.host_id,
-                        Some("sda".to_owned()),
-                    )
-                    .await
-                }
-                _ => {
-                    CobblerConfig::new(
-                        self.using_instance
-                            .get(&mut transaction)
-                            .await?
-                            .into_inner(),
-                        self.host_id,
-                        postimage_endpoint,
-                        preimage_endpoint,
-                    )
-                    .await
-                }
-            },
-            endpoint: postimage_endpoint,
+            config: CobblerConfig::new(
+                self.fetch_instance_image().await?.cobbler_name,
+                self.using_instance,
+                self.host_id,
+                Some(postimage_endpoint),
+                Some(preimage_endpoint),
+            ),
         });
 
         warn!("setting boot dev for {} to network boot", host_name);
@@ -435,37 +637,9 @@ impl DeployHost {
 
         cobbler_config_jh.join()?;
 
-        match wfd {
+        match workflow_distro {
             WorkflowDistro::Eve => {
-                let config::CobblerConfig {
-                    address,
-                    url,
-                    username,
-                    password,
-                    api_username,
-                    api_password,
-                } = settings().cobbler.clone();
-
-                let mut session =
-                    Session::new().expect("Failed to create a new SSH session for cobbler.");
-                let connection = TcpStream::connect(format!("{address}:22")).expect(
-                    format!("Failed to open TCP stream to cobbler at {address}:22.").as_str(),
-                );
-
-                session.set_tcp_stream(connection);
-                session.handshake().unwrap();
-                session
-                    .userauth_password(username.as_str(), password.as_str())
-                    .expect("SSH basic authentication failed");
-
-                let mut channel = session
-                    .channel_session()
-                    .expect("Expected to connect to cobbler to fix the eve cfg files!");
-                channel.exec(format!("sudo /srv/www/cobbler/distro_mirror/eve-amd64/set-eve.sh {} 12.0.3-lts", host_name).as_str()).expect("Expected to get host arch info");
-
-                tracing::info!(
-                    "set cobbler configuration, edited grub config and finished mgmt net config, also set host next boot dev"
-                );
+                self.configure_cobbler_for_eve().await?;
             }
             _ => {
                 info!(
@@ -522,14 +696,14 @@ impl DeployHost {
         )
         .await;
 
-        let wfd = self.get_workflow_distro().await?;
+        let workflow_distro = self.get_workflow_distro().await?;
 
         warn!("Booting host {} from disk", host_name);
         let result = retry_for(
             SetBoot {
                 host_id: self.host_id,
                 persistent: true,
-                boot_to: match wfd {
+                boot_to: match workflow_distro {
                     WorkflowDistro::Eve => BootTo::SpecificDisk,
                     _ => BootTo::Disk,
                 },
@@ -578,17 +752,7 @@ impl DeployHost {
             // need mgmt nets set before we can try ipmi managing the host
             context
                 .spawn(ConfigureNetworking {
-                    net_config: match self.get_workflow_distro().await? {
-                        WorkflowDistro::Eve => {
-                            mgmt_network_config_with_public(
-                                self.host_id,
-                                self.using_instance,
-                                &mut transaction,
-                            )
-                            .await
-                        }
-                        _ => mgmt_network_config(self.host_id, &mut transaction).await,
-                    },
+                    net_config: mgmt_network_config(self.host_id, &mut transaction).await,
                 })
                 .join()?;
         } else {
@@ -622,12 +786,33 @@ impl DeployHost {
         )
         .await;
 
-        let wfd = self.get_workflow_distro().await?;
+        let workflow_distro = self.get_workflow_distro().await?;
 
-        match wfd {
+        match workflow_distro {
             WorkflowDistro::Eve => {
-                // wait 7 mins
-                sleep(Duration::new(900, 0)).await;
+                // The EVE-OS installer will turn the host off when it is done.
+                // We do not have access to cloud init or late commands of any kind, so this is the working solution for now.
+                // If it actually failed to install, it is highly likely that the next tasks will fail regardless.
+                sleep(Duration::from_secs(4 * 60)).await;
+
+                let host = self.fetch_instance_host().await?;
+
+                confirm_power_state(
+                    &HostConfig {
+                        fqdn: host.ipmi_fqdn,
+                        user: host.ipmi_user,
+                        password: host.ipmi_pass,
+                    },
+                    &TimeoutConfig {
+                        max_retries: 20,
+                        retry_interval: 30,
+                        timeout_duration: 600,
+                    },
+                    Some(Duration::from_secs(60)),
+                    PowerState::Off,
+                )
+                .await
+                .unwrap();
             }
             _ => {
                 let inst_id = self.using_instance;
@@ -705,9 +890,9 @@ impl DeployHost {
         lab: Lab,
         post_boot_waiter: &mut MailboxMessageReceiver,
     ) -> Result<(), TaskError> {
-        let wfd = self.get_workflow_distro().await?;
+        let workflow_distro = self.get_workflow_distro().await?;
 
-        match wfd {
+        match workflow_distro {
             WorkflowDistro::Eve => {}
             _ => {
                 self.log(
@@ -776,9 +961,9 @@ impl DeployHost {
         host_name: &str,
         post_provision_waiter: &mut MailboxMessageReceiver,
     ) -> Result<(), TaskError> {
-        let wfd = self.get_workflow_distro().await?;
+        let workflow_distro = self.get_workflow_distro().await?;
 
-        match wfd {
+        match workflow_distro {
             WorkflowDistro::Eve => {
                 self.log(
                     "Wait Host Online",
@@ -841,7 +1026,7 @@ impl DeployHost {
     ) -> Result<(), TaskError> {
         self.log(
             "Set Up IPMI Accounts",
-            "IPMI accounts are being added to {host_name}",
+            &format!("IPMI accounts are being added to {host_name}"),
             StatusSentiment::InProgress,
         )
         .await;

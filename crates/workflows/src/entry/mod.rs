@@ -146,28 +146,4 @@ impl Dispatcher {
             self.rt.set_target(task_id);
         }
     }
-
-    async fn set_depends(
-        &self,
-        id: ID,
-        resources: Vec<FKey<inventory::Host>>,
-    ) -> Result<(), anyhow::Error> {
-        let mut client = new_client().await?;
-        let mut transaction = client.easy_transaction().await?;
-
-        /*let options = TransactionOptions::builder()
-        .read_concern(ReadConcern::majority())
-        .write_concern(WriteConcern::builder().w(Acknowledgment::Majority).build())
-        .build();*/
-
-        //let coll = Host::all_hosts(&mut client).unwrap();
-
-        for resource in resources {
-            let _ = inventory::Action::add_for_host(&mut transaction, resource, false, id)
-                .await
-                .log_server_error("couldn't set depends for an action", true);
-        }
-        transaction.commit().await.unwrap();
-        Ok(())
-    }
 }

@@ -12,7 +12,7 @@ use crate::{
     inventory::Lab,
 };
 
-#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Eq, PartialEq, Default)]
 pub struct Template {
     pub id: FKey<Template>,
     pub name: String,
@@ -173,6 +173,10 @@ impl DBTable for Template {
 
     fn id(&self) -> ID {
         self.id.into_id()
+    }
+
+    fn id_mut(&mut self) -> &mut ID {
+        self.id.into_id_mut()
     }
 
     fn from_row(row: tokio_postgres::Row) -> Result<ExistingRow<Self>, anyhow::Error> {
@@ -371,6 +375,81 @@ impl ImportTemplate {
             networks,
             hosts,
             lab: lab.name.clone(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::collection::vec;
+    use proptest::prelude::*;
+    use testing_utils::block_on_runtime;
+
+    impl Arbitrary for Template {
+        type Strategy = BoxedStrategy<Self>;
+        type Parameters = ();
+
+        fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+            (
+                any::<FKey<Template>>(),            // id
+                any::<String>(),                    // name
+                any::<bool>(),                      // deleted
+                any::<String>(),                    // description
+                any::<Option<String>>(),            // owner
+                any::<bool>(),                      // public
+                vec(any::<FKey<Network>>(), 0..10), // networks
+                vec(any::<HostConfig>(), 0..10),    // hosts
+                any::<FKey<Lab>>(),                 // lab
+            )
+                .prop_map(
+                    |(id, name, deleted, description, owner, public, networks, hosts, lab)| {
+                        Template {
+                            id,
+                            name,
+                            deleted,
+                            description,
+                            owner,
+                            public,
+                            networks,
+                            hosts,
+                            lab,
+                        }
+                    },
+                )
+                .boxed()
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn first_template_model(template in any::<Template>()) {
+            block_on_runtime!({
+                let client = new_client().await;
+                prop_assert!(client.is_ok(), "DB connection failed: {:?}", client.err());
+                let mut client = client.unwrap();
+
+                let transaction = client.easy_transaction().await;
+                prop_assert!(transaction.is_ok(), "Transaction creation failed: {:?}", transaction.err());
+                let mut transaction = transaction.unwrap();
+
+
+                let new_row = NewRow::new(template.clone());
+                let insert_result = new_row.insert(&mut transaction).await;
+                prop_assert!(insert_result.is_ok(), "Insert failed: {:?}", insert_result.err());
+
+                let retrieved_template_result = Template::select().where_field("id").equals(template.id).run(&mut transaction)
+                    .await;
+                prop_assert!(retrieved_template_result.is_ok(), "Retrieval failed: {:?}", retrieved_template_result.err());
+
+                let first_template = retrieved_template_result.unwrap().into_iter().next();
+                prop_assert!(first_template.is_some(), "No host found, empty result");
+
+                let retrieved_template = first_template.unwrap().clone().into_inner();
+                prop_assert_eq!(retrieved_template, template);
+
+                Ok(())
+            })?
         }
     }
 }

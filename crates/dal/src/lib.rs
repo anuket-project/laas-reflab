@@ -26,13 +26,11 @@ use serde::de::DeserializeOwned;
 use tokio_postgres::{types::ToSql, Client, NoTls, Transaction};
 
 use crate::web::{AnyWay, AnyWaySpecStr};
-use sqlx::postgres::PgPoolOptions;
+use sqlx::{postgres::PgPoolOptions, PgPool};
 
 pub trait ToSqlObject = ToSql + Send + Sync + 'static;
 
-pub async fn initialize() -> Result<(), Vec<Error>> {
-    tracing::warn!("Setting up the database connection pool");
-
+pub async fn get_db_pool() -> Result<PgPool, sqlx::Error> {
     let db_config = settings().database.clone();
 
     let connection_str = format!(
@@ -44,13 +42,15 @@ pub async fn initialize() -> Result<(), Vec<Error>> {
         db_config.database_name
     );
 
-    // Create the pool
-    let pool = PgPoolOptions::new()
-        .max_connections(2)
+    PgPoolOptions::new()
+        .max_connections(10)
         .connect(&connection_str)
         .await
-        .map_err(|e| vec![e.into()])?;
+}
+pub async fn initialize() -> Result<(), Vec<Error>> {
+    tracing::warn!("Setting up the database connection pool");
 
+    let pool = get_db_pool().await.map_err(|e| vec![e.into()])?;
     tracing::warn!("Migrations running");
 
     if let Err(e) = sqlx::migrate!("../../migrations").run(&pool).await {
@@ -297,6 +297,10 @@ impl<T: DBTable> FKey<T> {
 
     pub fn into_id(&self) -> ID {
         self.id
+    }
+
+    pub fn into_id_mut(&mut self) -> &mut ID {
+        &mut self.id
     }
 
     /// Use this function when first creating a NewRow(T)
@@ -603,6 +607,15 @@ pub trait DBTable: Sized + 'static + Send + Sync {
     /// must be PKed by an ID
     fn id(&self) -> ID;
 
+    /// SAFETY: Only call before database insertion
+    fn id_mut(&mut self) -> &mut ID;
+
+    /// Assigns the ID from an existing FKey<Self>
+    fn assign_new_id(mut self, id: FKey<Self>) -> Self {
+        *self.id_mut() = id.into_id();
+        self
+    }
+
     /// Create an instance of this table from a postgres Row object,
     /// returning Err() on (reasonable) failure.
     fn from_row(row: tokio_postgres::Row) -> Result<ExistingRow<Self>, anyhow::Error>;
@@ -827,22 +840,9 @@ impl std::ops::DerefMut for ClientPair {
 }
 
 pub async fn new_client() -> Result<ClientPair, anyhow::Error> {
-    let config::DatabaseConfig {
-        url,
-        username,
-        password,
-        database_name,
-    } = settings().database.clone();
+    let connection_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
 
-    let (client, conn) = tokio_postgres::config::Config::new()
-        .user(&username)
-        .password(&password)
-        .dbname(&database_name)
-        .host(url.host.as_str())
-        .port(url.port)
-        .connect(NoTls)
-        .await
-        .anyway()?;
+    let (client, conn) = tokio_postgres::connect(&connection_url, NoTls).await?;
 
     tokio::spawn(async move {
         let conn_res = conn.await;
@@ -1033,5 +1033,16 @@ where
         let val = serde_json::Value::from_sql(ty, raw)?;
 
         Ok(serde_json::from_value(val)?)
+    }
+}
+
+use proptest::prelude::*;
+
+impl<T: DBTable> Arbitrary for FKey<T> {
+    type Strategy = BoxedStrategy<Self>;
+    type Parameters = ();
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        Just(FKey::new_id_dangling()).boxed()
     }
 }

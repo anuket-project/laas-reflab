@@ -9,6 +9,9 @@ pub struct DataValue {
     pub unit: DataUnit,
 }
 
+// TODO: This should really be refactored to have two seperate enums for network speed and storage
+// units. Also Unknown as a default enum variant when it doesn't represent a relevant value is an
+// actual antipattern (also lets be real when are we going to have anything other than GB of RAM)
 #[derive(Serialize, Deserialize, Debug, Default, Clone, Hash, Copy, JsonSchema, PartialEq, Eq)]
 pub enum DataUnit {
     #[default]
@@ -45,5 +48,44 @@ impl DataValue {
 
     pub fn from_sqlval(v: serde_json::Value) -> Result<Self, anyhow::Error> {
         serde_json::from_value(v).anyway()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    impl Arbitrary for DataUnit {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            prop_oneof![
+                Just(DataUnit::Unknown),
+                Just(DataUnit::Bytes),
+                Just(DataUnit::KiloBytes),
+                Just(DataUnit::MegaBytes),
+                Just(DataUnit::GigaBytes),
+                Just(DataUnit::TeraBytes),
+                Just(DataUnit::Bits),
+                Just(DataUnit::BitsPerSecond),
+                Just(DataUnit::KiloBitsPerSecond),
+                Just(DataUnit::MegaBitsPerSecond),
+                Just(DataUnit::GigaBitsPerSecond),
+            ]
+            .boxed()
+        }
+    }
+
+    impl Arbitrary for DataValue {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            (any::<u64>(), any::<DataUnit>())
+                .prop_map(|(value, unit)| DataValue { value, unit })
+                .boxed()
+        }
     }
 }

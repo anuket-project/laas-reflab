@@ -11,15 +11,11 @@ pub use port::SwitchPort;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Switch {
     pub id: FKey<Switch>,
-
     pub name: String,
     pub ip: String,
     pub user: String,
     pub pass: String,
     pub switch_os: Option<FKey<SwitchOS>>,
-    pub management_vlans: Vec<i16>,
-    pub ipmi_vlan: i16,
-    pub public_vlans: Vec<i16>,
 }
 
 impl PartialEq for Switch {
@@ -38,6 +34,10 @@ impl DBTable for Switch {
         self.id.into_id()
     }
 
+    fn id_mut(&mut self) -> &mut ID {
+        self.id.into_id_mut()
+    }
+
     fn table_name() -> &'static str {
         "switches"
     }
@@ -50,9 +50,6 @@ impl DBTable for Switch {
             user: row.try_get("switch_user")?,
             pass: row.try_get("switch_pass")?,
             switch_os: row.try_get("switch_os")?,
-            management_vlans: row.try_get("management_vlans")?,
-            ipmi_vlan: row.try_get("ipmi_vlan")?,
-            public_vlans: row.try_get("public_vlans")?,
         }))
     }
 
@@ -65,9 +62,6 @@ impl DBTable for Switch {
             ("switch_user", Box::new(clone.user)),
             ("switch_pass", Box::new(clone.pass)),
             ("switch_os", Box::new(clone.switch_os)),
-            ("management_vlans", Box::new(clone.management_vlans)),
-            ("ipmi_vlan", Box::new(clone.ipmi_vlan)),
-            ("public_vlans", Box::new(clone.public_vlans)),
         ];
 
         Ok(c.into_iter().collect())
@@ -100,5 +94,76 @@ impl Switch {
             None => None,
             Some(row) => Some(Self::from_row(row)?),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::collection::vec;
+    use proptest::option::of;
+    use proptest::prelude::*;
+    use testing_utils::block_on_runtime;
+
+    impl Arbitrary for Switch {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            (
+                any::<FKey<Switch>>(),                         // id
+                any::<String>(),                               // name
+                any::<String>(),                               // ip
+                any::<String>(),                               // user
+                any::<String>(),                               // pass
+                of(Just(FKey::<SwitchOS>::new_id_dangling())), // switch_os
+            )
+                .prop_map(|(id, name, ip, user, pass, switch_os)| Switch {
+                    id,
+                    name,
+                    ip,
+                    user,
+                    pass,
+                    switch_os,
+                })
+                .boxed()
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn test_switch_model(switch in any::<Switch>()) {
+            block_on_runtime!({
+                let client = new_client().await;
+                prop_assert!(client.is_ok(), "DB connection failed: {:?}", client.err());
+                let mut client = client.unwrap();
+
+                let transaction = client.easy_transaction().await;
+                prop_assert!(transaction.is_ok(), "Transaction creation failed: {:?}", transaction.err());
+                let mut transaction = transaction.unwrap();
+
+                let new_row = NewRow::new(switch.clone());
+                let insert_result = new_row.insert(&mut transaction).await;
+                prop_assert!(insert_result.is_ok(), "Insert failed: {:?}", insert_result.err());
+
+                let retrieved_switch = Switch::select()
+                    .where_field("id")
+                    .equals(switch.id)
+                    .run(&mut transaction)
+                    .await;
+
+                prop_assert!(retrieved_switch.is_ok(), "Retrieval failed: {:?}", retrieved_switch.err());
+                let retrieved_switch = retrieved_switch.unwrap();
+
+                let first_switch = retrieved_switch.first();
+                prop_assert!(first_switch.is_some(), "No switch found, empty result");
+
+                let retrieved_switch = first_switch.unwrap().clone().into_inner();
+
+                prop_assert_eq!(retrieved_switch, switch);
+
+                Ok(())
+            })?
+        }
     }
 }

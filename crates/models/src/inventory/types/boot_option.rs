@@ -12,3 +12,23 @@ pub enum BootTo {
     #[strum(serialize = "Specific Disk")]
     SpecificDisk,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    impl Arbitrary for BootTo {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            prop_oneof![
+                Just(BootTo::Network),
+                Just(BootTo::Disk),
+                Just(BootTo::SpecificDisk),
+            ]
+            .boxed()
+        }
+    }
+}

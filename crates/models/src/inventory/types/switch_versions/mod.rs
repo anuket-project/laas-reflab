@@ -76,3 +76,22 @@ impl FromSql<'_> for Version {
         <String as FromSql>::accepts(ty)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    impl Arbitrary for Version {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            prop_oneof![
+                any::<NxosVersion>().prop_map(Version::Nxos),
+                any::<SonicVersion>().prop_map(Version::Sonic),
+            ]
+            .boxed()
+        }
+    }
+}

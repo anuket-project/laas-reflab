@@ -1,27 +1,24 @@
-use dal::{web::*, *};
-use tokio_postgres::types::ToSql;
-
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use tokio_postgres::types::ToSql;
+
+use dal::{web::*, *};
 
 use crate::{allocator::ResourceHandle, dashboard::Aggregate, inventory::*};
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
 pub struct Allocation {
     pub id: FKey<Allocation>,
     pub for_resource: FKey<ResourceHandle>,
     pub for_aggregate: Option<FKey<Aggregate>>,
-
-    pub started: chrono::DateTime<chrono::Utc>,
-
-    pub ended: Option<chrono::DateTime<chrono::Utc>>,
-
+    pub started: DateTime<Utc>,
+    pub ended: Option<DateTime<Utc>>,
     pub reason_started: AllocationReason,
-
     pub reason_ended: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Eq, PartialEq)]
 pub enum AllocationReason {
     /// If a resource is to be used within a booking, allocate
     /// with ForBooking
@@ -62,6 +59,10 @@ impl DBTable for Allocation {
         self.id.into_id()
     }
 
+    fn id_mut(&mut self) -> &mut ID {
+        self.id.into_id_mut()
+    }
+
     fn table_name() -> &'static str {
         "allocations"
     }
@@ -98,6 +99,26 @@ impl DBTable for Allocation {
 }
 
 impl Allocation {
+    pub fn new(
+        id: FKey<Allocation>,
+        for_resource: FKey<ResourceHandle>,
+        for_aggregate: Option<FKey<Aggregate>>,
+        started: DateTime<Utc>,
+        ended: Option<DateTime<Utc>>,
+        reason_started: AllocationReason,
+        reason_ended: Option<String>,
+    ) -> Self {
+        Self {
+            id,
+            for_resource,
+            for_aggregate,
+            started,
+            ended,
+            reason_started,
+            reason_ended,
+        }
+    }
+
     pub async fn find(
         t: &mut EasyTransaction<'_>,
         for_resource: FKey<ResourceHandle>,
@@ -148,5 +169,110 @@ impl Allocation {
         let rows = t.query(&q, &[&agg, &host]).await.anyway()?;
 
         Allocation::from_rows(rows)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::option::of;
+    use proptest::prelude::*;
+    use testing_utils::{block_on_runtime, datetime_utc_strategy, insert_default_model_at};
+
+    impl Arbitrary for AllocationReason {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+            prop_oneof![
+                Just(AllocationReason::ForBooking),
+                Just(AllocationReason::ForMaintenance),
+                Just(AllocationReason::ForRetiry),
+            ]
+            .boxed()
+        }
+    }
+
+    impl Arbitrary for Allocation {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+            (
+                any::<FKey<Allocation>>(),
+                any::<FKey<ResourceHandle>>(),
+                of(any::<FKey<Aggregate>>()),
+                datetime_utc_strategy(),
+                of(datetime_utc_strategy()),
+                any::<AllocationReason>(),
+                of("[a-zA-Z0-9]{1,20}"),
+            )
+                .prop_map(
+                    |(
+                        id,
+                        for_resource,
+                        for_aggregate,
+                        started,
+                        ended,
+                        reason_started,
+                        reason_ended,
+                    )| Allocation {
+                        id,
+                        for_resource,
+                        for_aggregate,
+                        started,
+                        ended,
+                        reason_started,
+                        reason_ended,
+                    },
+                )
+                .boxed()
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn test_allocation_model(allocation in Allocation::arbitrary()) {
+            block_on_runtime!({
+                let client = new_client().await;
+                prop_assert!(client.is_ok(), "DB connection failed: {:?}", client.err());
+                let mut client = client.unwrap();
+
+                let transaction = client.easy_transaction().await;
+                prop_assert!(transaction.is_ok(), "Transaction creation failed: {:?}", transaction.err());
+                let mut transaction = transaction.unwrap();
+
+                let resource_handle_insert_result = insert_default_model_at(allocation.for_resource, &mut transaction).await;
+                prop_assert!(resource_handle_insert_result.is_ok(), "Failed to prepare test environment: {:?}", resource_handle_insert_result.err());
+
+                if let Some(agg) = allocation.for_aggregate {
+                    let aggregate_insert_result = Aggregate::insert_default_at(agg, &mut transaction).await;
+                    prop_assert!(aggregate_insert_result.is_ok(), "Failed to prepare test environment: {:?}", aggregate_insert_result.err());
+                }
+
+
+                let new_row = NewRow::new(allocation.clone());
+                let insert_result = new_row.insert(&mut transaction).await;
+                prop_assert!(insert_result.is_ok(), "Insert failed: {:?}", insert_result.err());
+
+                let retrieved_allocation = Allocation::select()
+                    .where_field("id")
+                    .equals(allocation.id)
+                    .run(&mut transaction)
+                    .await;
+
+                prop_assert!(retrieved_allocation.is_ok(), "Retrieval failed: {:?}", retrieved_allocation.err());
+                let retrieved_allocation_vec = retrieved_allocation.unwrap();
+
+                let first_allocation = retrieved_allocation_vec.first();
+                prop_assert!(first_allocation.is_some(), "No Allocation found, empty result");
+
+                let retrieved_allocation = first_allocation.unwrap().clone().into_inner();
+                prop_assert_eq!(retrieved_allocation, allocation);
+
+                Ok(())
+
+            })?
+        }
     }
 }

@@ -1,9 +1,14 @@
-# LibLaas
+# LaaS Reference Lab
 
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/anuket-project/laas-reflab/badge)](https://scorecard.dev/viewer/?uri=github.com/anuket-project/laas-reflab)
 
-LibLaas is a service designed to manage the testing, deployment and provisioning of server instances for LaaS (Lab as a Service) testing related
-to the LFEdge and Anuket projects. LibLaas was originally built to fit within the IOL's infrastructure and technology stack, but is designed
+The LaaS Reference Lab (laas-reflab) project is the reference lab backend implementation for the Lab as a Service project. It is designed to work with the [Lab as a Service Dashboard](https://github.com/anuket-project/laas).
+
+The backend is responsible for resource provisioning and interfacing with external services required to grant access to provisioned resources.
+
+# LibLaaS
+
+LibLaaS is the interface between the LaaS dashboard and the provisioning workflows. It was originally built to fit within the IOL's infrastructure and technology stack, but is designed
 to be general purpose and should support any infrastructure as long as it is appropriately configured.
 
 ## Features
@@ -41,8 +46,6 @@ For more information on each workspace, please refer to the respective module's 
 
 Everything should be accessible through the makefile in the root of the repository.
 The following commands are available:
-
-> _"We have a gross abuse of makefiles here at the IOL" ~ Justin_
 
 ```sh
 make build # build the `laas-reflab` rust binary inside a container
