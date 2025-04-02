@@ -2,7 +2,7 @@
 version: 2
 plan:
   project-key: OST
-  key: LTB
+  key: OSTLTB
   name: LibLaas Tascii Build
 stages:
   - Initialize:
@@ -157,6 +157,7 @@ publish:
         docker image rm -f nexus.iol.unh.edu:9000/ost-laas-reflab-influxdb-backup:${bamboo.inject.DATETAG}
         echo "images removed"
       description: Build docker image for liblaas-Tacii
+
   artifacts:
   - name: laas_dev
     location: ./laas-dev
@@ -174,53 +175,9 @@ publish:
     required: true
   artifact-subscriptions: []
 
-# repositories:
-# - laas-reflab(tascii):
-#     type: bitbucket-server
-#     server: UNH-IOL Bitbucket
-#     project: OST
-#     slug: laas-reflab
-#     clone-url: ssh://git@bitbucket.iol.unh.edu:7999/ost/laas-reflab.git
-#     public-key: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEDuvjws4SdE3lHcxDuJVoMhlWtnBqnL1FtdhHfqdUZd https://bamboo.iol.unh.edu
-#     private-key: BAMSCRT@0@0@lb4LppM6k16hFRg6+e8ub9NTYKa1PZhUC5vyvYATMhQpFg8cLE/9z8kuvlVmBp38kCsTA3gqv4lGIuqQ10BvfZU+1M2Txlm/0xx2hSKS/VKXP24ve13xsbKalP07WTVe301api0xPY0GZoYAjcqoiCsKa+6bTgsk3m9e4uOrra9y5a2HHVABW05Yb553jj++2HqJ8eSzEYsisjJtVSdN6NVo6xbD0GZUqmXAe+oXFuyvwqETe/+eO+6o/CKSA9+lxT6ontMUfGJsCSL1ZEVSJ0mipvMTiqj4/o7jOdg9lAhaM00vx+rewH0LLAOMgoRc2iQksga2e+p+sZFBiGVLNcGZGZ6G/V/M69kGbXRFLGJ/wVH2O94nfrNhDKZ6EPrj63siczBqVNaVmstrC9tg2ZW61i8mqChUP4KIefzG3VrxRzGJ5Kwqk2pppxdq26gF07SU6aECM+PZD8tBCjnYX9bwlvYWkYh98xaJPiN0eNBVLFELQXTzucsmZtEyZwTCfsfFS+PgSqAmpCIs8AcQGw==
-#     branch: main
-#     viewer: com.atlassian.bamboo.plugins.stash.atlassian-bamboo-plugin-stash:bbServerViewer```
-
 triggers:
   - remote
 
 branches:
   create: for-new-branch
-
-notifications: []
-
-labels: []
-
-dependencies:
-  require-all-stages-passing: false
-  enabled-for-branches: true
-  block-strategy: none
-  plans: []
-
-other:
-  concurrent-build-plugin: system-default
-
----
-version: 2
-plan: LTB
-
-plan-permissions:
-- users:
-  - sorlych
-  - probb
-  - knelson
-  groups:
-  - opnfv-developers
-  permissions:
-  - view
-  - edit
-  - build
-  - clone
-  - admin
-...
 
