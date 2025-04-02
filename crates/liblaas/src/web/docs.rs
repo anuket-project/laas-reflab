@@ -8,8 +8,7 @@ use std::sync::Arc;
 use aide::{
     axum::{
         routing::{get, get_with},
-        ApiRouter,
-        IntoApiResponse,
+        ApiRouter, IntoApiResponse,
     },
     openapi::OpenApi,
     redoc::Redoc,
@@ -17,7 +16,7 @@ use aide::{
 use axum::{response::IntoResponse, Extension};
 
 use super::AppState;
-use axum::{extract::Json};
+use axum::extract::Json;
 
 pub fn docs_routes(state: AppState) -> ApiRouter {
     // We infer the return types for these routes

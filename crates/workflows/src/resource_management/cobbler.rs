@@ -3,7 +3,10 @@ use std::{collections::HashMap, path::Path};
 use config::settings;
 use dal::{new_client, AsEasyTransaction, DBTable, FKey, ID};
 
-use models::{dashboard, inventory::{self, Host}};
+use models::{
+    dashboard,
+    inventory::{self, Host},
+};
 use pyo3::{prelude::*, types::PyAny};
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -35,7 +38,6 @@ impl CobblerConfig {
         mailbox_endpoint: Option<Endpoint>,
         preimage_endpoint: Option<Endpoint>,
     ) -> CobblerConfig {
-
         let ci_url = format!(
             "{}/{}",
             config::settings().mailbox.external_url.clone(),
@@ -48,11 +50,17 @@ impl CobblerConfig {
         ];
 
         if let Some(mailbox_endpoint) = mailbox_endpoint {
-            kargs.push(("inbox_target".to_owned(), format!("{}/push", mailbox_endpoint.to_url())));
+            kargs.push((
+                "inbox_target".to_owned(),
+                format!("{}/push", mailbox_endpoint.to_url()),
+            ));
         }
 
         if let Some(preimage_endpoint) = preimage_endpoint {
-            kargs.push(("pre_image_target".to_owned(), format!("{}/push", preimage_endpoint.to_url())));
+            kargs.push((
+                "pre_image_target".to_owned(),
+                format!("{}/push", preimage_endpoint.to_url()),
+            ));
         }
 
         CobblerConfig {
@@ -60,17 +68,13 @@ impl CobblerConfig {
             image: image_cobbler_name,
         }
     }
-
 }
 
 pub struct CobblerActions {}
 
 impl ModuleInitializer for CobblerActions {
     fn init(py: Python<'_>) -> &PyAny {
-        let config::CobblerConfig {
-            api,
-            ssh
-        } = config::settings().cobbler.clone();
+        let config::CobblerConfig { api, ssh } = config::settings().cobbler.clone();
 
         let config: HashMap<&str, String> =
             hashmap! { "url" => api.url, "user" => api.username, "pass" => api.password };
@@ -211,16 +215,17 @@ pub fn generate_soft_serial(length: usize) -> String {
 ///
 /// Returns [`Ok`] or [`anyhow::Error`]
 ///
-pub async fn override_system_grub_config(host: &Host, config_content: &str) -> Result<(), anyhow::Error> {
-
+pub async fn override_system_grub_config(
+    host: &Host,
+    config_content: &str,
+) -> Result<(), anyhow::Error> {
     let mut client = new_client().await?;
     let mut transaction = client.easy_transaction().await?;
 
     // Get mac addresses
     let host_ports = host.ports(&mut transaction).await?;
-    
-    let mac_address_filenames: Vec<String> =
-        host_ports
+
+    let mac_address_filenames: Vec<String> = host_ports
         .iter()
         .map(|host_port| format!("{}", host_port.mac).to_ascii_lowercase())
         .collect();
@@ -229,10 +234,15 @@ pub async fn override_system_grub_config(host: &Host, config_content: &str) -> R
     let cobbler = settings().cobbler.clone();
     let mut session =
         ssh2::Session::new().expect("Failed to create a new SSH session for cobbler.");
-    let connection = std::net::TcpStream::connect(format!("{}:{}", cobbler.ssh.address, cobbler.ssh.port)).expect(
-        format!("Failed to open TCP stream to cobbler at {}:{}.", cobbler.ssh.address, cobbler.ssh.port).as_str(),
-    );
-
+    let connection =
+        std::net::TcpStream::connect(format!("{}:{}", cobbler.ssh.address, cobbler.ssh.port))
+            .expect(
+                format!(
+                    "Failed to open TCP stream to cobbler at {}:{}.",
+                    cobbler.ssh.address, cobbler.ssh.port
+                )
+                .as_str(),
+            );
 
     session.set_tcp_stream(connection);
     session.handshake().unwrap();
@@ -246,22 +256,26 @@ pub async fn override_system_grub_config(host: &Host, config_content: &str) -> R
     let system_directory = &cobbler.ssh.system_directory; // /srv/tftpboot/grub/system
 
     for filename in &mac_address_filenames {
-
         // Cannot sftp with elevated privileges, so we need to place in an accessible directory first then move after.
         let remote_temp_path = &format!("{writable_directory}/{filename}");
 
-        std::io::Write::write_all(&mut sftp.open_mode(
-            Path::new(&remote_temp_path),
-            ssh2::OpenFlags::CREATE | ssh2::OpenFlags::WRITE | ssh2::OpenFlags::TRUNCATE,
-            0o644,
-            ssh2::OpenType::File
-        ).unwrap(), config_content.as_bytes()).unwrap();
+        std::io::Write::write_all(
+            &mut sftp
+                .open_mode(
+                    Path::new(&remote_temp_path),
+                    ssh2::OpenFlags::CREATE | ssh2::OpenFlags::WRITE | ssh2::OpenFlags::TRUNCATE,
+                    0o644,
+                    ssh2::OpenType::File,
+                )
+                .unwrap(),
+            config_content.as_bytes(),
+        )
+        .unwrap();
 
         info!("Writing grub config to {}", &remote_temp_path);
 
         // Channels cannot be reused
-        let mut channel = session
-        .channel_session()?;
+        let mut channel = session.channel_session()?;
 
         info!("Copying grub config from {remote_temp_path} to {system_directory}");
 
@@ -269,5 +283,4 @@ pub async fn override_system_grub_config(host: &Host, config_content: &str) -> R
     }
 
     Ok(())
-
 }

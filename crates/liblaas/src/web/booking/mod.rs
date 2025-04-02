@@ -89,7 +89,7 @@ pub struct InstanceStatus {
     logs: Vec<InstanceStatusUpdate>,
     assigned_host_info: Option<AssignedHostInfo>,
     host_alias: String,
-    soft_serial: Option<String> // Not ideal but adding this here is the path of least resistance
+    soft_serial: Option<String>, // Not ideal but adding this here is the path of least resistance
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]

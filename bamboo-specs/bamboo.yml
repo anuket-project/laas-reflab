@@ -1,0 +1,226 @@
+---
+version: 2
+plan:
+  project-key: OST
+  key: LTB
+  name: LibLaas Tascii Build
+stages:
+  - Initialize:
+      jobs:
+        - ci_build
+        - create_test_database
+  - Run Checks:
+      jobs:
+        - check
+        - format
+        - clippy
+        - audit
+        - machete
+        - test
+  - Build:
+      jobs:
+        - build
+  - Deploy:
+      jobs:
+        - publish
+
+ci_build:
+  tasks:
+    - checkout:
+        force-clean-build: false
+    - script:
+        interpreter: SHELL
+        scripts:
+          - docker -t liblaas-ci --file build bamboo-specs/
+
+create_test_database:
+  tasks:
+    - script:
+        interpreter: SHELL
+        scripts:
+          - docker stop test_db > /dev/null 2>&1 || true
+          - docker rm test_db > /dev/null 2>&1 || true
+          - docker run --rm --name test_db \
+              -e POSTGRES_USER=postgres \
+              -e POSTGRES_DB=liblaas \
+              -e POSTGRES_PASSWORD=password \
+              -p 5432:5432 \
+              -d postgres:15-alpine -N 1000
+
+check:
+  tasks:
+    - script:
+        description: "Validate Source Code"
+        interpreter: SHELL
+        scripts:
+          - docker run --rm -v "$(pwd)":/app -w /app liblaas-ci cargo make check
+
+format:
+  tasks:
+    - script:
+        description: "Check Formatting"
+        interpreter: SHELL
+        scripts:
+          - docker run --rm -v "$(pwd)":/app -w /app liblaas-ci cargo make fmt
+
+clippy:
+  tasks:
+    - script:
+        description: "Check Code Style"
+        interpreter: SHELL
+        scripts:
+          - docker run --rm -v "$(pwd)":/app -w /app liblaas-ci cargo make clippy
+
+audit:
+  tasks:
+    - script:
+        interpreter: SHELL
+        description: "Audit Dependencies"
+        scripts:
+          - docker run --rm -v "$(pwd)":/app -w /app liblaas-ci bash -c "cargo make audit > audit_output.txt || true"
+
+machete:
+  tasks:
+    - script:
+        interpreter: SHELL
+        description: "Check for Unnused Dependencies"
+        scripts:
+          - docker run --rm -v "$(pwd)":/app -w /app liblaas-ci bash -c "cargo make machete > machete_output.txt || true"
+
+test:
+  tasks:
+    - script:
+        interpreter: SHELL
+        description: "Run Unit Tests"
+        scripts:
+          - docker run --rm -v "$(pwd)":/app -w /app liblaas-ci cargo make nextest-ci
+  final-tasks:
+    - test-parser:
+        type: junit
+        test-results:
+          - target/nextest/ci/junit.xml
+
+build:
+  tasks:
+    - script:
+        interpreter: SHELL
+        description: "Build Docker Image"
+        scripts:
+          - docker build .
+
+publish:
+  tasks:
+  - checkout:
+      force-clean-build: false
+      description: Checkout branch from repo
+  - script:
+      interpreter: SHELL
+      scripts:
+      - cp example.env .env
+      description: Copy env
+  final-tasks:
+  - script:
+      interpreter: SHELL
+      scripts:
+      - |-
+        touch ./job-variables.txt
+        DATE=$(date +%Y-%m-%d-${bamboo.buildNumber})
+        echo "DATETAG=$DATE" >> ./job-variables.txt
+      description: Write date to file for later use
+  - inject-variables:
+      file: job-variables.txt
+      scope: RESULT
+      namespace: inject
+      description: Inject date variable
+  - script:
+      interpreter: SHELL
+      scripts:
+      - |-
+        ls
+        TASCII_IMAGE=ost-ltb-job1-liblaas
+        METRICS_IMAGE=laas-grafana
+        REFLAB_INFLUXDB_BACKUP=ost-ltb-job1-influxdb-backup
+        docker compose -f docker-compose.yml -f docker-compose.metrics.yml build
+        docker tag $TASCII_IMAGE:latest nexus.iol.unh.edu:9000/ost-laas-reflab-liblass:${bamboo.inject.DATETAG}
+        docker tag $METRICS_IMAGE:latest nexus.iol.unh.edu:9000/ost-laas-reflab-grafana:${bamboo.inject.DATETAG}
+        docker tag $REFLAB_INFLUXDB_BACKUP:latest nexus.iol.unh.edu:9000/ost-laas-reflab-influxdb-backup:${bamboo.inject.DATETAG}
+        echo "saving images"
+        docker save -o dated_tascii_image.tar nexus.iol.unh.edu:9000/ost-laas-reflab-liblass:${bamboo.inject.DATETAG}
+        docker save -o dated_grafana_image.tar nexus.iol.unh.edu:9000/ost-laas-reflab-grafana:${bamboo.inject.DATETAG}
+        docker save -o dated_refluxdb_backup_image.tar nexus.iol.unh.edu:9000/ost-laas-reflab-influxdb-backup:${bamboo.inject.DATETAG}
+        echo "images saved"
+        docker image rm -f $TASCII_IMAGE:latest
+        docker image rm -f $METRICS_IMAGE:latest
+        docker image rm -f $REFLAB_INFLUXDB_BACKUP:latest
+        docker image rm -f nexus.iol.unh.edu:9000/ost-laas-reflab-liblass:${bamboo.inject.DATETAG}
+        docker image rm -f nexus.iol.unh.edu:9000/ost-laas-reflab-grafana:${bamboo.inject.DATETAG}
+        docker image rm -f nexus.iol.unh.edu:9000/ost-laas-reflab-influxdb-backup:${bamboo.inject.DATETAG}
+        echo "images removed"
+      description: Build docker image for liblaas-Tacii
+  artifacts:
+  - name: laas_dev
+    location: ./laas-dev
+    pattern: '**/*'
+    shared: true
+    required: false
+  - name: integration_test
+    location: laas/src/test
+    pattern: '**/*.py'
+    shared: true
+    required: false
+  - name: Images for tascii
+    pattern: '**/*.tar'
+    shared: true
+    required: true
+  artifact-subscriptions: []
+
+# repositories:
+# - laas-reflab(tascii):
+#     type: bitbucket-server
+#     server: UNH-IOL Bitbucket
+#     project: OST
+#     slug: laas-reflab
+#     clone-url: ssh://git@bitbucket.iol.unh.edu:7999/ost/laas-reflab.git
+#     public-key: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEDuvjws4SdE3lHcxDuJVoMhlWtnBqnL1FtdhHfqdUZd https://bamboo.iol.unh.edu
+#     private-key: BAMSCRT@0@0@lb4LppM6k16hFRg6+e8ub9NTYKa1PZhUC5vyvYATMhQpFg8cLE/9z8kuvlVmBp38kCsTA3gqv4lGIuqQ10BvfZU+1M2Txlm/0xx2hSKS/VKXP24ve13xsbKalP07WTVe301api0xPY0GZoYAjcqoiCsKa+6bTgsk3m9e4uOrra9y5a2HHVABW05Yb553jj++2HqJ8eSzEYsisjJtVSdN6NVo6xbD0GZUqmXAe+oXFuyvwqETe/+eO+6o/CKSA9+lxT6ontMUfGJsCSL1ZEVSJ0mipvMTiqj4/o7jOdg9lAhaM00vx+rewH0LLAOMgoRc2iQksga2e+p+sZFBiGVLNcGZGZ6G/V/M69kGbXRFLGJ/wVH2O94nfrNhDKZ6EPrj63siczBqVNaVmstrC9tg2ZW61i8mqChUP4KIefzG3VrxRzGJ5Kwqk2pppxdq26gF07SU6aECM+PZD8tBCjnYX9bwlvYWkYh98xaJPiN0eNBVLFELQXTzucsmZtEyZwTCfsfFS+PgSqAmpCIs8AcQGw==
+#     branch: main
+#     viewer: com.atlassian.bamboo.plugins.stash.atlassian-bamboo-plugin-stash:bbServerViewer```
+
+triggers:
+  - remote
+
+branches:
+  create: for-new-branch
+
+notifications: []
+
+labels: []
+
+dependencies:
+  require-all-stages-passing: false
+  enabled-for-branches: true
+  block-strategy: none
+  plans: []
+
+other:
+  concurrent-build-plugin: system-default
+
+---
+version: 2
+plan: LTB
+
+plan-permissions:
+- users:
+  - sorlych
+  - probb
+  - knelson
+  groups:
+  - opnfv-developers
+  permissions:
+  - view
+  - edit
+  - build
+  - clone
+  - admin
+...
+

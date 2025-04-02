@@ -11,7 +11,6 @@ POSTGRES_IMAGE = "postgres:15-alpine"
 CONTAINER_NAME = "test_db"
 
 [tasks.create-docker-db]
-# requires docker
 workspace = false
 script_runner = "@shell"
 script = '''
@@ -32,11 +31,49 @@ docker run \
 workspace = false
 install_crate = "sqlx-cli"
 command = "cargo"
-args = ["sqlx", "migrate", "run", "--database-url", "${DATABASE_URL}"]
+args = ["sqlx", "migrate", "run"]
 env = { "DATABASE_URL" = "${DATABASE_URL}" }
+condition = { env_set = ["DATABASE_URL"] }
 
 [tasks.nextest]
-args = ["nextest", "run", "--workspace"]
-command = "cargo"
 workspace = false
 install_crate = "cargo-nextest"
+command = "cargo"
+args = ["nextest", "run"]
+condition = { env_set = ["DATABASE_URL"] }
+
+[tasks.check]
+workspace = false
+install_crate = "cargo-limit"
+command = "cargo"
+args = ["lcheck"]
+
+[tasks.nextest-ci]
+workspace = false
+install_crate = "cargo-nextest"
+command = "cargo"
+args = ["nextest", "run", "--profile", "ci"]
+condition = { env_set = ["DATABASE_URL"] }
+
+[tasks.clippy]
+workspace = false
+command = "cargo"
+install_crate = "cargo-limit"
+args = ["lclippy", "--all-targets", "--all-features", "--", "-D", "warnings"]
+
+[tasks.fmt]
+workspace = false
+command = "cargo"
+args = ["fmt", "--all", "--check"]
+
+[tasks.audit]
+workspace = false
+install_crate = "cargo-audit"
+command = "cargo"
+args = ["audit"]
+
+[tasks.machete]
+workspace = false
+install_crate = "cargo-machete"
+command = "cargo"
+args = ["machete"]

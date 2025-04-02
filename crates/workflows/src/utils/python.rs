@@ -9,7 +9,8 @@ use pyo3::{
 use std::{collections::HashMap, marker::PhantomData};
 
 pub struct PythonBuilder<Module>
-where Module: ModuleInitializer
+where
+    Module: ModuleInitializer,
 {
     args: Vec<Box<dyn DynIntoPy>>,
     kwargs: HashMap<String, Box<dyn DynIntoPy>>,
@@ -28,13 +29,15 @@ pub trait DynIntoPy {
 }
 
 struct DynIntoPyHolder<T>
-where T: IntoPy<Py<PyAny>>
+where
+    T: IntoPy<Py<PyAny>>,
 {
     content: Option<Box<T>>,
 }
 
 impl<T> DynIntoPy for DynIntoPyHolder<T>
-where T: IntoPy<Py<PyAny>>
+where
+    T: IntoPy<Py<PyAny>>,
 {
     fn into_py(&mut self, py: Python<'_>) -> Py<PyAny> {
         //self.content.into_py(py)
@@ -43,7 +46,8 @@ where T: IntoPy<Py<PyAny>>
 }
 
 impl<T> DynIntoPyHolder<T>
-where T: IntoPy<Py<PyAny>>
+where
+    T: IntoPy<Py<PyAny>>,
 {
     pub fn new(t: T) -> Box<Self> {
         Box::new(Self {
@@ -53,10 +57,13 @@ where T: IntoPy<Py<PyAny>>
 }
 
 impl<Module> PythonBuilder<Module>
-where Module: ModuleInitializer
+where
+    Module: ModuleInitializer,
 {
     pub fn command<S>(s: S) -> PythonBuilder<Module>
-    where S: Into<String> {
+    where
+        S: Into<String>,
+    {
         Self {
             func: s.into(),
             args: Vec::new(),
@@ -66,7 +73,9 @@ where Module: ModuleInitializer
     }
 
     pub fn arg<A>(mut self, a: A) -> Self
-    where A: IntoPy<Py<PyAny>> + 'static {
+    where
+        A: IntoPy<Py<PyAny>> + 'static,
+    {
         self.args.push(DynIntoPyHolder::new(a));
         self
     }

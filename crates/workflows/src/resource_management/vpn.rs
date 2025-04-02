@@ -148,4 +148,3 @@ async fn correct_groups_for_user(
         Err(e) => Err(anyhow::Error::msg(e.to_string())),
     }
 }
-

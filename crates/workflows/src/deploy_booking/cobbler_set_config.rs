@@ -14,7 +14,7 @@ use crate::resource_management::{cobbler::CobblerConfig, mailbox::Endpoint};
 #[derive(Debug, Hash, Clone, Serialize, Deserialize)]
 pub struct CobblerSetConfiguration {
     pub host_id: FKey<Host>,
-    pub config: CobblerConfig
+    pub config: CobblerConfig,
 }
 
 #[pyclass]
@@ -56,10 +56,7 @@ impl AsyncRunnable for CobblerSetConfiguration {
 
             let host_name = host.server_name.clone();
 
-            let config::CobblerConfig {
-                api,
-                ssh
-            } = config::settings().cobbler.clone();
+            let config::CobblerConfig { api, ssh } = config::settings().cobbler.clone();
 
             let locals = hashmap! {
                 "config" => hashmap! {
