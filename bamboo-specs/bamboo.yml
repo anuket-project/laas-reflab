@@ -31,7 +31,7 @@ ci_build:
     - script:
         interpreter: SHELL
         scripts:
-          - docker -t liblaas-ci --file build bamboo-specs/
+          - docker build -f ./bamboo-specs/Dockerfile ./bamboo-specs
 
 create_test_database:
   tasks:
