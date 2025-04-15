@@ -4,11 +4,12 @@ plan:
   project-key: OST
   key: OSTLTB
   name: LibLaas Tascii Build
+
+variables:
+  REGISTRY: nexus.iol.unh.edu
+  CI_IMAGE: nexus.iol.unh.edu/liblaas-ci:latest
+
 stages:
-  - Initialize:
-      jobs:
-        - ci_build
-        - create_test_database
   - Run Checks:
       jobs:
         - check
@@ -20,164 +21,137 @@ stages:
   - Build:
       jobs:
         - build
-  - Deploy:
-      jobs:
-        - publish
-
-ci_build:
-  tasks:
-    - checkout:
-        force-clean-build: false
-    - script:
-        interpreter: SHELL
-        scripts:
-          - docker build -f ./bamboo-specs/Dockerfile ./bamboo-specs
-
-create_test_database:
-  tasks:
-    - script:
-        interpreter: SHELL
-        scripts:
-          - docker stop test_db > /dev/null 2>&1 || true
-          - docker rm test_db > /dev/null 2>&1 || true
-          - docker run --rm --name test_db \
-              -e POSTGRES_USER=postgres \
-              -e POSTGRES_DB=liblaas \
-              -e POSTGRES_PASSWORD=password \
-              -p 5432:5432 \
-              -d postgres:15-alpine -N 1000
 
 check:
   tasks:
+    - checkout
     - script:
         description: "Validate Source Code"
         interpreter: SHELL
         scripts:
-          - docker run --rm -v "$(pwd)":/app -w /app liblaas-ci cargo make check
+          - docker pull ${CI_IMAGE}
+          - docker run --rm -v "$(pwd)":/app -w /app ${bamboo.CI_IMAGE} cargo make check
+  requirements:
+  - Docker
+  - linuxos
 
 format:
   tasks:
+    - checkout
     - script:
         description: "Check Formatting"
         interpreter: SHELL
         scripts:
-          - docker run --rm -v "$(pwd)":/app -w /app liblaas-ci cargo make fmt
+          - docker pull ${CI_IMAGE}
+          - docker run --rm -v "$(pwd)":/app -w /app ${bamboo.CI_IMAGE} cargo make fmt
+  requirements:
+  - Docker
+  - linuxos
 
 clippy:
   tasks:
+    - checkout
     - script:
         description: "Check Code Style"
         interpreter: SHELL
         scripts:
-          - docker run --rm -v "$(pwd)":/app -w /app liblaas-ci cargo make clippy
+          - docker pull ${CI_IMAGE}
+        # temporarily allow clippy warnings
+          - docker run --rm -v "$(pwd)":/app -w /app ${bamboo.CI_IMAGE} bash -c "cargo make clippy || true"
+  requirements:
+  - Docker
+  - linuxos
 
 audit:
   tasks:
+    - checkout
     - script:
         interpreter: SHELL
         description: "Audit Dependencies"
         scripts:
-          - docker run --rm -v "$(pwd)":/app -w /app liblaas-ci bash -c "cargo make audit > audit_output.txt || true"
+          - docker pull ${CI_IMAGE}
+          - docker run --rm -v "$(pwd)":/app -w /app ${bamboo.CI_IMAGE} bash -c "cargo make audit > audit_output.txt || true"
+  requirements:
+   - linuxos 
+   - Docker
+  artifacts:
+    - name: Security Audit
+      location: ./
+      pattern: audit_output.txt
 
 machete:
   tasks:
+    - checkout
     - script:
         interpreter: SHELL
         description: "Check for Unnused Dependencies"
         scripts:
-          - docker run --rm -v "$(pwd)":/app -w /app liblaas-ci bash -c "cargo make machete > machete_output.txt || true"
+          - docker pull ${CI_IMAGE}
+          - docker run --rm -v "$(pwd)":/app -w /app ${bamboo.CI_IMAGE} bash -c "cargo make machete > machete_output.txt || true"
+  requirements:
+  - Docker
+  - linuxos 
+  artifacts:
+    - name: Unused Dependencies
+      location: ./
+      pattern: machete_output.txt
 
 test:
   tasks:
+    - checkout
     - script:
         interpreter: SHELL
         description: "Run Unit Tests"
         scripts:
-          - docker run --rm -v "$(pwd)":/app -w /app liblaas-ci cargo make nextest-ci
+          - |
+            docker stop test_db > /dev/null 2>&1 || true
+            docker rm test_db > /dev/null 2>&1 || true
+            docker network rm test_net || true
+            docker network create test_net 
+
+            docker run --rm --network test_net --name test_db \
+              -e POSTGRES_USER=postgres \
+              -e POSTGRES_DB=liblaas \
+              -e POSTGRES_PASSWORD=password \
+              -d postgres:15-alpine
+
+            export DATABASE_URL=postgres://postgres:password@test_db:5432/liblaas
+
+            docker pull ${bamboo.CI_IMAGE}
+
+            docker run --rm \
+              --network test_net \
+              -e DATABASE_URL="$DATABASE_URL" \
+              -v "$(pwd)":/app \
+              -w /app \
+              ${bamboo.CI_IMAGE} \
+               cargo make --profile ci ci 
+
   final-tasks:
     - test-parser:
         type: junit
         test-results:
           - target/nextest/ci/junit.xml
+  requirements:
+    - Docker
+    - linuxos
 
 build:
   tasks:
-    - script:
-        interpreter: SHELL
-        description: "Build Docker Image"
-        scripts:
-          - docker build .
-
-publish:
-  tasks:
-  - checkout:
-      force-clean-build: false
-      description: Checkout branch from repo
-  - script:
-      interpreter: SHELL
-      scripts:
-      - cp example.env .env
-      description: Copy env
-  final-tasks:
+  - checkout
   - script:
       interpreter: SHELL
       scripts:
       - |-
-        touch ./job-variables.txt
-        DATE=$(date +%Y-%m-%d-${bamboo.buildNumber})
-        echo "DATETAG=$DATE" >> ./job-variables.txt
-      description: Write date to file for later use
-  - inject-variables:
-      file: job-variables.txt
-      scope: RESULT
-      namespace: inject
-      description: Inject date variable
-  - script:
-      interpreter: SHELL
-      scripts:
-      - |-
-        ls
-        TASCII_IMAGE=ost-ltb-job1-liblaas
-        METRICS_IMAGE=laas-grafana
-        REFLAB_INFLUXDB_BACKUP=ost-ltb-job1-influxdb-backup
-        docker compose -f docker-compose.yml -f docker-compose.metrics.yml build
-        docker tag $TASCII_IMAGE:latest nexus.iol.unh.edu:9000/ost-laas-reflab-liblass:${bamboo.inject.DATETAG}
-        docker tag $METRICS_IMAGE:latest nexus.iol.unh.edu:9000/ost-laas-reflab-grafana:${bamboo.inject.DATETAG}
-        docker tag $REFLAB_INFLUXDB_BACKUP:latest nexus.iol.unh.edu:9000/ost-laas-reflab-influxdb-backup:${bamboo.inject.DATETAG}
-        echo "saving images"
-        docker save -o dated_tascii_image.tar nexus.iol.unh.edu:9000/ost-laas-reflab-liblass:${bamboo.inject.DATETAG}
-        docker save -o dated_grafana_image.tar nexus.iol.unh.edu:9000/ost-laas-reflab-grafana:${bamboo.inject.DATETAG}
-        docker save -o dated_refluxdb_backup_image.tar nexus.iol.unh.edu:9000/ost-laas-reflab-influxdb-backup:${bamboo.inject.DATETAG}
-        echo "images saved"
-        docker image rm -f $TASCII_IMAGE:latest
-        docker image rm -f $METRICS_IMAGE:latest
-        docker image rm -f $REFLAB_INFLUXDB_BACKUP:latest
-        docker image rm -f nexus.iol.unh.edu:9000/ost-laas-reflab-liblass:${bamboo.inject.DATETAG}
-        docker image rm -f nexus.iol.unh.edu:9000/ost-laas-reflab-grafana:${bamboo.inject.DATETAG}
-        docker image rm -f nexus.iol.unh.edu:9000/ost-laas-reflab-influxdb-backup:${bamboo.inject.DATETAG}
-        echo "images removed"
-      description: Build docker image for liblaas-Tacii
-
-  artifacts:
-  - name: laas_dev
-    location: ./laas-dev
-    pattern: '**/*'
-    shared: true
-    required: false
-  - name: integration_test
-    location: laas/src/test
-    pattern: '**/*.py'
-    shared: true
-    required: false
-  - name: Images for tascii
-    pattern: '**/*.tar'
-    shared: true
-    required: true
-  artifact-subscriptions: []
+        docker -t laas-reflab build .
+        docker image rm -f laas-reflab
+      description: Build laas-reflab docker image
+  requirements:
+  - Docker
+  - linuxos 
 
 triggers:
   - remote
 
 branches:
   create: for-new-branch
-

@@ -423,7 +423,7 @@ mod tests {
 
     proptest! {
         #[test]
-        fn first_template_model(template in any::<Template>()) {
+        fn test_template_model(template in any::<Template>()) {
             block_on_runtime!({
                 let client = new_client().await;
                 prop_assert!(client.is_ok(), "DB connection failed: {:?}", client.err());

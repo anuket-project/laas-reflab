@@ -21,7 +21,7 @@ use models::{
     },
     inventory::{
         self, Arch, CardType, DataUnit, DataValue, Flavor, Host, HostPort, IPInfo, IPNetwork,
-        InterfaceFlavor, Lab, Switch, SwitchOS, SwitchPort, Version, Vlan,
+        InterfaceFlavor, Lab, Switch, SwitchOS, SwitchPort, Vlan,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -304,15 +304,10 @@ async fn create_switch_os(
 ) -> Result<FKey<SwitchOS>, anyhow::Error> {
     let s_os_id = FKey::new_id_dangling();
     let s_os = SwitchOS {
-        id: s_os_id.clone(),
+        id: s_os_id,
         os_type: switch_data["type"]["name"].as_str().unwrap().to_owned(),
-        version: match Version::from_str(switch_data["type"]["version"].as_str().unwrap()) {
-            Ok(v) => v,
-            Err(e) => return Err(anyhow::Error::msg(e.to_string())),
-        },
     };
     println!("{:?}", s_os);
-    println!("{}", s_os.version.to_string());
 
     Ok(NewRow::new(s_os)
         .insert(t)

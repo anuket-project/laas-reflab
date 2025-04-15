@@ -1,2 +1,5 @@
 [profile.ci.junit]
 path = "junit.xml"
+
+[profile.ci]
+fail-fast = false

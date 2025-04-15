@@ -69,6 +69,7 @@ impl DBTable for HostPort {
             ("switch", Box::new(clone.switch)),
             ("bus_addr", Box::new(clone.bus_addr)),
             ("bmc_vlan_id", Box::new(clone.bmc_vlan_id)),
+            ("management_vlan_id", Box::new(clone.management_vlan_id)),
             ("is_a", Box::new(self.is_a)),
         ];
 
