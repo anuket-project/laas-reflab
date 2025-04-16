@@ -97,51 +97,67 @@ dependencies = ["prepare", "install-llvm-cov"]
 # == CI Pipeline Tasks ==
 # Usage: cargo make [task] --profile ci
 
-# Full CI pipeline entry point
-# Usage: cargo make ci --profile ci
-[tasks.ci]
+# Run tests and output html code coverage artifact
+# # Usage: cargo make test-ci-coverage --profile ci
+[tasks.test-ci-coverage]
 workspace = false
 args = ["llvm-cov", "--workspace", "--html", "nextest", "--profile", "ci"]
 command = "cargo"
 dependencies = ["prepare", "install-llvm-cov"]
+
+# Full CI pipeline entry point
+# Usage: cargo make ci --profile ci
+[tasks.ci]
+workspace = false
+condition = { profiles = ["ci"] }
+script = [
+  'cp target/nextest/ci/junit.xml junit.xml',
+  'if [ "${CARGO_MAKE_PROFILE}" = "ci" ]; then echo "Cleaning target/ after tests..."; cargo clean; fi',
+]
+dependencies = ["test-ci-coverage"]
 
 # == Quality Control Tasks (Both Profiles) ==
 
 # Verify code formatting
 [tasks.fmt]
 workspace = false
-command = "cargo"
-args = ["fmt", "--all", "--check"]
+script = [
+  'cargo fmt --all --check',
+  'if [ "${CARGO_MAKE_PROFILE}" = "ci" ]; then echo "Cleaning target/ after fmt..."; cargo clean; fi',
+]
 
 # Run strict lint checks
 [tasks.clippy]
 workspace = false
 install_crate = "cargo-limit"
 env = { SQLX_OFFLINE = "true" }
-command = "cargo"
-args = ["lclippy", "--all-targets", "--all-features", "--", "-D", "warnings"]
-
-# Security vulnerability scanning
-[tasks.audit]
-workspace = false
-install_crate = "cargo-audit"
-command = "cargo"
-args = ["audit"]
+script = [
+  'cargo lclippy --all-targets --all-features -- -D warnings',
+  'if [ "${CARGO_MAKE_PROFILE}" = "ci" ]; then echo "Cleaning target/ after clippy..."; cargo clean; fi',
+]
 
 # Detect unused dependencies
 [tasks.machete]
 workspace = false
 install_crate = "cargo-machete"
-command = "cargo"
-args = ["machete"]
+script = [
+  # 1) run machete
+  'cargo machete',
+  # 2) if in CI, clean up afterwards
+  'if [ "${CARGO_MAKE_PROFILE}" = "ci" ]; then echo "Cleaning target/ after machete..."; cargo clean; fi',
+]
 
-# Detect unused dependencies
+
+# Full source‐code check
 [tasks.check]
+clear = true
 workspace = false
 env = { SQLX_OFFLINE = "true" }
-install_crate = "cargo-limit"
-command = "cargo"
-args = ["lcheck", "--all-targets", "--all-features"]
+script = [
+  'cargo lcheck --all-targets --all-features',
+  'if [ "${CARGO_MAKE_PROFILE}" = "ci" ]; then echo "Cleaning target/ after check..."; cargo clean; fi',
+]
+dependencies = ["install-limit"]
 
 
 # ========================
@@ -169,3 +185,8 @@ install_crate = "cargo-llvm-cov"
 [tasks.install-nextest]
 workspace = false
 install_crate = "cargo-nextest"
+
+# Cargo limit installation
+[tasks.install-limit]
+workspace = false
+install_crate = "cargo-limit"
