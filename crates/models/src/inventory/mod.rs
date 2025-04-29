@@ -5,8 +5,8 @@ mod switch;
 mod types;
 mod vlan;
 
-pub use flavor::{CardType, ExtraFlavorInfo, Flavor, ImportFlavor, InterfaceFlavor};
-pub use host::{Host, HostPort, ImportHost};
+pub use flavor::{CardType, ExtraFlavorInfo, Flavor, InterfaceFlavor};
+pub use host::{Host, HostPort};
 pub use lab::Lab;
 pub use switch::{Switch, SwitchOS, SwitchPort};
 pub use types::{Arch, BootTo, DataUnit, DataValue, IPInfo, IPNetwork};

@@ -1,6 +1,3 @@
-//! Copyright (c) 2023 University of New Hampshire
-//! SPDX-License-Identifier: MIT
-
 use common::prelude::*;
 
 use axum::{http::StatusCode, response::IntoResponse};

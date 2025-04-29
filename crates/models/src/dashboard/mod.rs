@@ -17,9 +17,3 @@ pub use network_assignment_map::NetworkAssignmentMap;
 pub use provision_log_event::ProvisionLogEvent;
 pub use template::Template;
 pub use types::*;
-
-// #[derive(Debug, Display, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-// pub enum InfraType {
-// Switch,
-// Server,
-// }

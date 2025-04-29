@@ -1,19 +1,23 @@
-use common::prelude::{itertools::Itertools, macaddr::MacAddr6, *};
-use dal::{web::AnyWay, *};
+use common::prelude::*;
+use dal::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{from_value, to_value};
 use std::collections::HashMap;
 
+use mac_address::MacAddress;
+use sqlx::FromRow;
+use sqlx::{query_as, PgPool};
+
 use crate::inventory::{DataValue, Host, InterfaceFlavor, SwitchPort};
 
-#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, FromRow)]
 pub struct HostPort {
     pub id: FKey<HostPort>,
     pub on_host: FKey<Host>,
     pub switchport: FKey<SwitchPort>,
     pub name: String,
     pub speed: DataValue,
-    pub mac: MacAddr6,
+    pub mac: MacAddress,
     pub switch: String,
     pub bus_addr: String,
     pub bmc_vlan_id: Option<i16>,
@@ -36,7 +40,12 @@ impl DBTable for HostPort {
 
     fn from_row(row: tokio_postgres::Row) -> Result<ExistingRow<Self>, anyhow::Error> {
         let speed: DataValue = from_value(row.try_get("speed")?)?;
-        let mac = from_value(row.try_get("mac")?)?;
+
+        // TODO: This is dumb but necessary for now because `tokio_postgres` doesn't implement
+        // to_sql for `mac_address::MacAddress` and we can't use `eui48::MacAddress` with sqlx
+        // once we fully deprecate `DBTable` this can be removed
+        let temp_mac: eui48::MacAddress = row.try_get("mac")?;
+        let mac = MacAddress::new(temp_mac.to_array());
 
         Ok(ExistingRow::from_existing(Self {
             id: row.try_get("id")?,
@@ -57,7 +66,16 @@ impl DBTable for HostPort {
         let clone = self.clone();
 
         let speed = to_value(clone.speed)?;
-        let mac = to_value(clone.mac)?;
+
+        // TODO: This is dumb but necessary for now because `tokio_postgres` doesn't implement
+        // to_sql for `mac_address::MacAddress` and we can't use `eui48::MacAddress` with sqlx
+        // once we fully deprecate `DBTable` this can be removed
+        let mac = eui48::MacAddress::from_bytes(&clone.mac.bytes()).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to convert mac_address::MacAddress to eui48::MacAddress as bytes: {}",
+                e
+            )
+        })?;
 
         let c: [(&str, Box<dyn ToSqlObject>); _] = [
             ("id", Box::new(self.id)),
@@ -78,19 +96,22 @@ impl DBTable for HostPort {
 }
 
 impl HostPort {
-    pub async fn all_for_host(
-        t: &mut EasyTransaction<'_>,
-        pk: FKey<Host>,
-    ) -> Result<Vec<HostPort>, anyhow::Error> {
-        let tn = <Self as DBTable>::table_name();
-        let q = format!("SELECT * FROM {tn} WHERE on_host = $1;");
+    /// Fetch all ports for a given host ID.
+    pub async fn all_for_host(pool: &PgPool, host_id: FKey<Host>) -> anyhow::Result<Vec<Self>> {
+        let sql = r#"
+            SELECT id, on_host, switchport, name,
+                   speed, mac, switch, bus_addr,
+                   bmc_vlan_id, management_vlan_id, is_a
+              FROM host_ports
+             WHERE on_host = $1
+        "#;
 
-        let rows = t.query(&q, &[&pk]).await.anyway()?;
+        let ports = query_as::<_, HostPort>(sql)
+            .bind(host_id)
+            .fetch_all(pool)
+            .await?;
 
-        Ok(Self::from_rows(rows)?
-            .into_iter()
-            .map(|er| er.into_inner())
-            .collect_vec())
+        Ok(ports)
     }
 }
 
@@ -99,7 +120,7 @@ mod test {
     use super::*;
     use prop::option::of;
     use proptest::prelude::*;
-    use testing_utils::{block_on_runtime, mac_addr6_strategy};
+    use testing_utils::{block_on_runtime, mac_address_strategy};
 
     pub fn host_port_strategy() -> impl Strategy<Value = HostPort> {
         (
@@ -108,7 +129,7 @@ mod test {
             any::<FKey<SwitchPort>>(),      // switchport
             "[a-zA-Z0-9-]{1,50}",           // name
             any::<DataValue>(),             // speed
-            mac_addr6_strategy(),           // mac
+            mac_address_strategy(),         // mac
             "[a-zA-Z0-9]{1,20}",            // switch
             "[a-zA-Z0-9]{1,20}",            // bus_addr
             of(i16::MIN..i16::MAX),         // bmc_vlan_id
