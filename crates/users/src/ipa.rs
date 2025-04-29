@@ -223,38 +223,39 @@ pub struct User {
     pub usercertificate: Option<String>, //cert
 }
 
-
 impl IPA {
     pub async fn init() -> Result<IPA, anyhow::Error> {
         //Vec of all servers provided
         let ipa_vec = &settings().ipa;
-        //connection_error: error that will be returned by the fucntion if connection is unsuccessful        
-        let mut connection_error: anyhow::Error = anyhow::Error::msg("No server URLs in config, unable to connect");
-        for current_ipa in ipa_vec{
+        //connection_error: error that will be returned by the fucntion if connection is unsuccessful
+        let mut connection_error: anyhow::Error =
+            anyhow::Error::msg("No server URLs in config, unable to connect");
+        for current_ipa in ipa_vec {
             let mut headers = reqwest::header::HeaderMap::new();
             headers.insert(
                 "Referer",
                 HeaderValue::from_str(format!("{}/ipa", current_ipa.url).as_str()).unwrap(),
             );
-            
+
             let client = reqwest::Client::builder()
                 .add_root_certificate(
-                    Certificate::from_pem(&read(current_ipa.certificate_path.clone()).expect("Expected to find file"))
+                    Certificate::from_pem(
+                        &read(current_ipa.certificate_path.clone()).expect("Expected to find file"),
+                    )
                     .expect("Expected to get cert"),
-            )
-            .default_headers(headers)
-            .cookie_store(true)
-            .danger_accept_invalid_certs(true)
-            .build()
-            .expect("Expected to build client");
+                )
+                .default_headers(headers)
+                .cookie_store(true)
+                .danger_accept_invalid_certs(true)
+                .build()
+                .expect("Expected to build client");
             // new_ipa: This will be created and saved as an IPA if the connection is succssful
 
-            let mut new_ipa = IPA{
+            let mut new_ipa = IPA {
                 client,
-                id:0,
+                id: 0,
                 version: "2.245".to_owned(),
                 ipa: current_ipa.clone(),
-
             };
             let res_ipa = new_ipa.get_auth().await;
             match res_ipa {
@@ -262,7 +263,10 @@ impl IPA {
                 Err(e) => connection_error = e,
             }
         }
-        return Err(anyhow::Error::msg(format!("Failed to connect to any ipa server due to {}", connection_error.to_string())) )
+        return Err(anyhow::Error::msg(format!(
+            "Failed to connect to any ipa server due to {}",
+            connection_error.to_string()
+        )));
     }
 
     pub async fn get_auth(&mut self) -> Result<bool, anyhow::Error> {

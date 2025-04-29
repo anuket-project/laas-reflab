@@ -9,6 +9,7 @@
     trait_alias
 )]
 
+mod sqlx_impl;
 pub mod web;
 
 use common::prelude::{
@@ -582,15 +583,6 @@ pub trait Lookup: DBTable + Named {
             _ => panic!("Someone did not implement Named properly."),
         }
     }
-}
-
-pub trait Importable: Lookup {
-    async fn import(
-        transaction: &mut EasyTransaction<'_>,
-        import_file_path: PathBuf,
-        proj_path: Option<PathBuf>,
-    ) -> Result<Option<ExistingRow<Self>>, anyhow::Error>;
-    async fn export(&self, transaction: &mut EasyTransaction<'_>) -> Result<(), anyhow::Error>;
 }
 
 /// If you're making a SQL model, implement this directly

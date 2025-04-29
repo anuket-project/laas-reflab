@@ -2,13 +2,10 @@ use dal::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::inventory::Version;
-
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
 pub struct SwitchOS {
     pub id: FKey<SwitchOS>,
     pub os_type: String,
-    pub version: Version,
 }
 
 impl DBTable for SwitchOS {
@@ -29,7 +26,6 @@ impl DBTable for SwitchOS {
         Ok(ExistingRow::from_existing(Self {
             id: row.try_get("id")?,
             os_type: row.try_get("os_type")?,
-            version: row.try_get("version")?,
         }))
     }
 
@@ -38,7 +34,6 @@ impl DBTable for SwitchOS {
         let c: [(&str, Box<dyn ToSqlObject>); _] = [
             ("id", Box::new(clone.id)),
             ("os_type", Box::new(clone.os_type)),
-            ("version", Box::new(clone.version)),
         ];
 
         Ok(c.into_iter().collect())
@@ -59,13 +54,8 @@ mod tests {
             (
                 any::<FKey<SwitchOS>>(), // id
                 any::<String>(),         // os_type
-                any::<Version>(),        // version
             )
-                .prop_map(|(id, os_type, version)| SwitchOS {
-                    id,
-                    os_type,
-                    version,
-                })
+                .prop_map(|(id, os_type)| SwitchOS { id, os_type })
                 .boxed()
         }
     }

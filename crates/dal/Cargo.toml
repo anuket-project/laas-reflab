@@ -16,7 +16,12 @@ inventory = { workspace = true }
 backtrace = { workspace = true }
 proptest = { workspace = true }
 
-sqlx = { workspace = true }
+sqlx = { workspace = true, features = [
+  "runtime-tokio-native-tls",
+  "postgres",
+  "uuid",
+  "chrono",
+] }
 url = { workspace = true }
 
 common = { path = "../common" }

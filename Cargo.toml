@@ -107,6 +107,7 @@ uuid = { version = "*", features = [
   "macro-diagnostics",
 ] }
 macaddr = { version = "1.0", features = ["serde_std"] }
+mac_address = { version = "1.1.8", features = ["serde"] }
 http-body = "*"
 
 # misc utils

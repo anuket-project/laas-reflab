@@ -6,11 +6,9 @@ use std::str::FromStr;
 use crate::inventory::{Arch, DataValue};
 
 mod extra_info;
-mod import;
 mod interface;
 
 pub use extra_info::ExtraFlavorInfo;
-pub use import::ImportFlavor;
 pub use interface::{CardType, InterfaceFlavor};
 
 // Flavor io used to create an instance

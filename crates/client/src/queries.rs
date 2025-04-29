@@ -477,8 +477,12 @@ pub async fn handle_bmc_vlan_query(mut session: &Server) -> Result<(), anyhow::E
         for row in rows {
             writeln!(
                 session,
-                "Host: {} | Switchport: {} | MAC: {:?} | BMC VLAN: {:?}",
-                host_name, row.switchport_name, row.mac, row.bmc_vlan_id
+                "Host: {} | Switchport: {} | MAC: {} | BMC VLAN: {}",
+                host_name,
+                row.switchport_name,
+                row.mac.map_or(String::from("Null"), |mac| mac.to_string()),
+                row.bmc_vlan_id
+                    .map_or(String::from("Null"), |id| id.to_string())
             )?;
         }
     }

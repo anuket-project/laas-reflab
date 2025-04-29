@@ -11,7 +11,7 @@
       {
         "ordinal": 1,
         "name": "mac",
-        "type_info": "Jsonb"
+        "type_info": "Macaddr"
       },
       {
         "ordinal": 2,
@@ -31,7 +31,7 @@
     },
     "nullable": [
       true,
-      false,
+      true,
       false,
       false
     ]
