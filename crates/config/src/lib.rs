@@ -11,7 +11,6 @@ use tracing_subscriber::filter::LevelFilter;
 #[derive(Debug, Deserialize, Clone)]
 pub struct LibLaaSConfig {
     pub dev: Dev,
-    pub database: DatabaseConfig,
     pub web: WebConfig,
     pub mailbox: MailboxConfig,
     pub cli: CliConfig,
@@ -96,14 +95,6 @@ impl Email {
 pub struct Dev {
     pub status: bool,
     pub hosts: Vec<String>,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct DatabaseConfig {
-    pub url: HostPortPair,
-    pub username: String,
-    pub password: String,
-    pub database_name: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]

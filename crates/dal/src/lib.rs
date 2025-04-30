@@ -18,11 +18,9 @@ use common::prelude::{
 };
 use std::{
     any::type_name, backtrace::Backtrace, collections::HashMap, hash::Hash, marker::PhantomData,
-    path::PathBuf,
 };
 
 use common::prelude::{itertools::Itertools, schemars::JsonSchema, *};
-use config::settings;
 use serde::de::DeserializeOwned;
 use tokio_postgres::{types::ToSql, Client, NoTls, Transaction};
 
@@ -32,22 +30,14 @@ use sqlx::{postgres::PgPoolOptions, PgPool};
 pub trait ToSqlObject = ToSql + Send + Sync + 'static;
 
 pub async fn get_db_pool() -> Result<PgPool, sqlx::Error> {
-    let db_config = settings().database.clone();
-
-    let connection_str = format!(
-        "postgres://{}:{}@{}:{}/{}",
-        db_config.username,
-        db_config.password,
-        db_config.url.host,
-        db_config.url.port,
-        db_config.database_name
-    );
+    let connection_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
 
     PgPoolOptions::new()
         .max_connections(10)
-        .connect(&connection_str)
+        .connect(&connection_url)
         .await
 }
+
 pub async fn initialize() -> Result<(), Vec<Error>> {
     tracing::warn!("Setting up the database connection pool");
 
@@ -592,16 +582,6 @@ pub trait Lookup: DBTable + Named {
             _ => panic!("Someone did not implement Named properly."),
         }
     }
-}
-
-#[allow(async_fn_in_trait)]
-pub trait Importable: Lookup {
-    async fn import(
-        transaction: &mut EasyTransaction<'_>,
-        import_file_path: PathBuf,
-        proj_path: Option<PathBuf>,
-    ) -> Result<Option<ExistingRow<Self>>, anyhow::Error>;
-    async fn export(&self, transaction: &mut EasyTransaction<'_>) -> Result<(), anyhow::Error>;
 }
 
 #[allow(async_fn_in_trait)]
