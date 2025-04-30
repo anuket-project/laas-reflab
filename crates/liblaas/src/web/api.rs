@@ -1,13 +1,10 @@
-//! Copyright (c) 2023 University of New Hampshire
-//! SPDX-License-Identifier: MIT
-use common::prelude::chrono::{DateTime, Utc};
-use common::prelude::tokio_postgres;
+//! Contains filtered models to expose throught he API.
+//!
+//! Any struct declared as a 'blob' is a dashboard friendly struct
+//! to be sent over the API, but should never be directly stored into any database
+//! They are fundamentally ephemeral, and describe the shape of the API
+
 use models::dashboard::NetworkBlob;
-use std::borrow::{Borrow, BorrowMut};
-use std::marker::PhantomData;
-use std::net::{Ipv4Addr, Ipv6Addr};
-use strum_macros::Display;
-use tokio_postgres::types::{BorrowToSql, ToSql};
 
 use dal::*;
 use models::{
@@ -24,29 +21,17 @@ pub struct AggregateBlob {
     with_template: FKey<Template>,
 }
 
-///////////////////////////////////////////////////////////////////////////////////////////////////
-/// Any struct declared as a 'blob' is a dashboard friendly struct
-/// to be sent over the API, but should never be directly stored into any database
-/// They are fundamentally ephemeral, and describe the shape of the API
-
 /// The highest level blob containing all the neccessary information to create a template
 /// Dashboard sends TemplateBlob
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema)]
 pub struct TemplateBlob {
     pub id: Option<FKey<Template>>,
-    ///
     pub owner: String,
-
     pub lab_name: String,
-    ///
     pub pod_name: String,
-    ///
     pub pod_desc: String,
-    ///
     pub public: bool,
-    ///
     pub host_list: Vec<HostConfigBlob>,
-    ///
     pub networks: Vec<NetworkBlob>,
 }
 
@@ -61,7 +46,6 @@ pub struct HostConfigBlob {
     pub image: FKey<Image>,
     /// A vector of C-I Files. order is determined by order of the Vec
     pub cifile: Vec<String>,
-    ///
     pub bondgroups: Vec<BondgroupBlob>,
 }
 
@@ -114,7 +98,6 @@ pub struct ConnectionBlob {
 pub struct ImageBlob {
     /// UUID of associated image
     pub image_id: FKey<Image>,
-    ///
     pub name: String,
 }
 
@@ -123,13 +106,9 @@ pub struct ImageBlob {
 pub struct FlavorBlob {
     /// UUID of associated Flavor
     pub flavor_id: FKey<Flavor>,
-    ///
     pub name: String,
-    ///
     pub interfaces: Vec<InterfaceBlob>,
-
     pub images: Vec<ImageBlob>,
-
     pub available_count: usize,
     pub cpu_count: usize,     // Max 4.294967295 Billion
     pub ram: DataValue,       // Max 4.294 Petabytes in gig

@@ -242,7 +242,7 @@ where
 
         // TODO: this part is not particularly panic safe, even though
         // we run drop code for the value!
-        match { os.get() } {
+        match os.get() {
             Some(Ok(_v)) => TaskState::Done,
             Some(Err(_e)) => TaskState::Failed,
             None => TaskState::Ready,

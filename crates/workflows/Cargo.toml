@@ -4,10 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-
 anyhow = { workspace = true }
 dashmap = { workspace = true }
-eui48 = { workspace = true }
 serde = { workspace = true, features = ["derive", "rc"] }
 thiserror = { workspace = true }
 serde_json = { workspace = true }
@@ -34,3 +32,6 @@ config = { path = "../config/" }
 common = { path = "../common/" }
 metrics = { path = "../metrics/" }
 dal = { path = "../dal/" }
+
+[package.metadata.cargo-machete]
+ignored = ["strum"]

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 #![doc = include_str!("../README.md")]
 
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, fmt::Display, path::PathBuf};
 
 use serde::{Deserialize, Serialize};
 use strum_macros::Display;
@@ -293,9 +293,9 @@ impl<'de> Deserialize<'de> for HostPortPair {
     }
 }
 
-impl ToString for HostPortPair {
-    fn to_string(&self) -> String {
-        format!("{}:{}", self.host, self.port)
+impl Display for HostPortPair {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.host, self.port)
     }
 }
 

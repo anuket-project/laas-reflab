@@ -749,26 +749,22 @@ async fn render_nmcli_commands(
         .iter()
         .filter(|bgc| {
             bgc.member_interfaces.len() == 1
-                && bgc
-                    .connects_to
-                    .iter()
-                    .find(|vl| {
-                        tracing::warn!("vcc is {vl:?}");
-                        tracing::warn!("network is {:?}", vl.network.clone());
-                        tracing::warn!("sync nm is {:?}", sync_nm.clone());
+                && bgc.connects_to.iter().any(|vl| {
+                    tracing::warn!("vcc is {vl:?}");
+                    tracing::warn!("network is {:?}", vl.network.clone());
+                    tracing::warn!("sync nm is {:?}", sync_nm.clone());
 
-                        sync_nm
-                            .get(&vl.network)
-                            .expect("Expected to find network in NetworkAssignmentMap")
-                            .1
-                            .public_config
-                            .as_ref()
-                            .map(|pc| pc.v4.is_some() || pc.v6.is_some())
-                            .unwrap_or(false)
-                            && !vl.tagged // for now try to prefer untagged ones so long as they
-                                          // exist, to sidestep some dns issues
-                    })
-                    .is_some()
+                    sync_nm
+                        .get(&vl.network)
+                        .expect("Expected to find network in NetworkAssignmentMap")
+                        .1
+                        .public_config
+                        .as_ref()
+                        .map(|pc| pc.v4.is_some() || pc.v6.is_some())
+                        .unwrap_or(false)
+                        && !vl.tagged // for now try to prefer untagged ones so long as they
+                                      // exist, to sidestep some dns issues
+                })
         })
         .map(|bgc| bgc.member_interfaces.iter().next().unwrap().clone())
         .collect_vec();
@@ -1273,16 +1269,16 @@ async fn ci_serialize_runcmds(
     };
 
     // first bring up mgmt networking
-    command(val(format!("echo 'Running dhclient on ports'")));
+    command(val("echo 'Running dhclient on ports'".to_string()));
     if let Some(p) = host.ports(transaction).await.unwrap().into_iter().next() {
         let pn = &p.name;
         command(val(format!("echo 'doing dhclient {pn}'")));
         command(val(format!("sudo dhclient {pn} || true")));
     } else {
         let host_name = &host.server_name;
-        command(val(format!(
-            "echo 'There are no ports to run dhclient on!'"
-        )));
+        command(val(
+            "echo 'There are no ports to run dhclient on!'".to_string()
+        ));
         tracing::error!(
             "Network config for {image_name} on {host_name} may fail, host had no ports"
         );

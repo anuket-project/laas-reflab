@@ -1,7 +1,6 @@
-//! Copyright (c) 2023 University of New Hampshire
-//! SPDX-License-Identifier: MIT
-
-//! This module should probably actually be removed, if liblaas
+//! This module should probably actually be removed.
+//!
+//! if liblaas
 //! can carry around a ref to the runtime all the time then it can
 //! directly spawn in tasks and that simplifies control flow
 //!
@@ -9,30 +8,20 @@
 //! but I don't think it's strictly worth it when the entire project
 //! is as small as it is (relatively speaking)
 
-use std::sync::Mutex;
-
 use config::Situation;
-use dal::{new_client, web::*, AsEasyTransaction, FKey, ID};
+use dal::FKey;
 use models::{
     dashboard::{Aggregate, Instance},
     inventory::Host,
 };
 
-use models::inventory;
-
-use common::prelude::{anyhow, crossbeam_channel, once_cell};
+use common::prelude::{crossbeam_channel, once_cell};
 
 use crossbeam_channel::{Receiver, Sender};
 
 use tascii::prelude::*;
 
 use crate::deploy_booking::{deploy_host::DeployHost, notify::Notify};
-
-//use crate::actions::{Action, ActionID, StatusHandle};
-
-//use crate::actions::*;
-
-static ACTION_LOG_LOCK: Mutex<()> = Mutex::new(());
 
 pub enum Action {
     DeployBooking {

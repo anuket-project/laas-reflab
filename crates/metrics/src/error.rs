@@ -1,4 +1,6 @@
-//! Defines the [`MetricError`] enum, which represents various errors that can occur
+//! Metrics Error Module
+//!
+//! defines [`MetricError`] enum which represents various errors that can occur
 //! during metric processing and communication. It also implements the [`IntoResponse`] trait from
 //! [`axum`] to convert errors into HTTP responses, which is useful when integrating this library
 //! into an `axum` HTTP server.
@@ -18,7 +20,7 @@ use tokio::sync::mpsc::{self, error::SendError};
 pub enum MetricError {
     /// Error occurred while sending a [`MetricMessage`] through an [`mspc`] channel.
     #[error("Failed to send metric {0}")]
-    SendError(#[from] SendError<MetricMessage>),
+    SendError(#[from] Box<SendError<MetricMessage>>),
 
     /// Error occurred while creating the Telegraf [`Client`].
     #[error("Failed to create client with connection url: {0}. Retries exceeded.")]

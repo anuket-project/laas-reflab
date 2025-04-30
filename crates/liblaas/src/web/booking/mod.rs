@@ -69,7 +69,7 @@ async fn end_booking(Path(agg_id): Path<FKey<Aggregate>>) -> Json<EndBookingResp
         }),
         Err(error) => Json(EndBookingResponse {
             success: false,
-            details: format!("{}", error.to_string()),
+            details: error.to_string(),
         }),
     }
 }
@@ -138,20 +138,20 @@ async fn reimage_host(
         .map_err(|_| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Error accessing image from database."),
+                "Error accessing image from database.".to_string(),
             )
         })?;
     inst.config.image = image_id;
     inst.update(&mut transaction).await.map_err(|_| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Error updating instance image."),
+            "Error updating instance image.".to_string(),
         )
     })?;
     transaction.commit().await.map_err(|_| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Error committing instance changes."),
+            "Error committing instance changes.".to_string(),
         )
     })?;
 
@@ -159,21 +159,18 @@ async fn reimage_host(
         .get()
         .ok_or((
             StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Tascii was not found."),
+            "Tascii was not found.".to_string(),
         ))?
         .send(workflows::entry::Action::Reimage {
             host_id: inst.linked_host.ok_or((
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("No linked host was found for instance."),
+                "No linked host was found for instance.".to_string(),
             ))?,
             inst_id: FKey::from_id(instance_id.into()),
             agg_id: inst.aggregate,
         });
-    match res {
-        Err(e) => {
-            tracing::error!("Failed to send deploy task with error {:#?}", e)
-        }
-        Ok(_) => {}
+    if let Err(e) = res {
+        tracing::error!("Failed to send deploy task with error {:#?}", e)
     };
     Ok(())
 }
@@ -300,7 +297,7 @@ async fn notify_aggregate_expiring(
 
     let dispatch = DISPATCH.get().ok_or((
         StatusCode::INTERNAL_SERVER_ERROR,
-        format!("Unable to get dispatcher"),
+        "Unable to get dispatcher".to_string(),
     ))?;
 
     dispatch
@@ -312,7 +309,7 @@ async fn notify_aggregate_expiring(
         .map_err(|_| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Unable to execute notify task!"),
+                "Unable to execute notify task!".to_string(),
             )
         })?;
 
@@ -335,7 +332,7 @@ async fn request_booking_extension(
 
     let dispatch = DISPATCH.get().ok_or((
         StatusCode::INTERNAL_SERVER_ERROR,
-        format!("Unable to get dispatcher"),
+        "Unable to get dispatcher".to_string(),
     ))?;
 
     dispatch
@@ -350,7 +347,7 @@ async fn request_booking_extension(
         .map_err(|_| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Unable to execute notify task!"),
+                "Unable to execute notify task!".to_string(),
             )
         })?;
 

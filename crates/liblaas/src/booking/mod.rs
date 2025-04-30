@@ -1,7 +1,7 @@
 use chrono::Utc;
 use common::prelude::chrono::Days;
 use common::prelude::*;
-use dal::{new_client, web::*, AsEasyTransaction, EasyTransaction, FKey, NewRow};
+use dal::{new_client, AsEasyTransaction, EasyTransaction, FKey, NewRow};
 use metrics::prelude::*;
 
 use models::{
@@ -18,8 +18,6 @@ use workflows::resource_management::{
     allocator::Allocator,
     ipmi_accounts::{generate_password, generate_username},
 }; //, ResourceHandle, AggregateID, ResourceHandleInner};
-
-use axum::extract::Json;
 
 use workflows::entry::*;
 
@@ -222,11 +220,8 @@ pub async fn make_aggregate(blob: api::BookingBlob) -> Result<FKey<Aggregate>, a
         .get()
         .unwrap()
         .send(Action::DeployBooking { agg_id: agg.id });
-    match res {
-        Err(e) => {
-            tracing::error!("Failed to send deploy task with error {:#?}", e)
-        }
-        Ok(_) => {}
+    if let Err(e) = res {
+        tracing::error!("Failed to send deploy task with error {:#?}", e)
     }
 
     Ok(agg.id)

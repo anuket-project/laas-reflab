@@ -26,7 +26,7 @@ impl AsyncRunnable for WaitReachable {
         while Instant::now() < end {
             tokio::time::sleep(Duration::from_secs(2)).await;
             let res = common::prelude::tokio::process::Command::new("ping")
-                .args(["-c", "1", "-n", "-q", &hostname.as_str()])
+                .args(["-c", "1", "-n", "-q", hostname.as_str()])
                 .output()
                 .await;
 

@@ -7,10 +7,8 @@ edition = "2021"
 
 [dependencies]
 serde = { workspace = true }
-serde_json = { workspace = true }
 once_cell = { workspace = true }
 strum_macros = { workspace = true }
-tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
 # TODO: rename config here to something else because this workspace has the same name

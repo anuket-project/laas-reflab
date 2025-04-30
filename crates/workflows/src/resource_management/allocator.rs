@@ -24,9 +24,6 @@ pub struct Allocator {
     lock: tokio::sync::Mutex<()>,
 }
 
-type Request = ResourceRequest;
-type Response = ResourceResponse;
-
 impl Allocator {
     fn new() -> Self {
         Self {
@@ -160,10 +157,10 @@ impl Allocator {
             Ok(
                 handle @ ResourceHandle {
                     id: _,
-                    tracks,
+                    tracks: ResourceHandleInner::Host(h),
                     lab: _,
                 },
-            ) if let ResourceHandleInner::Host(h) = tracks => {
+            ) => {
                 t.commit().await.map_err(|e| {
                     anyhow::Error::msg(format!(
                         "Couldn't commit allocation of resource, error: {e:?}"
@@ -176,13 +173,13 @@ impl Allocator {
                 Ok((h, handle))
             }
             Ok(v) => {
-                let _ = t.rollback(); // let go of the resource, on failure this automatically happens at "some point" anyway
+                let _ = t.rollback().await; // let go of the resource, on failure this automatically happens at "some point" anyway
                 Err(anyhow::Error::msg(format!(
                     "got wrong type of resource given back to us from allocator: {v:?}"
                 )))
             }
             Err(e) => {
-                let _ = t.rollback(); // let go of the resource, on failure this automatically happens at "some point" anyway
+                let _ = t.rollback().await; // let go of the resource, on failure this automatically happens at "some point" anyway
                 Err(e)
             }
         }
@@ -220,10 +217,10 @@ impl Allocator {
             Ok(
                 handle @ ResourceHandle {
                     id: _,
-                    tracks,
+                    tracks: ResourceHandleInner::Host(h),
                     lab: _,
                 },
-            ) if let ResourceHandleInner::Host(h) = tracks => {
+            ) => {
                 t.commit().await.map_err(|e| {
                     anyhow::Error::msg(format!(
                         "Couldn't commit allocation of resource, error: {e:?}"
@@ -233,13 +230,13 @@ impl Allocator {
                 Ok((h, handle))
             }
             Ok(v) => {
-                let _ = t.rollback(); // let go of the resource, on failure this automatically happens at "some point" anyway
+                let _ = t.rollback().await; // let go of the resource, on failure this automatically happens at "some point" anyway
                 Err(anyhow::Error::msg(format!(
                     "got wrong type of resource given back to us from allocator: {v:?}"
                 )))
             }
             Err(e) => {
-                let _ = t.rollback(); // let go of the resource, on failure this automatically happens at "some point" anyway
+                let _ = t.rollback().await; // let go of the resource, on failure this automatically happens at "some point" anyway
                 Err(e)
             }
         }

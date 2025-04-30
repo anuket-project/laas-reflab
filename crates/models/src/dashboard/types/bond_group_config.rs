@@ -5,8 +5,6 @@ use std::collections::HashSet;
 
 use crate::dashboard::types::vlan_connection_config::VlanConnectionConfig;
 
-use dal::*;
-
 #[derive(Serialize, Deserialize, Debug, Clone, Default, JsonSchema, Eq, PartialEq)]
 pub struct BondGroupConfig {
     pub connects_to: HashSet<VlanConnectionConfig>,

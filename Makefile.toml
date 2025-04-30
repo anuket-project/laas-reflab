@@ -129,6 +129,7 @@ script = [
 
 # Run strict lint checks
 [tasks.clippy]
+clear = true
 workspace = false
 install_crate = "cargo-limit"
 env = { SQLX_OFFLINE = "true" }
@@ -159,6 +160,16 @@ script = [
   'if [ "${CARGO_MAKE_PROFILE}" = "ci" ]; then echo "Cleaning target/ after check..."; cargo clean; fi',
 ]
 dependencies = ["install-limit"]
+
+# Full source‐code check
+[tasks.audit]
+clear = true
+workspace = false
+install_crate = "cargo-audit"
+script = [
+  'cargo audit',
+  'if [ "${CARGO_MAKE_PROFILE}" = "ci" ]; then echo "Cleaning target/ after check..."; cargo clean; fi',
+]
 
 
 # ========================

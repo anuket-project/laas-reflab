@@ -4,7 +4,7 @@
 use common::prelude::*;
 
 use aide::transform::TransformOpenApi;
-use axum::{extract::Json, http::StatusCode, Extension, ServiceExt};
+use axum::{extract::Json, http::StatusCode, Extension};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 

@@ -69,11 +69,9 @@ impl AsyncRunnable for GetPowerState {
         let host = self.host.get(&mut transaction).await.unwrap();
         transaction.commit().await.unwrap();
 
-        Ok(
-            get_host_power_state(&HostConfig::try_from(host.into_inner()).unwrap())
-                .await
-                .map_err(|_| TaskError::Reason("Error getting power state".to_owned()))?,
-        )
+        get_host_power_state(&HostConfig::try_from(host.into_inner()).unwrap())
+            .await
+            .map_err(|_| TaskError::Reason("Error getting power state".to_owned()))
     }
 
     fn summarize(&self, _id: dal::ID) -> String {
@@ -100,7 +98,7 @@ impl AsyncRunnable for BootBookedHosts {
             Ok(v) => v,
             Err(e) => return Err(TaskError::Reason(format!("Unable to get labs: {e}"))),
         } {
-            let lab_id = for (host, handle) in ResourceHandle::query_allocated::<Host>(
+            for (host, _handle) in ResourceHandle::query_allocated::<Host>(
                 &mut transaction,
                 lab.id,
                 None,
@@ -111,7 +109,7 @@ impl AsyncRunnable for BootBookedHosts {
             .await?
             {
                 context.spawn(BootBookedHost { host });
-            };
+            }
         }
 
         Ok(())

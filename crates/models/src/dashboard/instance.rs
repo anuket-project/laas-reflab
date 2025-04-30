@@ -211,7 +211,7 @@ mod tests {
             }
 
             // instance (self)
-            NewRow::new(instance).insert(t).await?;
+            SchrodingerRow::new(instance).upsert(t).await?;
 
             Ok(())
         }

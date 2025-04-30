@@ -100,7 +100,6 @@ impl Switch {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use proptest::collection::vec;
     use proptest::option::of;
     use proptest::prelude::*;
     use testing_utils::block_on_runtime;

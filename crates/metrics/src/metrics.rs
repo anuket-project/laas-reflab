@@ -1,4 +1,5 @@
 //! This module contains metric structs designed for use with the [`telegraf`] client library.
+//!
 //! Each metric struct is annotated with the [`Metric`] derive macro, which automatically
 //! implements the necessary traits for integration with Telegraf.
 //!
@@ -37,7 +38,7 @@
 //!   it will insert the **time that telegraf recieves the metric** as the timestamp. This can
 //!   cause all sorts of synchronization issues.
 //! - Manually storing the timestamp allows rewriting a metric if the timestamp is known. This is useful
-//! for metrics like [`ProvisionMetric`] where we may want to update the timestamp if a retry is successful.
+//!   for metrics like [`ProvisionMetric`] where we may want to update the timestamp if a retry is successful.
 //!  
 //! Every tag field must be annotated with `#[telegraf(tag)]`. Tags are indexed, fields are not.
 //!
@@ -121,9 +122,10 @@ pub trait Timestampable {
     fn set(self, ts: Timestamp);
 }
 
-/// A wrapper around the [`DateTime<Utc>`] type from the [`chrono`] crate. [`telegraf`] requires
-/// it's timestamp field to implement [`Into<u64>`], because we can't implement a trait for a type
-/// defined in another crate, we need have to wrap it.
+/// A wrapper around the [`DateTime<Utc>`] type from the [`chrono`] crate.
+///
+/// [`telegraf`] requires it's timestamp field to implement [`Into<u64>`], because we can't implement a trait for a type
+/// defined in another crate, we have to wrap it.
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 pub struct Timestamp(pub DateTime<Utc>);
 

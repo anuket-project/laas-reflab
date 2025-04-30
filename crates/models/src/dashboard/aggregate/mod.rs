@@ -175,7 +175,7 @@ mod tests {
             insert_default_model_at(aggregate.template, t).await?;
             insert_default_model_at(aggregate.vlans, t).await?;
 
-            NewRow::new(aggregate).insert(t).await?;
+            SchrodingerRow::new(aggregate).upsert(t).await?;
 
             Ok(())
         }

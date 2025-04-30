@@ -2,7 +2,6 @@ use crate::remote::{Select, Server, Text};
 use crate::{areyousure, get_lab, select_host};
 use common::prelude::anyhow;
 use dal::{get_db_pool, new_client, AsEasyTransaction, DBTable, EasyTransaction, FKey};
-use sqlx::{Pool, Postgres};
 
 use models::{
     allocator::{Allocation, ResourceHandle},
@@ -229,7 +228,7 @@ async fn handle_summarize_query(session: &Server) -> Result<(), anyhow::Error> {
         .unwrap();
 
     for agg in aggregates {
-        summarize_aggregate(session, &mut transaction, agg.id).await;
+        summarize_aggregate(session, &mut transaction, agg.id).await?;
     }
 
     transaction.commit().await?;
@@ -270,7 +269,7 @@ async fn handle_aggregate_query(mut session: &Server) -> Result<(), anyhow::Erro
             )?;
 
             if let Some(aid) = fa {
-                summarize_aggregate(session, &mut transaction, aid).await;
+                summarize_aggregate(session, &mut transaction, aid).await?;
             }
         }
         more => {
@@ -384,7 +383,7 @@ async fn handle_leaked_query(mut session: &Server) -> Result<(), anyhow::Error> 
     );
 
     let mut client = new_client().await.expect("Expected to connect to db");
-    let mut t = client
+    let t = client
         .easy_transaction()
         .await
         .expect("Transaction creation error");

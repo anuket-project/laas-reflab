@@ -61,7 +61,7 @@ impl AsyncRunnable for StashSOLOutput {
         for _i in 0..10 {
             loop {
                 let res = common::prelude::tokio::process::Command::new("ping")
-                    .args(["-c", "1", &host.ipmi_fqdn.as_str()])
+                    .args(["-c", "1", host.ipmi_fqdn.as_str()])
                     .output()
                     .await;
 
@@ -91,6 +91,8 @@ impl AsyncRunnable for StashSOLOutput {
                 .stderr(Stdio::piped())
                 .spawn()
                 .unwrap();
+
+            child.wait().expect("Failed to execute child");
 
             let mut cstdout = child.stdout.take().unwrap();
 

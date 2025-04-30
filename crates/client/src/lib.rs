@@ -28,13 +28,13 @@ use liblaas::{
 use mgmt_workflows::BootBookedHosts;
 
 use models::{
-    dashboard::{Aggregate, Image, Instance, LifeCycleState, Template},
-    inventory::{Flavor, Host, Lab},
+    dashboard::{Aggregate, Instance, LifeCycleState, Template},
+    inventory::{Host, Lab},
 };
 use remote::{Select, Server, Text};
 use std::fmt::Write as FmtWrite;
 use std::io::Write;
-use std::{fmt::Formatter, path::PathBuf, str::FromStr, time::Duration};
+use std::{fmt::Formatter, str::FromStr, time::Duration};
 use strum::IntoEnumIterator;
 use strum_macros::{Display, EnumIter, EnumString};
 use tascii::prelude::Runtime;
@@ -253,6 +253,13 @@ async fn get_lab(
     }
 }
 
+impl std::fmt::Display for DispHost {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let host = self.host.clone();
+        write!(f, "{}", host.server_name)
+    }
+}
+
 async fn select_host(
     session: &Server,
     transaction: &mut EasyTransaction<'_>,
@@ -260,13 +267,6 @@ async fn select_host(
     let hosts = Host::select().run(transaction).await?;
 
     let mut disps = Vec::new();
-
-    impl std::fmt::Display for DispHost {
-        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-            let host = self.host.clone();
-            write!(f, "{}", host.server_name)
-        }
-    }
 
     for host in hosts {
         disps.push(DispHost {
@@ -359,6 +359,21 @@ impl std::fmt::Display for DispAgg {
     }
 }
 
+impl std::fmt::Display for DispTemplate {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let temp = self.template.clone();
+        write!(
+            f,
+            "{:?} | name: {}, owner: {:?}, public: {}, description: {}",
+            temp.id.into_id(),
+            temp.name,
+            temp.owner,
+            temp.public,
+            temp.description
+        )
+    }
+}
+
 async fn select_template(
     session: &Server,
     transaction: &mut EasyTransaction<'_>,
@@ -366,21 +381,6 @@ async fn select_template(
     let temps = Template::select().run(transaction).await?;
 
     let mut disps = Vec::new();
-
-    impl std::fmt::Display for DispTemplate {
-        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-            let temp = self.template.clone();
-            write!(
-                f,
-                "{:?} | name: {}, owner: {:?}, public: {}, description: {}",
-                temp.id.into_id(),
-                temp.name,
-                temp.owner,
-                temp.public,
-                temp.description
-            )
-        }
-    }
 
     for temp in temps {
         disps.push(DispTemplate {
@@ -438,6 +438,18 @@ impl DispInst {
     }
 }
 
+impl std::fmt::Display for DispInst {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} -> {} ({})",
+            self.id.into_id(),
+            self.hostname,
+            self.host
+        )
+    }
+}
+
 async fn select_instance(
     session: &Server,
     within_agg: FKey<Aggregate>,
@@ -456,18 +468,6 @@ async fn select_instance(
     for inst in instances {
         let di = DispInst::from_inst(transaction, inst.into_inner()).await;
         disps.push(di);
-    }
-
-    impl std::fmt::Display for DispInst {
-        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-            write!(
-                f,
-                "{} -> {} ({})",
-                self.id.into_id(),
-                self.hostname,
-                self.host
-            )
-        }
     }
 
     Ok(Select::new("select an instance:", disps)

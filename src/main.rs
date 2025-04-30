@@ -1,10 +1,9 @@
 use client::remote::{cli_client_entry, cli_server_entry};
 use common::prelude::{
-    axum::{self, Json},
-    chrono::{self, Days, Utc},
+    axum::{extract::Path, Json},
+    chrono::{Days, Utc},
     itertools::Itertools,
-    tokio,
-    tokio::{sync::mpsc, task::LocalSet},
+    tokio::{self, sync::mpsc, task::LocalSet},
     tracing,
 };
 use config::settings;
@@ -66,18 +65,16 @@ pub async fn allocate_unreserved_hosts() {
         .unwrap();
 
     let template = make_template(
-        axum::extract::path::Path::from(common::prelude::axum::extract::Path(
-            "reserved".to_string(),
-        )),
+        Path("reserved".to_string()),
         Json(TemplateBlob {
             id: None,
-            owner: format!("root"),
-            pod_name: format!("reserved"),
-            pod_desc: format!("reserved"),
+            owner: "root".to_string(),
+            pod_name: "reserved".to_string(),
+            pod_desc: "reserved".to_string(),
             public: false,
             host_list: vec![],
             networks: vec![],
-            lab_name: format!("reserved"),
+            lab_name: "reserved".to_string(),
         }),
     )
     .await
@@ -105,7 +102,7 @@ pub async fn allocate_unreserved_hosts() {
             lab: Some("Dev lab".to_string()),
             purpose: Some("Unallocatted host".to_owned()),
             project: Some("LibLaaS".to_owned()),
-            start: Some(now.clone()),
+            start: Some(now),
             end: Some(now + Days::new(1000)),
         },
     };
@@ -189,13 +186,11 @@ async fn main() {
 
         let subscriber = subscriber.with_writer(file).finish();
 
-        let _ =
-            tracing::subscriber::set_global_default(subscriber).expect("couldn't set up tracing");
+        tracing::subscriber::set_global_default(subscriber).expect("couldn't set up tracing");
     } else {
         let subscriber = subscriber.finish();
 
-        let _ =
-            tracing::subscriber::set_global_default(subscriber).expect("couldn't set up tracing");
+        tracing::subscriber::set_global_default(subscriber).expect("couldn't set up tracing");
     };
 
     tracing::info!("tracing has been started");
@@ -294,14 +289,16 @@ async fn main() {
     tracing::info!("Clean exit from web entry");
 }
 
+// TODO: code smell, remove ignored lint
+#[allow(clippy::declare_interior_mutable_const)]
 const TASCII_RT: OnceLock<&'static Runtime> = OnceLock::new();
 
-/// returns immediately
 fn start_tascii() -> &'static Runtime {
     let runtime = tascii::init("primary");
 
+    // TODO: again, this stiiiinks
+    #[allow(clippy::borrow_interior_mutable_const)]
     let _ = TASCII_RT.set(runtime);
 
-    // test
     runtime
 }

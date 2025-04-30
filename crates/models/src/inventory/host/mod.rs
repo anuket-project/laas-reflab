@@ -202,7 +202,7 @@ mod test {
 
             insert_default_model_at(host.flavor, transaction).await?;
 
-            NewRow::new(host).insert(transaction).await?;
+            SchrodingerRow::new(host).upsert(transaction).await?;
 
             Ok(())
         }

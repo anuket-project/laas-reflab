@@ -9,7 +9,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tascii::{prelude::*, task_trait::AsyncRunnable};
 
-use std::str::{self, Utf8Error};
+use std::str::{self};
 use thiserror::Error;
 use tokio::process::Command;
 use tokio::time::{sleep, timeout, Duration};
@@ -105,9 +105,9 @@ impl AsyncRunnable for SetPower {
                 "-H",
                 &ipmi_url,
                 "-U",
-                &ipmi_admin_user,
+                ipmi_admin_user,
                 "-P",
-                &ipmi_admin_password,
+                ipmi_admin_password,
                 "chassis",
                 "power",
                 match self.pstate {
@@ -516,7 +516,7 @@ pub async fn wait_for_reachable(
     while tokio::time::Instant::now() < end && retry_count < timeout_config.max_retries {
         tokio::time::sleep(Duration::from_secs(timeout_config.retry_interval as u64)).await;
         let res = tokio::process::Command::new("ping")
-            .args(["-c", "1", "-n", "-q", &fqdn])
+            .args(["-c", "1", "-n", "-q", fqdn])
             .kill_on_drop(true)
             .output()
             .await
@@ -640,7 +640,7 @@ pub async fn set_host_power_state(
 ///
 /// * `config` - A reference to [`HostConfig`] containing the host's connection details.
 /// * `power_command` - A string slice representing the power command (`"on"`, `"off"`, or `"reset"`).
-/// technically, other commands are possible, but we shouldn't need them.
+///   technically, other commands are possible, but we shouldn't need them.
 ///
 /// # Returns
 ///

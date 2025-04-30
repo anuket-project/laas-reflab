@@ -2,7 +2,6 @@ use dal::FKey;
 
 use super::VlanConnection;
 use models::inventory::HostPort;
-use std::collections::HashMap;
 use tascii::prelude::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Hash)]

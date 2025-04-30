@@ -18,6 +18,8 @@ where
     base: PhantomData<Module>,
 }
 
+/// Helper trait
+///
 /// this can be rewritten in the future to not be used,
 /// currently this does the conversion late when we hold the GIL
 /// in the builder, but we could instead acquire the GIL and release it
@@ -25,7 +27,7 @@ where
 /// the (basically) Box<dyn IntoPy<Py<PyAny>>> that this tries to do
 /// here
 pub trait DynIntoPy {
-    fn into_py(&mut self, py: Python<'_>) -> Py<PyAny>;
+    fn mut_into_py(&mut self, py: Python<'_>) -> Py<PyAny>;
 }
 
 struct DynIntoPyHolder<T>
@@ -39,7 +41,7 @@ impl<T> DynIntoPy for DynIntoPyHolder<T>
 where
     T: IntoPy<Py<PyAny>>,
 {
-    fn into_py(&mut self, py: Python<'_>) -> Py<PyAny> {
+    fn mut_into_py(&mut self, py: Python<'_>) -> Py<PyAny> {
         //self.content.into_py(py)
         self.content.take().unwrap().into_py(py)
     }
@@ -96,13 +98,17 @@ where
     {
         let o = Python::with_gil(|py| {
             let psn = PyString::new(py, self.func.as_str());
-            let args: Vec<Py<PyAny>> = self.args.into_iter().map(|mut e| e.into_py(py)).collect();
+            let args: Vec<Py<PyAny>> = self
+                .args
+                .into_iter()
+                .map(|mut e| e.mut_into_py(py))
+                .collect();
             let args = PyTuple::new(py, args.as_slice());
 
             let kwargs: HashMap<String, Py<PyAny>> = self
                 .kwargs
                 .into_iter()
-                .map(|(s, mut a)| (s, a.into_py(py)))
+                .map(|(s, mut a)| (s, a.mut_into_py(py)))
                 .collect();
             let res = Module::init(py).call_method(psn, args, Some(kwargs.into_py_dict(py)));
 

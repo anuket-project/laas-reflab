@@ -18,7 +18,7 @@ use axum::{
     extract::{Json, Path},
     http::StatusCode,
 };
-use common::prelude::{itertools::Itertools, *};
+use common::prelude::*;
 use dal::{web::*, *};
 use models::{
     allocator::{Allocation, AllocationReason, ResourceHandle},
@@ -312,7 +312,7 @@ pub async fn list_hosts(
 }
 
 pub fn routes(_state: AppState) -> ApiRouter {
-    return ApiRouter::new()
+    ApiRouter::new()
         .api_route("/:lab_name", get(list_flavors))
-        .api_route("/:lab_name/hosts", get(list_hosts));
+        .api_route("/:lab_name/hosts", get(list_hosts))
 }

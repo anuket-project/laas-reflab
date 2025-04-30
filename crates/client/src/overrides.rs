@@ -22,6 +22,7 @@ use std::str::FromStr;
 use strum::IntoEnumIterator;
 use strum_macros::{Display, EnumIter, EnumString};
 use tascii::prelude::Runtime;
+use tracing::info;
 use workflows::{
     deploy_booking::{
         deploy_host::DeployHost,
@@ -257,7 +258,7 @@ async fn handle_redeploy(
     let id = tascii_rt.enroll(task.into());
     tascii_rt.set_target(id);
 
-    format!("Reran host deploy as task id {id}");
+    info!("Reran host deploy as task id {id}");
 
     transaction.commit().await?;
     Ok(())
@@ -397,7 +398,7 @@ async fn handle_boot_host(
     let id = tascii_rt.enroll(task.into());
     tascii_rt.set_target(id);
 
-    format!("Enrolled boot dev task as id {id:?}");
+    info!("Enrolled boot dev task as id {id:?}");
 
     transaction.commit().await?;
     Ok(())

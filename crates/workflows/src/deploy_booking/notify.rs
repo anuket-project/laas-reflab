@@ -37,7 +37,7 @@ impl AsyncRunnable for Notify {
         let agg = self.aggregate.get(&mut transaction).await.unwrap();
         let hosts = match Instance::select()
             .where_field("aggregate")
-            .equals(agg.id.clone())
+            .equals(agg.id)
             .run(&mut transaction)
             .await
         {
@@ -118,22 +118,19 @@ impl AsyncRunnable for Notify {
 
                 let mut sent = false;
                 for host in hosts {
-                    if sent == false {
-                        match host.config.image.clone().get(&mut transaction).await {
-                            Ok(i) => {
-                                if i.cobbler_name.to_lowercase().contains("eve") {
-                                    booking_started(&env, &info, Some(json!({"eve": true})))
-                                        .await
-                                        .expect("couldn't notify users");
-                                    sent = true;
-                                }
+                    if !sent {
+                        if let Ok(i) = host.config.image.clone().get(&mut transaction).await {
+                            if i.cobbler_name.to_lowercase().contains("eve") {
+                                booking_started(&env, &info, Some(json!({"eve": true})))
+                                    .await
+                                    .expect("couldn't notify users");
+                                sent = true;
                             }
-                            Err(_) => {}
                         }
                     }
                 }
 
-                if sent == false {
+                if !sent {
                     booking_started(&env, &info, None)
                         .await
                         .expect("couldn't notify users");
@@ -151,10 +148,12 @@ impl AsyncRunnable for Notify {
             Situation::RequestBookingExtension => request_booking_extension(
                 &env,
                 &info,
-                context_map.get("extension_date").unwrap_or(&format!("N/A")),
+                context_map
+                    .get("extension_date")
+                    .unwrap_or(&"N/A".to_string()),
                 context_map
                     .get("extension_reason")
-                    .unwrap_or(&format!("N/A")),
+                    .unwrap_or(&"N/A".to_string()),
             )
             .await
             .expect("couldn't notify admins"),

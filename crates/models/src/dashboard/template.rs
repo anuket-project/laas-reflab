@@ -213,7 +213,6 @@ mod tests {
                 prop_assert!(transaction.is_ok(), "Transaction creation failed: {:?}", transaction.err());
                 let mut transaction = transaction.unwrap();
 
-
                 let new_row = NewRow::new(template.clone());
                 let insert_result = new_row.insert(&mut transaction).await;
                 prop_assert!(insert_result.is_ok(), "Insert failed: {:?}", insert_result.err());

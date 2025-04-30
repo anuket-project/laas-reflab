@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 2e7a78ff01eaf2634fd8bb0970ffa20fc9b5b38fdffac22865abbd10d909457b # shrinks to instance = Instance { id: [Fk<models::dashboard::instance::Instance> -> 00000000-0000-0000-0000-000000000000], within_template: [Fk<models::dashboard::template::Template> -> 00000000-0000-0000-0000-000000000000], aggregate: [Fk<models::dashboard::aggregate::Aggregate> -> 00000000-0000-0000-0000-000000000000], network_data: [Fk<models::dashboard::network_assignment_map::NetworkAssignmentMap> -> 00000000-0000-0000-0000-000000000000], linked_host: None, config: HostConfig { hostname: "a", flavor: [Fk<models::inventory::flavor::Flavor> -> 00000000-0000-0000-0000-000000000000], image: [Fk<models::dashboard::image::Image> -> 00000000-0000-0000-0000-000000000000], cifile: [], connections: [] }, metadata: {} }

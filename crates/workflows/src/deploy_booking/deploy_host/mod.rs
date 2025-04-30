@@ -21,10 +21,7 @@ use tascii::{prelude::*, task_trait::AsyncRunnable};
 
 use super::{set_boot::SetBoot, set_host_power_state::SetPower};
 use crate::{
-    configure_networking::{
-        mgmt_network_config, mgmt_network_config_with_public, prod_network_config,
-        ConfigureNetworking,
-    },
+    configure_networking::{mgmt_network_config, prod_network_config, ConfigureNetworking},
     deploy_booking::{
         cobbler_set_config::*,
         set_host_power_state::{confirm_power_state, HostConfig, PowerState, TimeoutConfig},
@@ -165,7 +162,7 @@ impl DeployHost {
     /// Currently recomputes the workflow distro every time this is called
     async fn get_workflow_distro(&mut self) -> Result<WorkflowDistro, anyhow::Error> {
         if let Some(distro) = &self.distribution {
-            return Ok(distro.clone());
+            Ok(distro.clone())
         } else {
             let mut client = new_client().await.unwrap();
             let mut transaction = client.easy_transaction().await.unwrap();
@@ -186,7 +183,7 @@ impl DeployHost {
             let distro = WorkflowDistro::from_str(&image_name).unwrap();
 
             self.distribution = Some(distro.clone());
-            return Ok(distro);
+            Ok(distro)
         }
     }
 
@@ -419,7 +416,7 @@ impl DeployHost {
         context: &Context,
         host_name: &str,
     ) -> Result<(), TaskError> {
-        const PREINSTALL_IMAGE_NAME: &'static str = "ubuntu_wipefs-x86_64";
+        const PREINSTALL_IMAGE_NAME: &str = "ubuntu_wipefs-x86_64";
 
         // Set to wipefs image, which will wipe disk filesystems upon PXE booting
         self.log(
@@ -573,7 +570,7 @@ impl DeployHost {
         host_name: &str,
     ) -> Result<(), TaskError> {
         let mut client = new_client().await.unwrap();
-        let mut transaction = client.easy_transaction().await.unwrap();
+        let transaction = client.easy_transaction().await.unwrap();
 
         // Note - careful of too many open transactions at once. If things unexpectly stop working, check that first
 

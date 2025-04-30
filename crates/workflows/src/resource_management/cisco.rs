@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use anyhow::{anyhow, Result};
 use common::prelude::{dashmap::DashMap, lazy_static, parking_lot, tracing};
 use lazy_static::lazy_static;
-use models::inventory::{HostPort, Switch, SwitchPort};
+use models::inventory::{HostPort, Switch};
 
 use crate::configure_networking::{BondGroup, NetworkConfig, VlanConnection};
 use dal::{new_client, AsEasyTransaction, EasyTransaction, FKey};

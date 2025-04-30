@@ -130,7 +130,9 @@ impl MetricHandler {
     /// MetricHandler::send(metric).unwrap();
     /// ```
     pub fn send(message: impl Into<MetricMessage>) -> Result<(), MetricError> {
-        Self::global_sender().send(message.into())?;
+        Self::global_sender()
+            .send(message.into())
+            .map_err(|e| MetricError::SendError(Box::new(e)))?;
         Ok(())
     }
 

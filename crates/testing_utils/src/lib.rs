@@ -1,5 +1,5 @@
-use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
-use dal::{DBTable, EasyTransaction, ExistingRow, FKey, NewRow};
+use chrono::{DateTime, NaiveDateTime, Utc};
+use dal::{DBTable, EasyTransaction, FKey, SchrodingerRow};
 use eui48::MacAddress;
 use macaddr::MacAddr6;
 use once_cell::sync::Lazy;
@@ -132,8 +132,8 @@ pub async fn insert_default_model_at<T: Default + DBTable>(
     t: &mut EasyTransaction<'_>,
 ) -> Result<(), anyhow::Error> {
     let model = T::default().assign_new_id(id);
-    let new_row = NewRow::new(model);
-    new_row.insert(t).await?;
+    let new_row = SchrodingerRow::new(model);
+    new_row.upsert(t).await?;
     Ok(())
 }
 
