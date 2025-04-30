@@ -10,7 +10,13 @@ pretty_assertions = { workspace = true }
 
 [dependencies]
 anyhow = { workspace = true }
-sqlx = { workspace = true }
+sqlx = { workspace = true, features = [
+  "mac_address",
+  "macros",
+  "postgres",
+  "json",
+] }
+mac_address = { workspace = true, features = ["serde"] }
 base16ct = { workspace = true }
 eui48 = { workspace = true }
 inventory = { workspace = true }

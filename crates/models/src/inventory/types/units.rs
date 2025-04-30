@@ -51,6 +51,59 @@ impl DataValue {
     }
 }
 
+mod sqlx_impl {
+    use serde_json::Value as JsonValue;
+    use sqlx::{
+        encode::IsNull,
+        postgres::{PgTypeInfo, PgValueRef},
+        Database, Decode, Encode, Postgres, Type,
+    };
+    use std::error::Error;
+
+    use super::DataValue;
+
+    impl Type<Postgres> for DataValue {
+        fn type_info() -> PgTypeInfo {
+            // delegate to serde_json::Value’s JSONB type
+            <JsonValue as Type<Postgres>>::type_info()
+        }
+    }
+
+    impl<'r> Decode<'r, Postgres> for DataValue {
+        fn decode(value: PgValueRef<'r>) -> Result<Self, Box<dyn Error + Send + Sync>> {
+            // decode the raw JSONB bytes into serde_json::Value
+            let raw: JsonValue = Decode::decode(value)?;
+            // convert the JSON Value into your DataValue via Serde
+            serde_json::from_value(raw).map_err(|e| Box::new(e) as _)
+        }
+    }
+
+    impl<'q> Encode<'q, Postgres> for DataValue {
+        fn encode_by_ref(
+            &self,
+            buf: &mut <Postgres as Database>::ArgumentBuffer<'q>,
+        ) -> Result<IsNull, Box<dyn Error + Send + Sync>> {
+            // serialize `self` to serde_json::Value
+            let raw = serde_json::to_value(self)?;
+            // delegate to Value’s JSONB encoder
+            <JsonValue as Encode<'q, Postgres>>::encode(raw, buf)
+        }
+
+        ///  tell SQLx the type we produce
+        fn produces(&self) -> Option<<Postgres as Database>::TypeInfo> {
+            Some(<JsonValue as Type<Postgres>>::type_info())
+        }
+
+        fn size_hint(&self) -> usize {
+            // delegate to Value’s hint impl
+            match serde_json::to_value(self) {
+                Ok(raw) => <JsonValue as Encode<'q, Postgres>>::size_hint(&raw),
+                Err(_) => 0,
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,15 +1,10 @@
-// Copyright (c) 2023 University of New Hampshire
-// SPDX-License-Identifier: MIT
 #![doc = include_str!("../README.md")]
 #![feature(result_flattening, iter_intersperse, if_let_guard, async_fn_in_trait)]
-
-//#![allow(dead_code, unused_variables, unused_imports, unused_mut)]
 
 pub mod cleanup_booking;
 pub mod configure_networking;
 pub mod deploy_booking;
 pub mod entry;
-pub mod inspect_host;
 pub mod resource_management;
 pub mod test_tascii;
 pub mod users;

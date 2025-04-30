@@ -2,11 +2,7 @@ use dal::{web::AnyWay, *};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-mod import;
 mod port;
-
-pub use import::ImportHost;
-
 pub use port::HostPort;
 
 use crate::inventory::{Arch, Flavor};
@@ -94,8 +90,12 @@ impl DBTable for Host {
 }
 
 impl Host {
-    pub async fn ports(&self, t: &mut EasyTransaction<'_>) -> Result<Vec<HostPort>, anyhow::Error> {
-        let r = HostPort::all_for_host(t, self.id).await;
+    pub async fn ports(
+        &self,
+        _t: &mut EasyTransaction<'_>,
+    ) -> Result<Vec<HostPort>, anyhow::Error> {
+        let pool = dal::get_db_pool().await?;
+        let r = HostPort::all_for_host(&pool, self.id).await;
 
         tracing::info!("Ports for host {:?} are {:?}", self.id, r);
 
@@ -136,7 +136,7 @@ impl Host {
 mod test {
     use super::*;
     use proptest::prelude::*;
-    use testing_utils::{block_on_runtime, insert_default_model_at, mac_address_strategy};
+    use testing_utils::{block_on_runtime, insert_default_model_at, mac_address_strategy_eui48};
 
     fn projects_strategy() -> impl Strategy<Value = Vec<String>> {
         proptest::collection::vec("[a-zA-Z0-9]{1, 20}", 0..5)
@@ -160,12 +160,12 @@ mod test {
                 "[a-zA-Z0-9]{1,20}",   // iol_id
             ),
             (
-                mac_address_strategy(),     // iol_mac
-                "[a-zA-Z0-9]{1,20}",        // ipmi_user
-                "[a-zA-Z0-9]{1,20}",        // ipmi_pass
-                "[a-zA-Z0-9.-]{1,50}",      // fqdn
-                projects_strategy(),        // projects
-                sda_uefi_device_strategy(), // sda_uefi_device
+                mac_address_strategy_eui48(), // iol_mac
+                "[a-zA-Z0-9]{1,20}",          // ipmi_user
+                "[a-zA-Z0-9]{1,20}",          // ipmi_pass
+                "[a-zA-Z0-9.-]{1,50}",        // fqdn
+                projects_strategy(),          // projects
+                sda_uefi_device_strategy(),   // sda_uefi_device
             ),
         )
             .prop_map(

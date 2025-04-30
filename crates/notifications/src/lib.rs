@@ -536,7 +536,7 @@ pub mod templates {
     /// Wrapper for the [`TERA`] render function.
     ///
     /// Allows for direct rendering of any jinja2 template that is not a notification (i.e. grub config files)
-    /// 
+    ///
     /// # Arguments
     ///
     /// * `template_name`
@@ -550,15 +550,17 @@ pub mod templates {
     ///
     /// - [`tera::Error`] if the template could not be rendered
     ///
-    pub fn render_template(template_name: &str, context: &tera::Context) -> Result<String, tera::Error> {
+    pub fn render_template(
+        template_name: &str,
+        context: &tera::Context,
+    ) -> Result<String, tera::Error> {
         TERA.render(&template_name, &context)
     }
-
 
     /// Uses [`TERA`] to render the generic/grub_config.j2 template with the provided context variables.
     ///
     /// Intended for use with distros such as EVE-OS that require specialized grub config files not supported by cobbler.
-    /// 
+    ///
     /// # Arguments
     ///
     /// * `system_name` - &[`str`]
@@ -575,8 +577,12 @@ pub mod templates {
     ///
     /// - [`tera::Error`] if the template could not be rendered
     ///
-    pub fn render_grub_config(system_name: &str, kernel_path: &str, kernel_args: Vec<&str>, initrd_paths: Vec<&str>) -> Result<String, tera::Error> {
-
+    pub fn render_grub_config(
+        system_name: &str,
+        kernel_path: &str,
+        kernel_args: Vec<&str>,
+        initrd_paths: Vec<&str>,
+    ) -> Result<String, tera::Error> {
         let mut grub_template_context = tera::Context::new();
 
         grub_template_context.insert("system_name", &system_name);
@@ -606,8 +612,12 @@ pub mod templates {
     ///
     /// - [`tera::Error`] if the template could not be rendered
     ///
-    pub fn render_eve_grub_config(system_name: &str, image_name: &str, disk: &str, soft_serial: &str) -> Result<String, tera::Error> {
-
+    pub fn render_eve_grub_config(
+        system_name: &str,
+        image_name: &str,
+        disk: &str,
+        soft_serial: &str,
+    ) -> Result<String, tera::Error> {
         // TODO - Find a clean way (that makes sense) to not hardcode `/images`
         let tftp_images_directory = "/images";
 
@@ -625,14 +635,14 @@ pub mod templates {
                 "overlaytmpfs",
                 "root=/initrd.image",
                 &format!("eve_install_disk={disk}"),
-                &format!("eve_soft_serial={soft_serial}")
+                &format!("eve_soft_serial={soft_serial}"),
             ],
             vec![
                 &format!("{tftp_images_directory}/{image_name}/amd64.initrd.img"),
                 &format!("{tftp_images_directory}/{image_name}/amd64.installer.img"),
                 &format!("{tftp_images_directory}/{image_name}/amd64.initrd.bits"),
-                &format!("{tftp_images_directory}/{image_name}/amd64.rootfs.img")
-            ]
+                &format!("{tftp_images_directory}/{image_name}/amd64.rootfs.img"),
+            ],
         )
     }
 

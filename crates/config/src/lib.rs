@@ -146,7 +146,7 @@ pub struct NotificationConfig {
 pub struct CobblerAPIConfig {
     pub url: String,
     pub username: String,
-    pub password: String
+    pub password: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -156,13 +156,13 @@ pub struct CobblerSSHConfig {
     pub user: String,
     pub password: String,
     pub writable_directory: String, // i.e. /tmp
-    pub system_directory: String // i.e. /srv/tftpboot/grub/system
+    pub system_directory: String,   // i.e. /srv/tftpboot/grub/system
 }
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct CobblerConfig {
     pub api: CobblerAPIConfig,
-    pub ssh: CobblerSSHConfig
+    pub ssh: CobblerSSHConfig,
 }
 
 #[derive(Debug, Deserialize, Clone)]

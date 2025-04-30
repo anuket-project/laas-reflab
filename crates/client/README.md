@@ -17,7 +17,7 @@ Adding a new command to the CLI client is straightforward. Just add another
 [`str`] in the list of commands in the `get_tasks()` function in `lib.rs`.
 Then add a new match arm in `match task` in the same file to handle the new command.
 
-```rust no_run
+```rust ignore
 fn get_tasks(_session: &Server) -> Vec<&'static str> {
     vec![
         "Use database",
@@ -46,7 +46,7 @@ like to nest your command in one of the existing options/categories
 you have to find the parent function associated with that option and add your
 entry there. Here is an example for the `Overrides` category:
 
-```rust no_run
+```rust ignore
 async fn overrides(mut session: &Server, tascii_rt: &'static Runtime) ->
   Result<(), anyhow::Error> {
 

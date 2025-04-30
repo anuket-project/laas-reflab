@@ -10,7 +10,6 @@
     panic_can_unwind
 )]
 
-pub mod importing;
 pub mod mgmt_workflows;
 pub mod remote;
 
@@ -18,11 +17,10 @@ mod ipa;
 mod overrides;
 mod queries;
 
-use crate::importing::*;
 use common::prelude::{
     anyhow, config::settings, inquire::validator::Validation, itertools::Itertools,
 };
-use dal::{new_client, AsEasyTransaction, DBTable, EasyTransaction, FKey, Importable, ID};
+use dal::{new_client, AsEasyTransaction, DBTable, EasyTransaction, FKey, ID};
 use liblaas::{
     booking::make_aggregate,
     web::api::{self, BookingMetadataBlob},
@@ -66,10 +64,6 @@ pub enum Command {
     UpdateBooking,
     #[strum(serialize = "Regenerate CI Files")]
     BookingCI,
-    #[strum(serialize = "Import Data")]
-    Import,
-    #[strum(serialize = "Export Data")]
-    Export,
     #[strum(serialize = "Run Migrations")]
     Migrations,
     #[strum(serialize = "Restart CLI")]
@@ -161,12 +155,6 @@ pub async fn cli_entry(
 
             Command::Query => queries::query(session).await.unwrap(),
 
-            Command::Import => {
-                import(session).await.expect("Failed to import");
-            }
-            Command::Export => {
-                export(session).await.expect("Failed to export");
-            }
             // Get useful info
             Command::UsageData => {
                 get_usage_data(session).await;
@@ -551,287 +539,6 @@ async fn create_booking(mut session: &Server) -> Result<(), anyhow::Error> {
     Ok(())
 }
 
-async fn import(mut session: &Server) -> Result<(), anyhow::Error> {
-    loop {
-        let mut client = new_client().await.expect("Expected to connect to db");
-        let mut transaction = client
-            .easy_transaction()
-            .await
-            .expect("Transaction creation error");
-
-        match Select::new(
-            "Select a resource type to import: ",
-            ImportCategories::iter().collect(),
-        )
-        .prompt(session)?
-        {
-            ImportCategories::Bookings => {
-                import_bookings(
-                    session,
-                    PathBuf::from("./config_data/laas-hosts/tascii/booking_dump.json"),
-                )
-                .await;
-            }
-            ImportCategories::Hosts => {
-                /*let conf_path =
-                PathBuf::from("./config_data/laas-hosts/tascii/host_confluence.json");*/
-                let labs_dir = PathBuf::from("./config_data/laas-hosts/inventory/labs");
-                let mut proj_vec: Vec<String> = labs_dir
-                    .read_dir()
-                    .expect("Expected to read import dir")
-                    .filter_map(|h| {
-                        if h.as_ref()
-                            .expect("Expected project dir to exist")
-                            .path()
-                            .is_dir()
-                        {
-                            Some(h.unwrap().path().to_str().unwrap().to_owned())
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-
-                proj_vec.insert(0, "Select new task".to_owned());
-                proj_vec.insert(1, "Import all".to_owned());
-                let selected_host: Result<String, _> = Select::new("Choose host:", proj_vec)
-                    .with_help_message("Select a type to import")
-                    .prompt(session);
-                match selected_host
-                    .expect("Expected import host list to be non-empty")
-                    .as_str()
-                {
-                    "Select new task" => {
-                        break;
-                    }
-                    "Import all" => {
-                        import_hosts(session).await;
-                        writeln!(session, "Finished importing hosts")?;
-                    }
-                    proj => {
-                        writeln!(session, "Importing {:?}", proj)?;
-
-                        import_proj_hosts(
-                            session,
-                            &mut transaction,
-                            PathBuf::from_str(proj).expect("Expected project to exist"),
-                        )
-                        .await;
-                    }
-                }
-            }
-            ImportCategories::Switches => {
-                //import_switches().await;
-                let switch_path: PathBuf =
-                    PathBuf::from_str("./config_data/laas-hosts/tascii/switches.json")
-                        .expect("Expected to process into a PathBuf");
-
-                import_switches(session, switch_path).await?;
-            }
-            ImportCategories::Vlans => {
-                let import_path = PathBuf::from_str("./config_data/laas-hosts/tascii/vlans.json")?;
-                import_vlans_once(session, import_path)
-                    .await
-                    .expect("couldn't import vlans");
-            }
-            ImportCategories::Templates => {
-                let dir = PathBuf::from("./config_data/laas-hosts/inventory/labs");
-                let mut proj_vec: Vec<String> = dir
-                    .read_dir()
-                    .expect("Expected to read import dir")
-                    .filter_map(|h| {
-                        if h.as_ref().expect("Expected host to exist").path().is_dir() {
-                            Some(h.unwrap().path().to_str().unwrap().to_owned())
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-                proj_vec.insert(0, "Select new task".to_owned());
-                proj_vec.insert(1, "Import all".to_owned());
-                let selected_template: Result<String, _> =
-                    Select::new("Choose template:", proj_vec)
-                        .with_help_message("Select a type to import")
-                        .prompt(session);
-                match selected_template
-                    .expect("Expected import template list to be non-empty")
-                    .as_str()
-                {
-                    "Select new task" => {
-                        break;
-                    }
-                    "Import all" => {
-                        import_templates(session).await;
-                        writeln!(session, "Finished importing templates")?;
-                    }
-                    proj => {
-                        writeln!(session, "Importing {:?}", proj)?;
-
-                        import_proj_templates(
-                            session,
-                            &mut transaction,
-                            PathBuf::from_str(proj).expect("Expected project to exist"),
-                        )
-                        .await;
-                    }
-                }
-            }
-            ImportCategories::Images => import_images(session).await,
-            ImportCategories::Flavors => match Flavor::select().run(&mut transaction).await {
-                Ok(flavor_vec) => {
-                    for flavor in flavor_vec {
-                        match flavor.export(&mut transaction).await {
-                            Ok(_) => writeln!(session, "Exported flavor: {}", flavor.name)
-                                .expect("Expected to write line"),
-                            Err(e) => writeln!(
-                                session,
-                                "Failed to export flavor: {} due to error: {}",
-                                flavor.name,
-                                e.to_string()
-                            )
-                            .expect("Expected to write line"),
-                        };
-                    }
-                }
-                Err(e) => writeln!(
-                    session,
-                    "Expected to find flavor, failed due to error: {}",
-                    e.to_string()
-                )
-                .expect("Expected to write line"),
-            },
-        }
-        transaction.commit().await.expect("couldn't commit import");
-    }
-    Ok(())
-}
-
-async fn export(mut session: &Server) -> Result<(), anyhow::Error> {
-    loop {
-        let mut client = new_client().await.expect("Expected to connect to db");
-        let mut transaction = client
-            .easy_transaction()
-            .await
-            .expect("Transaction creation error");
-
-        let selected_col = Select::new("Resource type:", ExportCategories::iter().collect())
-            .with_help_message("Select a type to import")
-            .prompt(session);
-
-        match selected_col.expect("Expected export type array to be non-empty") {
-            ExportCategories::SelectNewTask => {
-                break;
-            }
-            ExportCategories::Hosts => match Host::select().run(&mut transaction).await {
-                Ok(host_vec) => {
-                    for host in host_vec {
-                        match host.export(&mut transaction).await {
-                            Ok(_) => writeln!(session, "Exported host: {}", host.server_name)
-                                .expect("Expected to write line"),
-                            Err(e) => writeln!(
-                                session,
-                                "Failed to export host: {} due to error: {}",
-                                host.server_name,
-                                e.to_string()
-                            )
-                            .expect("Expected to write line"),
-                        };
-                    }
-                }
-                Err(e) => writeln!(
-                    session,
-                    "Expected to find hosts, failed due to error: {}",
-                    e.to_string()
-                )
-                .expect("Expected to write line"),
-            },
-            ExportCategories::Images => match Image::select().run(&mut transaction).await {
-                Ok(image_vec) => {
-                    for image in image_vec {
-                        writeln!(session, "Exporting image: {}", image.cobbler_name)
-                            .expect("Expectd to write line");
-                        match image.export(&mut transaction).await {
-                            Ok(_) => writeln!(session, "Exported image: {}", image.name)
-                                .expect("Expected to write line"),
-                            Err(e) => writeln!(
-                                session,
-                                "Failed to export image: {} due to error: {}",
-                                image.name,
-                                e.to_string()
-                            )
-                            .expect("Expected to write line"),
-                        };
-                    }
-                }
-                Err(e) => writeln!(
-                    session,
-                    "Expected to find images, failed due to error: {}",
-                    e.to_string()
-                )
-                .expect("Expected to write line"),
-            },
-            ExportCategories::Flavors => match Flavor::select().run(&mut transaction).await {
-                Ok(flavor_vec) => {
-                    for flavor in flavor_vec {
-                        match flavor.export(&mut transaction).await {
-                            Ok(_) => writeln!(session, "Exported flavor: {}", flavor.name)
-                                .expect("Expected to write line"),
-                            Err(e) => writeln!(
-                                session,
-                                "Failed to export flavor: {} due to error: {}",
-                                flavor.name,
-                                e.to_string()
-                            )
-                            .expect("Expected to write line"),
-                        };
-                    }
-                }
-                Err(e) => writeln!(
-                    session,
-                    "Expected to find flavor, failed due to error: {}",
-                    e.to_string()
-                )
-                .expect("Expected to write line"),
-            },
-            ExportCategories::Templates => {
-                match Template::select()
-                    .where_field("public")
-                    .equals(true)
-                    .run(&mut transaction)
-                    .await
-                {
-                    Ok(template_vec) => {
-                        for template in template_vec {
-                            match template.export(&mut transaction).await {
-                                Ok(_) => writeln!(session, "Exported template: {}", template.name)
-                                    .expect("Expected to write line"),
-                                Err(e) => writeln!(
-                                    session,
-                                    "Failed to export template: {} due to error: {}",
-                                    template.name,
-                                    e.to_string()
-                                )
-                                .expect("Expected to write line"),
-                            };
-                        }
-                    }
-                    Err(e) => writeln!(
-                        session,
-                        "Expected to find templates, failed due to error: {}",
-                        e.to_string()
-                    )
-                    .expect("Expected to write line"),
-                }
-            }
-            opt => {
-                writeln!(session, "Hit default case in export option: {:?}", opt)?;
-            }
-        }
-        transaction.commit().await.expect("couldn't commit import");
-    }
-    Ok(())
-}
-
 async fn expire_booking(_session: &Server) {
     todo!()
 }
@@ -847,29 +554,6 @@ async fn get_usage_data(_session: &Server) {
 async fn regenerate_ci_files(_session: &Server) {
     // Update booking in database with a freshly generated set of ci-files
     todo!()
-}
-
-#[derive(Clone, Debug, Display, EnumString, EnumIter)]
-pub enum ImportCategories {
-    Hosts,
-    Flavors,
-    Switches,
-    Vlans,
-    Bookings,
-    Templates,
-    Images,
-}
-
-#[derive(Clone, Debug, Display, EnumString, EnumIter)]
-pub enum ExportCategories {
-    Hosts,
-    Flavors,
-    Switches,
-    Vlans,
-    Bookings,
-    Templates,
-    Images,
-    SelectNewTask,
 }
 
 #[derive(Clone)]

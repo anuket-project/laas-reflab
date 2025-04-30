@@ -1,0 +1,160 @@
+---
+version: 2
+plan:
+  project-key: OST
+  key: OSTLTB
+  name: LibLaas Tascii Build
+
+variables:
+  REGISTRY: nexus.iol.unh.edu
+  CI_IMAGE: nexus.iol.unh.edu/liblaas-ci:latest
+
+stages:
+  - Run Checks:
+      jobs:
+        - check
+        - format
+        - clippy
+        - audit
+        - machete
+        - test
+  - Build:
+      jobs:
+        - build
+
+check:
+  tasks:
+    - checkout
+    - script:
+        description: "Validate Source Code"
+        interpreter: SHELL
+        scripts:
+          - docker pull ${CI_IMAGE}
+          - docker run --rm -v "$(pwd)":/app -w /app ${bamboo.CI_IMAGE} cargo make check
+  requirements:
+  - Docker
+  - linuxos
+
+format:
+  tasks:
+    - checkout
+    - script:
+        description: "Check Formatting"
+        interpreter: SHELL
+        scripts:
+          - docker pull ${CI_IMAGE}
+          - docker run --rm -v "$(pwd)":/app -w /app ${bamboo.CI_IMAGE} cargo make fmt
+  requirements:
+  - Docker
+  - linuxos
+
+clippy:
+  tasks:
+    - checkout
+    - script:
+        description: "Check Code Style"
+        interpreter: SHELL
+        scripts:
+          - docker pull ${CI_IMAGE}
+        # temporarily allow clippy warnings
+          - docker run --rm -v "$(pwd)":/app -w /app ${bamboo.CI_IMAGE} bash -c "cargo make clippy || true"
+  requirements:
+  - Docker
+  - linuxos
+
+audit:
+  tasks:
+    - checkout
+    - script:
+        interpreter: SHELL
+        description: "Audit Dependencies"
+        scripts:
+          - docker pull ${CI_IMAGE}
+          - docker run --rm -v "$(pwd)":/app -w /app ${bamboo.CI_IMAGE} bash -c "cargo make audit > audit_output.txt || true"
+  requirements:
+   - linuxos 
+   - Docker
+  artifacts:
+    - name: Security Audit
+      location: ./
+      pattern: audit_output.txt
+
+machete:
+  tasks:
+    - checkout
+    - script:
+        interpreter: SHELL
+        description: "Check for Unnused Dependencies"
+        scripts:
+          - docker pull ${CI_IMAGE}
+          - docker run --rm -v "$(pwd)":/app -w /app ${bamboo.CI_IMAGE} bash -c "cargo make machete > machete_output.txt || true"
+  requirements:
+  - Docker
+  - linuxos 
+  artifacts:
+    - name: Unused Dependencies
+      location: ./
+      pattern: machete_output.txt
+
+test:
+  tasks:
+    - checkout
+    - script:
+        interpreter: SHELL
+        description: "Run Unit Tests"
+        scripts:
+          - |
+            docker stop test_db > /dev/null 2>&1 || true
+            docker rm test_db > /dev/null 2>&1 || true
+            docker network rm test_net || true
+            docker network create test_net 
+
+            docker run --rm --network test_net --name test_db \
+              -e POSTGRES_USER=postgres \
+              -e POSTGRES_DB=liblaas \
+              -e POSTGRES_PASSWORD=password \
+              -d postgres:15-alpine
+
+            export DATABASE_URL=postgres://postgres:password@test_db:5432/liblaas
+
+            docker pull ${bamboo.CI_IMAGE}
+
+            docker run --rm \
+              --network test_net \
+              -e DATABASE_URL="$DATABASE_URL" \
+              -v "$(pwd)":/app \
+              -w /app \
+              ${bamboo.CI_IMAGE} \
+               cargo make --profile ci ci 
+
+            docker stop test_db > /dev/null 2>&1 || true
+            docker rm test_db > /dev/null 2>&1 || true
+            docker network rm test_net || true
+  final-tasks:
+    - test-parser:
+        type: junit
+        test-results:
+          - junit.xml
+  requirements:
+    - Docker
+    - linuxos
+
+build:
+  tasks:
+  - checkout
+  - script:
+      interpreter: SHELL
+      scripts:
+      - |-
+        docker -t laas-reflab build .
+        docker image rm -f laas-reflab
+      description: Build laas-reflab docker image
+  requirements:
+  - Docker
+  - linuxos 
+
+triggers:
+  - remote
+
+branches:
+  create: for-new-branch

@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc b0fcbe1871d9c02c9d486e3a2de1676ba2ed2411aabec102a1796e1de402fd1f # shrinks to host_port = HostPort { id: [Fk<models::inventory::host::port::HostPort> -> 66304d95-c1c6-4d14-a2a3-563054d24a6b], on_host: [Fk<models::inventory::host::Host> -> 06c98e6d-2ebf-4308-9132-194c45fe3da3], switchport: [Fk<models::inventory::switch::port::SwitchPort> -> e1f237fc-b228-466f-87ac-5470659bcac7], name: "-", speed: DataValue { value: 0, unit: Unknown }, mac: MacAddress { bytes: [0, 0, 0, 0, 0, 0] }, switch: "0", bus_addr: "A", bmc_vlan_id: None, management_vlan_id: None, is_a: [Fk<models::inventory::flavor::interface::InterfaceFlavor> -> 9fc8fd77-4705-42c7-81f6-a0df39d95fcd] }

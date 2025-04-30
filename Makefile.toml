@@ -1,42 +1,193 @@
+# ========================
+# Environment Configuration
+# ========================
 [env]
+POSTGRES_IMAGE = "postgres:15-alpine"
+CONTAINER_NAME = "test_db"
 DATABASE_NAME = "liblaas"
 DATABASE_USER = "postgres"
 DATABASE_PASSWORD = "password"
 DATABASE_PORT = "5432"
-DATABASE_HOST = "localhost"
-DATABASE_URL = "postgres://${DATABASE_USER}:${DATABASE_PASSWORD}@${DATABASE_HOST}:${DATABASE_PORT}/${DATABASE_NAME}"
 RUST_BACKTRACE = 0
 
-POSTGRES_IMAGE = "postgres:15-alpine"
-CONTAINER_NAME = "test_db"
+# Development profile (default) - Local database configuration
+[env.development]
+DATABASE_URL = { value = "postgres://postgres:password@localhost:5432/liblaas", condition = { env_not_set = [
+  "DATABASE_URL",
+] } }
 
-[tasks.create-docker-db]
-# requires docker
+# CI profile - Expects external database configuration
+[env.ci]
+DATABASE_URL = { value = "${DATABASE_URL}" }
+
+# ========================
+# Task Definitions
+# ========================
+
+# == Development Workflow Tasks ==
+# Usage: cargo make [task]
+
+# Starts local PostgreSQL container for development
+[tasks.setup-db]
+condition = { profiles = ["development"] }
 workspace = false
-script_runner = "@shell"
 script = '''
-docker stop ${CONTAINER_NAME} > /dev/null 2>&1 || true
-docker rm ${CONTAINER_NAME} > /dev/null 2>&1 || true
-docker run \
-  --name ${CONTAINER_NAME} \
+docker stop ${CONTAINER_NAME} || true
+docker rm ${CONTAINER_NAME} || true
+docker run --name ${CONTAINER_NAME} \
   -e POSTGRES_USER=${DATABASE_USER} \
   -e POSTGRES_DB=${DATABASE_NAME} \
   -e POSTGRES_PASSWORD=${DATABASE_PASSWORD} \
   -p ${DATABASE_PORT}:5432 \
-  -d \
-  ${POSTGRES_IMAGE} \
-  -N 1000
+  -d ${POSTGRES_IMAGE}
 '''
 
+# Waits for database to become ready
+# Depends on: setup-db
+[tasks.wait-db]
+workspace = false
+condition = { profiles = ["development"] }
+script = '''
+docker exec ${CONTAINER_NAME} sh -c \
+  "while ! pg_isready -U ${DATABASE_USER} -d ${DATABASE_NAME}; do sleep 1; done"
+'''
+
+# Applies database migrations
+# Depends on: setup-db, wait-db
 [tasks.migrate]
 workspace = false
 install_crate = "sqlx-cli"
 command = "cargo"
-args = ["sqlx", "migrate", "run", "--database-url", "${DATABASE_URL}"]
-env = { "DATABASE_URL" = "${DATABASE_URL}" }
+args = ["sqlx", "migrate", "run"]
+dependencies = ["setup-db", "wait-db"]
 
-[tasks.nextest]
-args = ["nextest", "run", "--workspace"]
+# Prepares SQLx offline queries (required before building)
+# Depends on: migrate
+[tasks.prepare]
+workspace = false
+install_crate = "sqlx-cli"
 command = "cargo"
+args = ["sqlx", "prepare", "--workspace"]
+dependencies = ["migrate"]
+
+# Runs all tests with local database
+# Usage: cargo make test-local
+[tasks.test-local]
 workspace = false
 install_crate = "cargo-nextest"
+command = "cargo"
+args = ["nextest", "run"]
+dependencies = ["prepare"]
+
+# Generates local LCOV coverage report 
+# Usage: cargo make test-local-coverage
+[tasks.test-local-coverage]
+workspace = false
+args = [
+  "llvm-cov",
+  "--workspace",
+  "--lcov",
+  "--output-path",
+  ".coverage/lcov.info",
+  "nextest",
+]
+command = "cargo"
+dependencies = ["prepare", "install-llvm-cov"]
+
+
+# == CI Pipeline Tasks ==
+# Usage: cargo make [task] --profile ci
+
+# Run tests and output html code coverage artifact
+# # Usage: cargo make test-ci-coverage --profile ci
+[tasks.test-ci-coverage]
+workspace = false
+args = ["llvm-cov", "--workspace", "--html", "nextest", "--profile", "ci"]
+command = "cargo"
+dependencies = ["prepare", "install-llvm-cov"]
+
+# Full CI pipeline entry point
+# Usage: cargo make ci --profile ci
+[tasks.ci]
+workspace = false
+condition = { profiles = ["ci"] }
+script = [
+  'cp target/nextest/ci/junit.xml junit.xml',
+  'if [ "${CARGO_MAKE_PROFILE}" = "ci" ]; then echo "Cleaning target/ after tests..."; cargo clean; fi',
+]
+dependencies = ["test-ci-coverage"]
+
+# == Quality Control Tasks (Both Profiles) ==
+
+# Verify code formatting
+[tasks.fmt]
+workspace = false
+script = [
+  'cargo fmt --all --check',
+  'if [ "${CARGO_MAKE_PROFILE}" = "ci" ]; then echo "Cleaning target/ after fmt..."; cargo clean; fi',
+]
+
+# Run strict lint checks
+[tasks.clippy]
+workspace = false
+install_crate = "cargo-limit"
+env = { SQLX_OFFLINE = "true" }
+script = [
+  'cargo lclippy --all-targets --all-features -- -D warnings',
+  'if [ "${CARGO_MAKE_PROFILE}" = "ci" ]; then echo "Cleaning target/ after clippy..."; cargo clean; fi',
+]
+
+# Detect unused dependencies
+[tasks.machete]
+workspace = false
+install_crate = "cargo-machete"
+script = [
+  # 1) run machete
+  'cargo machete',
+  # 2) if in CI, clean up afterwards
+  'if [ "${CARGO_MAKE_PROFILE}" = "ci" ]; then echo "Cleaning target/ after machete..."; cargo clean; fi',
+]
+
+
+# Full source‐code check
+[tasks.check]
+clear = true
+workspace = false
+env = { SQLX_OFFLINE = "true" }
+script = [
+  'cargo lcheck --all-targets --all-features',
+  'if [ "${CARGO_MAKE_PROFILE}" = "ci" ]; then echo "Cleaning target/ after check..."; cargo clean; fi',
+]
+dependencies = ["install-limit"]
+
+
+# ========================
+# Workflow Presets
+# ========================
+
+[tasks.default]
+# Default development workflow: local tests + coverage
+alias = "test-local-coverage"
+
+[tasks.full-check]
+# Comprehensive local check: tests + linting + security
+dependencies = ["test-local-coverage", "fmt", "clippy", "audit", "machete"]
+
+# ========================
+# Dependency Management
+# ========================
+
+# Coverage tool installation
+[tasks.install-llvm-cov]
+workspace = false
+install_crate = "cargo-llvm-cov"
+
+# Test runner installation
+[tasks.install-nextest]
+workspace = false
+install_crate = "cargo-nextest"
+
+# Cargo limit installation
+[tasks.install-limit]
+workspace = false
+install_crate = "cargo-limit"

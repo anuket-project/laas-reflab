@@ -62,7 +62,7 @@ pub fn naive_datetime_strategy() -> impl Strategy<Value = NaiveDateTime> {
 }
 
 /// Generates a random [`eui48::MacAddress`] for property testing.
-pub fn mac_address_strategy() -> impl Strategy<Value = eui48::MacAddress> {
+pub fn mac_address_strategy_eui48() -> impl Strategy<Value = eui48::MacAddress> {
     (any::<u64>()).prop_map(|value| {
         let bytes = value.to_be_bytes();
         MacAddress::new([bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7]])
@@ -74,6 +74,14 @@ pub fn mac_addr6_strategy() -> impl Strategy<Value = MacAddr6> {
     (any::<u64>()).prop_map(|value| {
         let bytes = value.to_be_bytes();
         MacAddr6::new(bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7])
+    })
+}
+
+/// Generates a random [`mac_address::MacAddress`] for property testing.
+pub fn mac_address_strategy() -> impl Strategy<Value = mac_address::MacAddress> {
+    (any::<u64>()).prop_map(|value| {
+        let bytes = value.to_be_bytes();
+        mac_address::MacAddress::new([bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7]])
     })
 }
 
