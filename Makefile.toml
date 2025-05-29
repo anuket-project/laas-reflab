@@ -61,6 +61,28 @@ command = "cargo"
 args = ["sqlx", "migrate", "run"]
 dependencies = ["setup-db", "wait-db"]
 
+# Load a new database from a SQL dump file
+# Usage: cargo make restore-db --env SQL_DUMP=path/to/dump.sql
+[tasks.restore-db]
+workspace = false
+condition = { profiles = ["development"] }
+dependencies = ["setup-db", "wait-db"]
+script = [
+  '''
+  if [ -z "${SQL_DUMP}" ]; then
+    echo "Error: SQL_DUMP environment variable not set."
+    exit 1
+  fi
+
+  echo "Restoring database from ${SQL_DUMP}..."
+
+  docker cp ${SQL_DUMP} ${CONTAINER_NAME}:/tmp/dump.sql
+  docker exec -u postgres ${CONTAINER_NAME} sh -c "psql -d ${DATABASE_NAME} -f /tmp/dump.sql"
+
+  echo "Database restore completed."
+  ''',
+]
+
 # Prepares SQLx offline queries (required before building)
 # Depends on: migrate
 [tasks.prepare]

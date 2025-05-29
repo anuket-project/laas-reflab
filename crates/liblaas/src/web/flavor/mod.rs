@@ -297,7 +297,7 @@ pub async fn list_hosts(
         let hb = HostBlob {
             id: Some(host.id),
             name: host.server_name,
-            arch: host.arch.to_string(),
+            arch: host.flavor.get(&mut transaction).await.unwrap().arch,
             flavor: host.flavor,
             ipmi_fqdn: host.ipmi_fqdn,
             allocation,

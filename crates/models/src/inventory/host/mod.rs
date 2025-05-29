@@ -5,13 +5,12 @@ use std::collections::HashMap;
 mod port;
 pub use port::HostPort;
 
-use crate::inventory::{Arch, Flavor};
+use crate::inventory::Flavor;
 
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, Default)]
 pub struct Host {
     pub id: FKey<Host>,
     pub server_name: String,
-    pub arch: Arch,
     pub flavor: FKey<Flavor>, // Flavor used during provisioning
     pub serial: String,
     pub ipmi_fqdn: String,
@@ -53,7 +52,6 @@ impl DBTable for Host {
         Ok(ExistingRow::from_existing(Self {
             id: row.try_get("id")?,
             server_name: row.try_get("server_name")?,
-            arch: serde_json::from_value(row.try_get("arch")?)?,
             flavor: row.try_get("flavor")?,
             serial: row.try_get("serial")?,
             ipmi_fqdn: row.try_get("ipmi_fqdn")?,
@@ -73,7 +71,6 @@ impl DBTable for Host {
             ("id", Box::new(self.id)),
             ("server_name", Box::new(self.server_name.clone())),
             ("iol_id", Box::new(self.iol_id.clone())),
-            ("arch", Box::new(serde_json::to_value(clone.arch)?)),
             ("flavor", Box::new(clone.flavor)),
             ("serial", Box::new(clone.serial)),
             ("ipmi_fqdn", Box::new(clone.ipmi_fqdn)),
@@ -153,7 +150,6 @@ mod test {
             (
                 any::<FKey<Host>>(),   // id
                 "[a-zA-Z0-9-]{1,50}",  // server_name
-                any::<Arch>(),         // arch
                 any::<FKey<Flavor>>(), // flavor
                 "[a-zA-Z0-9]{1,20}",   // serial
                 "[a-zA-Z0-9.-]{1,50}", // ipmi_fqdn
@@ -170,12 +166,11 @@ mod test {
         )
             .prop_map(
                 |(
-                    (id, server_name, arch, flavor, serial, ipmi_fqdn, iol_id),
+                    (id, server_name, flavor, serial, ipmi_fqdn, iol_id),
                     (ipmi_mac, ipmi_user, ipmi_pass, fqdn, projects, sda_uefi_device),
                 )| Host {
                     id,
                     server_name,
-                    arch,
                     flavor,
                     serial,
                     ipmi_fqdn,

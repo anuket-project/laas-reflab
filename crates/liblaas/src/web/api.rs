@@ -4,7 +4,7 @@
 //! to be sent over the API, but should never be directly stored into any database
 //! They are fundamentally ephemeral, and describe the shape of the API
 
-use models::dashboard::NetworkBlob;
+use models::{dashboard::NetworkBlob, inventory::Arch};
 
 use dal::*;
 use models::{
@@ -53,7 +53,7 @@ pub struct HostConfigBlob {
 pub struct HostBlob {
     pub id: Option<FKey<inventory::Host>>,
     pub name: String,
-    pub arch: String,
+    pub arch: Arch,
     pub flavor: FKey<inventory::Flavor>,
     pub ipmi_fqdn: String,
     pub allocation: Option<AllocationBlob>,

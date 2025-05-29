@@ -80,8 +80,6 @@ impl AsyncRunnable for SetBoot {
             .unwrap()
             .into_inner();
 
-        transaction.commit().await.unwrap();
-
         // make sure we can reach the IPMI endpoint
         tracing::info!(
             "Checking that we can reach the IPMI endpoint before we try managing the host"
@@ -94,7 +92,9 @@ impl AsyncRunnable for SetBoot {
             })
             .join()?;
 
-        let arch = host.arch;
+        let arch = host.flavor.get(&mut transaction).await.unwrap().arch;
+
+        transaction.commit().await.unwrap();
 
         let result = match arch {
             Arch::Aarch64 => set_ipmi_boot(&host_url, host, self.persistent, self.boot_to).await,

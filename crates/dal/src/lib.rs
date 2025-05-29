@@ -77,6 +77,10 @@ impl ID {
     pub fn nil() -> Self {
         Self(uuid::Uuid::nil())
     }
+
+    pub fn into_uuid(&self) -> uuid::Uuid {
+        self.0
+    }
 }
 
 impl std::str::FromStr for ID {

@@ -10,7 +10,7 @@ use sqlx::{query_as, PgPool};
 
 use crate::inventory::{DataValue, Host, InterfaceFlavor, SwitchPort};
 
-#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, FromRow)]
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, FromRow, sqlx::Type)]
 pub struct HostPort {
     pub id: FKey<HostPort>,
     pub on_host: FKey<Host>,
