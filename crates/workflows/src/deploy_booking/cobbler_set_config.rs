@@ -9,7 +9,7 @@ use pyo3::{
 };
 use tascii::{prelude::*, task_trait::AsyncRunnable};
 
-use crate::resource_management::{cobbler::CobblerConfig, mailbox::Endpoint};
+use crate::resource_management::cobbler::CobblerConfig;
 
 #[derive(Debug, Hash, Clone, Serialize, Deserialize)]
 pub struct CobblerSetConfiguration {
@@ -56,7 +56,7 @@ impl AsyncRunnable for CobblerSetConfiguration {
 
             let host_name = host.server_name.clone();
 
-            let config::CobblerConfig { api, ssh } = config::settings().cobbler.clone();
+            let config::CobblerConfig { api, ssh: _ } = config::settings().cobbler.clone();
 
             let locals = hashmap! {
                 "config" => hashmap! {

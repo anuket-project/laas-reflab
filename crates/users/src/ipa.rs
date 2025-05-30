@@ -1,6 +1,3 @@
-// Copyright (c) 2023 University of New Hampshire
-// SPDX-License-Identifier: MIT
-
 use ::serde::{Deserialize, Serialize};
 use axum::http::HeaderValue;
 use common::prelude::{
@@ -69,44 +66,31 @@ pub enum UserData {
 impl UserData {
     pub fn get_data_string(var: UserData) -> String {
         match var.clone() {
-            UserData::uid(d) => {
-                if d.is_some() {
-                    d.unwrap()
+            // TODO: These should just have different impls for these types, the approach really
+            // REALLY needs reconsideration
+            // String, i32, PathBuf
+            UserData::uid(d)
+            | UserData::givenname(d)
+            | UserData::sn(d)
+            | UserData::cn(d)
+            | UserData::displayname(d)
+            | UserData::ou(d)
+            | UserData::ipasshpubkey(d)
+            | UserData::ipauserauthtype(d)
+            | UserData::userclass(d)
+            | UserData::usercertificate(d)
+            | UserData::rename(d)
+            | UserData::mail(d)
+            | UserData::userpassword(d) => {
+                if let Some(value) = d {
+                    value
                 } else {
                     "".to_owned()
                 }
             }
-            UserData::givenname(d) => {
-                if d.is_some() {
-                    d.unwrap()
-                } else {
-                    "".to_owned()
-                }
-            }
-            UserData::sn(d) => {
-                if d.is_some() {
-                    d.unwrap()
-                } else {
-                    "".to_owned()
-                }
-            }
-            UserData::cn(d) => {
-                if d.is_some() {
-                    d.unwrap()
-                } else {
-                    "".to_owned()
-                }
-            }
-            UserData::displayname(d) => {
-                if d.is_some() {
-                    d.unwrap()
-                } else {
-                    "".to_owned()
-                }
-            }
-            UserData::homedirectory(d) => {
-                if d.is_some() {
-                    d.unwrap()
+            UserData::homedirectory(d) | UserData::loginshell(d) => {
+                if let Some(path_buf) = d {
+                    path_buf
                         .clone()
                         .to_str()
                         .expect("Expected pathbuf to be valid")
@@ -115,83 +99,10 @@ impl UserData {
                     "".to_owned()
                 }
             }
-            UserData::loginshell(d) => {
-                if d.is_some() {
-                    d.unwrap()
-                        .clone()
-                        .to_str()
-                        .expect("Expected pathbuf to be valid")
-                        .to_owned()
-                } else {
-                    "".to_owned()
-                }
-            }
-            UserData::mail(d) => {
-                if d.is_some() {
-                    d.unwrap()
-                } else {
-                    "".to_owned()
-                }
-            }
-            UserData::userpassword(d) => {
-                if d.is_some() {
-                    d.unwrap()
-                } else {
-                    "".to_owned()
-                }
-            }
-            UserData::uidnumber(d) => {
-                if d.is_some() {
-                    d.unwrap().to_string()
-                } else {
-                    "".to_owned()
-                }
-            }
-            UserData::gidnumber(d) => {
-                if d.is_some() {
-                    d.unwrap().to_string()
-                } else {
-                    "".to_owned()
-                }
-            }
-            UserData::ou(d) => {
-                if d.is_some() {
-                    d.unwrap()
-                } else {
-                    "".to_owned()
-                }
-            }
-            UserData::ipasshpubkey(d) => {
-                if d.is_some() {
-                    d.unwrap()
-                } else {
-                    "".to_owned()
-                }
-            }
-            UserData::ipauserauthtype(d) => {
-                if d.is_some() {
-                    d.unwrap()
-                } else {
-                    "".to_owned()
-                }
-            }
-            UserData::userclass(d) => {
-                if d.is_some() {
-                    d.unwrap()
-                } else {
-                    "".to_owned()
-                }
-            }
-            UserData::usercertificate(d) => {
-                if d.is_some() {
-                    d.unwrap()
-                } else {
-                    "".to_owned()
-                }
-            }
-            UserData::rename(d) => {
-                if d.is_some() {
-                    d.unwrap()
+
+            UserData::uidnumber(d) | UserData::gidnumber(d) => {
+                if let Some(num) = d {
+                    num.to_string()
                 } else {
                     "".to_owned()
                 }
@@ -263,10 +174,10 @@ impl IPA {
                 Err(e) => connection_error = e,
             }
         }
-        return Err(anyhow::Error::msg(format!(
+        Err(anyhow::Error::msg(format!(
             "Failed to connect to any ipa server due to {}",
-            connection_error.to_string()
-        )));
+            connection_error
+        )))
     }
 
     pub async fn get_auth(&mut self) -> Result<bool, anyhow::Error> {
@@ -289,7 +200,7 @@ impl IPA {
         match res {
             Ok(r) => match r.text().await {
                 Ok(text) => {
-                    if text.eq("") {
+                    if text.is_empty() {
                         Ok(true)
                     } else {
                         match json!(text).as_object() {
@@ -304,7 +215,7 @@ impl IPA {
                                     .as_i64()
                                     .unwrap()
                                 {
-                                    i if i >= 200 && i <= 299 => Ok(true),
+                                    i if (200..=299).contains(&i) => Ok(true),
                                     _ => Err(anyhow::Error::msg(format!(
                                         "Failed to authenticate, got: {text:#?}"
                                     ))),
@@ -356,9 +267,8 @@ impl IPA {
             Ok(r) => match r.status() {
                 axum::http::StatusCode::UNAUTHORIZED => {
                     let res = self.get_auth().await;
-                    match res {
-                        Err(e) => return Err(anyhow::Error::msg(e.to_string())),
-                        Ok(_) => {}
+                    if let Err(e) = res {
+                        return Err(anyhow::Error::msg(e));
                     }
                     if !run_once {
                         return self.create_user(user, true).await;
@@ -383,7 +293,7 @@ impl IPA {
                             .unwrap()
                             .as_array()
                             .unwrap()
-                            .get(0)
+                            .first()
                             .unwrap()
                             .as_str()
                             .unwrap()
@@ -393,7 +303,7 @@ impl IPA {
                             .unwrap()
                             .as_array()
                             .unwrap()
-                            .get(0)
+                            .first()
                             .unwrap()
                             .as_str()
                             .unwrap()
@@ -403,171 +313,140 @@ impl IPA {
                             .unwrap()
                             .as_array()
                             .unwrap()
-                            .get(0)
+                            .first()
                             .unwrap()
                             .as_str()
                             .unwrap()
                             .to_owned(),
-                        cn: match object.get("cn") {
-                            Some(value) => Some(
-                                value
-                                    .as_array()
-                                    .unwrap()
-                                    .get(0)
-                                    .unwrap()
-                                    .as_str()
-                                    .unwrap()
-                                    .to_owned(),
-                            ),
-                            None => None,
-                        },
-                        homedirectory: match object.get("homedirectory") {
-                            Some(value) => Some(
-                                value
-                                    .as_array()
-                                    .unwrap()
-                                    .get(0)
-                                    .unwrap()
-                                    .as_str()
-                                    .unwrap()
-                                    .into(),
-                            ),
-                            None => None,
-                        },
-                        gidnumber: match object.get("gidnumber") {
-                            Some(value) => Some(
-                                value
-                                    .as_array()
-                                    .unwrap()
-                                    .get(0)
-                                    .unwrap()
-                                    .as_str()
-                                    .unwrap()
-                                    .to_owned(),
-                            ),
-                            None => None,
-                        },
-                        displayname: match object.get("displayname") {
-                            Some(value) => Some(
-                                value
-                                    .as_array()
-                                    .unwrap()
-                                    .get(0)
-                                    .unwrap()
-                                    .as_str()
-                                    .unwrap()
-                                    .to_owned(),
-                            ),
-                            None => None,
-                        },
-                        loginshell: match object.get("loginshell") {
-                            Some(value) => Some(
-                                value
-                                    .as_array()
-                                    .unwrap()
-                                    .get(0)
-                                    .unwrap()
-                                    .as_str()
-                                    .unwrap()
-                                    .into(),
-                            ),
-                            None => None,
-                        },
+                        cn: object.get("cn").map(|value| {
+                            value
+                                .as_array()
+                                .unwrap()
+                                .first()
+                                .unwrap()
+                                .as_str()
+                                .unwrap()
+                                .to_owned()
+                        }),
+                        homedirectory: object.get("homedirectory").map(|value| {
+                            value
+                                .as_array()
+                                .unwrap()
+                                .first()
+                                .unwrap()
+                                .as_str()
+                                .unwrap()
+                                .into()
+                        }),
+                        gidnumber: object.get("gidnumber").map(|value| {
+                            value
+                                .as_array()
+                                .unwrap()
+                                .first()
+                                .unwrap()
+                                .as_str()
+                                .unwrap()
+                                .to_owned()
+                        }),
+                        displayname: object.get("displayname").map(|value| {
+                            value
+                                .as_array()
+                                .unwrap()
+                                .first()
+                                .unwrap()
+                                .as_str()
+                                .unwrap()
+                                .to_owned()
+                        }),
+                        loginshell: object.get("loginshell").map(|value| {
+                            value
+                                .as_array()
+                                .unwrap()
+                                .first()
+                                .unwrap()
+                                .as_str()
+                                .unwrap()
+                                .into()
+                        }),
                         mail: object
                             .get("mail")
                             .unwrap()
                             .as_array()
                             .unwrap()
-                            .get(0)
+                            .first()
                             .unwrap()
                             .as_str()
                             .unwrap()
                             .to_owned(),
-                        userpassword: match object.get("randompassword") {
-                            Some(value) => Some(value.as_str().unwrap().to_owned()), // This is the one key that is not returned as an Array for some reason. It is just a String
-                            None => None,
-                        },
+                        userpassword: object
+                            .get("randompassword")
+                            .map(|value| value.as_str().unwrap().to_owned()),
                         random: None,
-                        uidnumber: match object.get("uidnumber") {
-                            Some(value) => Some(
-                                value
-                                    .as_array()
-                                    .unwrap()
-                                    .get(0)
-                                    .unwrap()
-                                    .as_str()
-                                    .unwrap()
-                                    .to_owned(),
-                            ),
-                            None => None,
-                        },
+                        uidnumber: object.get("uidnumber").map(|value| {
+                            value
+                                .as_array()
+                                .unwrap()
+                                .first()
+                                .unwrap()
+                                .as_str()
+                                .unwrap()
+                                .to_owned()
+                        }),
                         ou: object
                             .get("ou")
                             .unwrap()
                             .as_array()
                             .unwrap()
-                            .get(0)
+                            .first()
                             .unwrap()
                             .as_str()
                             .unwrap()
                             .to_owned(),
-                        title: match object.get("title") {
-                            Some(value) => Some(
-                                value
-                                    .as_array()
-                                    .unwrap()
-                                    .get(0)
-                                    .unwrap()
-                                    .as_str()
-                                    .unwrap()
-                                    .to_owned(),
-                            ),
-                            None => None,
-                        },
+                        title: object.get("title").map(|value| {
+                            value
+                                .as_array()
+                                .unwrap()
+                                .first()
+                                .unwrap()
+                                .as_str()
+                                .unwrap()
+                                .to_owned()
+                        }),
                         ipasshpubkey: None, // Too complicated to parse out and not useful
-                        ipauserauthtype: match object.get("ipauserauthtype") {
-                            Some(value) => Some(
-                                value
-                                    .as_array()
-                                    .unwrap()
-                                    .get(0)
-                                    .unwrap()
-                                    .as_str()
-                                    .unwrap()
-                                    .to_owned(),
-                            ),
-                            None => None,
-                        },
-                        userclass: match object.get("userclass") {
-                            Some(value) => Some(
-                                value
-                                    .as_array()
-                                    .unwrap()
-                                    .get(0)
-                                    .unwrap()
-                                    .as_str()
-                                    .unwrap()
-                                    .to_owned(),
-                            ),
-                            None => None,
-                        },
-                        usercertificate: match object.get("usercertificate") {
-                            Some(value) => Some(
-                                value
-                                    .as_array()
-                                    .unwrap()
-                                    .get(0)
-                                    .unwrap()
-                                    .as_str()
-                                    .unwrap()
-                                    .to_owned(),
-                            ),
-                            None => None,
-                        },
+                        ipauserauthtype: object.get("ipauserauthtype").map(|value| {
+                            value
+                                .as_array()
+                                .unwrap()
+                                .first()
+                                .unwrap()
+                                .as_str()
+                                .unwrap()
+                                .to_owned()
+                        }),
+                        userclass: object.get("userclass").map(|value| {
+                            value
+                                .as_array()
+                                .unwrap()
+                                .first()
+                                .unwrap()
+                                .as_str()
+                                .unwrap()
+                                .to_owned()
+                        }),
+                        usercertificate: object.get("usercertificate").map(|value| {
+                            value
+                                .as_array()
+                                .unwrap()
+                                .first()
+                                .unwrap()
+                                .as_str()
+                                .unwrap()
+                                .to_owned()
+                        }),
                     });
                 }
             },
-            Err(e) => return Err(anyhow::Error::msg(e.to_string())),
+            Err(e) => Err(anyhow::Error::msg(e)),
         }
     }
 
@@ -606,9 +485,8 @@ impl IPA {
                 axum::http::StatusCode::UNAUTHORIZED => {
                     let res = self.get_auth().await;
                     tracing::debug!("Reauth res: {res:#?}");
-                    match res {
-                        Err(e) => return Err(anyhow::Error::msg(e.to_string())),
-                        Ok(_) => {}
+                    if let Err(e) = res {
+                        return Err(anyhow::Error::msg(e.to_string()));
                     }
                     if !run_once {
                         return self.find_matching_user(username, all, true).await;
@@ -653,7 +531,7 @@ impl IPA {
                         if value.is_array() && key.ne("ipasshpubkey") {
                             (
                                 key.clone(),
-                                value.as_array().unwrap().get(0).unwrap().clone(),
+                                value.as_array().unwrap().first().unwrap().clone(),
                             )
                         } else {
                             (key.clone(), value.clone())
@@ -665,12 +543,12 @@ impl IPA {
                     uid: username,
                     givenname: ud.get("givenname").unwrap().as_str().unwrap().to_owned(),
                     sn: ud.get("sn").unwrap().as_str().unwrap().to_owned(),
-                    cn: if ud.get("cn").is_some() {
+                    cn: if ud.contains_key("cn") {
                         Some(ud.get("cn").unwrap().as_str().unwrap().to_owned())
                     } else {
                         None
                     },
-                    homedirectory: if ud.get("homedirectory").is_some() {
+                    homedirectory: if ud.contains_key("homedirectory") {
                         Some(PathBuf::from(
                             ud.get("homedirectory")
                                 .unwrap()
@@ -681,17 +559,16 @@ impl IPA {
                     } else {
                         None
                     },
-                    gidnumber: if ud.get("gidnumber").is_some() {
-                        Some(ud.get("gidnumber").unwrap().as_str().unwrap().to_owned())
-                    } else {
-                        None
+                    gidnumber: match ud.contains_key("gidnumber") {
+                        true => Some(ud.get("gidnumber").unwrap().as_str().unwrap().to_owned()),
+                        false => None,
                     },
-                    displayname: if ud.get("displayname").is_some() {
+                    displayname: if ud.contains_key("displayname") {
                         Some(ud.get("displayname").unwrap().as_str().unwrap().to_owned())
                     } else {
                         None
                     },
-                    loginshell: if ud.get("loginshell").is_some() {
+                    loginshell: if ud.contains_key("loginshell") {
                         Some(PathBuf::from(
                             ud.get("loginshell").unwrap().as_str().to_owned().unwrap(),
                         ))
@@ -699,32 +576,32 @@ impl IPA {
                         None
                     },
                     mail: ud.get("mail").unwrap().as_str().unwrap().to_owned(),
-                    userpassword: if ud.get("userpassword").is_some() {
+                    userpassword: if ud.contains_key("userpassword") {
                         Some(ud.get("userpassword").unwrap().as_str().unwrap().to_owned())
                     } else {
                         None
                     },
-                    random: if ud.get("random").is_some() {
+                    random: if ud.contains_key("random") {
                         Some(ud.get("random").unwrap().as_bool().unwrap())
                     } else {
                         None
                     },
-                    uidnumber: if ud.get("uidnumber").is_some() {
+                    uidnumber: if ud.contains_key("uidnumber") {
                         Some(ud.get("uidnumber").unwrap().as_str().unwrap().to_owned())
                     } else {
                         None
                     },
-                    ou: if ud.get("ou").is_some() {
+                    ou: if ud.contains_key("ou") {
                         ud.get("ou").unwrap().as_str().unwrap().to_owned()
                     } else {
                         "".to_string()
                     },
-                    title: if ud.get("title").is_some() {
+                    title: if ud.contains_key("title") {
                         Some(ud.get("title").unwrap().as_str().unwrap().to_owned())
                     } else {
                         None
                     },
-                    ipasshpubkey: if ud.get("ipasshpubkey").is_some() {
+                    ipasshpubkey: if ud.contains_key("ipasshpubkey") {
                         Some(
                             ud.get("ipasshpubkey")
                                 .unwrap()
@@ -738,7 +615,7 @@ impl IPA {
                     } else {
                         None
                     },
-                    ipauserauthtype: if ud.get("ipauserauthtype").is_some() {
+                    ipauserauthtype: if ud.contains_key("ipauserauthtype") {
                         Some(
                             ud.get("ipauserauthtype")
                                 .unwrap()
@@ -749,12 +626,12 @@ impl IPA {
                     } else {
                         None
                     },
-                    userclass: if ud.get("userclass").is_some() {
+                    userclass: if ud.contains_key("userclass") {
                         Some(ud.get("userclass").unwrap().as_str().unwrap().to_owned())
                     } else {
                         None
                     },
-                    usercertificate: if ud.get("usercertificate").is_some() {
+                    usercertificate: if ud.contains_key("usercertificate") {
                         Some(
                             ud.get("usercertificate")
                                 .unwrap()
@@ -791,14 +668,14 @@ impl IPA {
         let mut del: Vec<String> = Vec::new();
 
         for data in new_data.clone() {
-            if UserData::get_data_string(data.clone()).eq("")
+            if UserData::get_data_string(data.clone()).is_empty()
                 && data.clone().to_string() != "ipasshpubkey"
             {
-                del.push(format!("{}=\"\"", data.clone().to_string()))
+                del.push(format!("{}=\"\"", data.clone()))
             } else {
                 set.push(format!(
                     "{}={}",
-                    data.clone().to_string(),
+                    data.clone(),
                     UserData::get_data_string(data)
                 ))
             }
@@ -807,7 +684,7 @@ impl IPA {
         for data in add_data.clone() {
             add.push(format!(
                 "{}={}",
-                data.clone().to_string(),
+                data.clone(),
                 UserData::get_data_string(data)
             ))
         }
@@ -817,17 +694,17 @@ impl IPA {
         let mut params = json!({}).as_object_mut().unwrap().clone();
 
         if !set.is_empty() {
-            let set_val: Vec<Value> = set.into_iter().map(|s| Value::String(s)).collect();
+            let set_val: Vec<Value> = set.into_iter().map(Value::String).collect();
             params.insert("setattr".to_owned(), Value::Array(set_val));
         }
 
         if !del.is_empty() {
-            let del_val: Vec<Value> = del.into_iter().map(|s| Value::String(s)).collect();
+            let del_val: Vec<Value> = del.into_iter().map(Value::String).collect();
             params.insert("delattr".to_owned(), Value::Array(del_val));
         }
 
         if !add.is_empty() {
-            let add_val: Vec<Value> = add.into_iter().map(|s| Value::String(s)).collect();
+            let add_val: Vec<Value> = add.into_iter().map(Value::String).collect();
             params.insert("addattr".to_owned(), Value::Array(add_val));
         }
 
@@ -867,9 +744,8 @@ impl IPA {
             Ok(r) => match r.status() {
                 axum::http::StatusCode::UNAUTHORIZED => {
                     let res = self.get_auth().await;
-                    match res {
-                        Err(e) => return Err(anyhow::Error::msg(e.to_string())),
-                        Ok(_) => {}
+                    if let Err(e) = res {
+                        return Err(anyhow::Error::msg(e.to_string()));
                     }
                     if !run_once {
                         return self.update_user(username, add_data, new_data, true).await;
@@ -908,9 +784,8 @@ impl IPA {
         group_name: &String,
         user: &String,
     ) -> Result<bool, anyhow::Error> {
-        return self
-            .group_mod_user("group_add_member", group_name, user, true)
-            .await;
+        self.group_mod_user("group_add_member", group_name, user, true)
+            .await
     }
 
     pub async fn group_remove_user(
@@ -918,9 +793,8 @@ impl IPA {
         group_name: &String,
         user: &String,
     ) -> Result<bool, anyhow::Error> {
-        return self
-            .group_mod_user("group_remove_member", group_name, user, true)
-            .await;
+        self.group_mod_user("group_remove_member", group_name, user, true)
+            .await
     }
 
     /**
@@ -982,7 +856,7 @@ impl IPA {
                 .unwrap()
                 .as_array()
                 .unwrap()
-                .get(0)
+                .first()
                 .unwrap()
                 .as_str()
                 .unwrap()
@@ -1027,9 +901,8 @@ impl IPA {
             Ok(r) => match r.status() {
                 axum::http::StatusCode::UNAUTHORIZED => {
                     let res = self.get_auth().await;
-                    match res {
-                        Err(e) => return Err(anyhow::Error::msg(e.to_string())),
-                        Ok(_) => {}
+                    if let Err(e) = res {
+                        return Err(anyhow::Error::msg(e.to_string()));
                     }
                     if !run_once {
                         return self.group_mod_user(action, group_name, user, true).await;

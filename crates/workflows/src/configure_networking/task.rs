@@ -1,8 +1,3 @@
-//! Copyright (c) 2023 University of New Hampshire
-//! SPDX-License-Identifier: MIT
-
-use dal::ID;
-//use macaddr::MacAddr;
 use serde::{Deserialize, Serialize};
 use tascii::{prelude::*, task_trait::AsyncRunnable};
 

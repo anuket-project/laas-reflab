@@ -57,7 +57,7 @@ clippy:
         scripts:
           - docker pull ${CI_IMAGE}
         # temporarily allow clippy warnings
-          - docker run --rm -v "$(pwd)":/app -w /app ${bamboo.CI_IMAGE} bash -c "cargo make clippy || true"
+          - docker run --rm -v "$(pwd)":/app -w /app ${bamboo.CI_IMAGE} cargo make clippy
   requirements:
   - Docker
   - linuxos
@@ -87,7 +87,7 @@ machete:
         description: "Check for Unnused Dependencies"
         scripts:
           - docker pull ${CI_IMAGE}
-          - docker run --rm -v "$(pwd)":/app -w /app ${bamboo.CI_IMAGE} bash -c "cargo make machete > machete_output.txt || true"
+          - docker run --rm -v "$(pwd)":/app -w /app ${bamboo.CI_IMAGE} bash -c "cargo make machete > machete_output.txt"
   requirements:
   - Docker
   - linuxos 

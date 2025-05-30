@@ -6,5 +6,3 @@
 
 pub mod booking;
 pub mod web;
-
-use common::prelude::tokio;

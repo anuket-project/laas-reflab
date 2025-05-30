@@ -2,7 +2,7 @@ use crate::configure_networking::NetworkConfigBuilder;
 
 use super::super::types::{BondGroup, NetworkConfig, VlanConnection};
 use super::super::utils::bondgroup_config_to_bondgroup;
-use dal::{DBTable, EasyTransaction, FKey};
+use dal::{EasyTransaction, FKey};
 use models::{dashboard::Instance, inventory::Host};
 use std::collections::HashSet;
 

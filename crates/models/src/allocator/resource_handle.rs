@@ -103,7 +103,6 @@ impl DBTable for ResourceHandle {
 impl ResourceHandle {
     /// This function allows getting one, single, program wide AllocatorToken
     /// that is to be used by *only* the blessed allocator
-
     #[allow(clippy::result_unit_err)]
     pub fn get_allocator_token() -> Result<AllocatorToken, ()> {
         TOKEN.lock().unwrap().take().ok_or(())
@@ -572,7 +571,7 @@ impl ResourceHandle {
 
         nr.insert(&mut transaction).await?;
 
-        transaction.commit().await.map_err(anyhow::Error::from)?;
+        transaction.commit().await?;
 
         Ok(r)
     }

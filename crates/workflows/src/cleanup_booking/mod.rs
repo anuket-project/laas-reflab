@@ -57,7 +57,7 @@ impl AsyncRunnable for CleanupAggregate {
                 // verify that the host is still allocated to us,
                 // so that it's safe to do this cleanup
                 let handle = ResourceHandle::handle_for_host(&mut transaction, host).await?;
-                if let false = handle
+                if !handle
                     .currently_owned_by(&mut transaction, self.agg_id)
                     .await?
                 {

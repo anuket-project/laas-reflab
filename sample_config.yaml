@@ -1,11 +1,6 @@
 dev:
   status: true
   hosts: [""]
-database:
-  url: db:5432
-  username: postgres
-  password: password
-  database_name: liblaas
 
 web:
   bind_addr: 0.0.0.0:3000

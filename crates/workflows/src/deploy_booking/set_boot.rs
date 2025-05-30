@@ -39,17 +39,17 @@ impl Display for ILOCommand {
 //       - Strange capitalization needed for the serde_xml_rs functions
 //       - Changes in the XML tag naming scheme will break this process
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
-struct RIBCL {
-    PERSISTENT_BOOT: PERSISTENT_BOOT,
+struct Ribcl {
+    PERSISTENT_BOOT: PersistentBoot,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
-struct PERSISTENT_BOOT {
-    DEVICE: Vec<DEVICE_TAG>,
+struct PersistentBoot {
+    DEVICE: Vec<DeviceTag>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
-struct DEVICE_TAG {
+struct DeviceTag {
     value: String,
     DESCRIPTION: String,
 }
@@ -80,8 +80,6 @@ impl AsyncRunnable for SetBoot {
             .unwrap()
             .into_inner();
 
-        transaction.commit().await.unwrap();
-
         // make sure we can reach the IPMI endpoint
         tracing::info!(
             "Checking that we can reach the IPMI endpoint before we try managing the host"
@@ -94,7 +92,9 @@ impl AsyncRunnable for SetBoot {
             })
             .join()?;
 
-        let arch = host.arch;
+        let arch = host.flavor.get(&mut transaction).await.unwrap().arch;
+
+        transaction.commit().await.unwrap();
 
         let result = match arch {
             Arch::Aarch64 => set_ipmi_boot(&host_url, host, self.persistent, self.boot_to).await,
@@ -140,7 +140,7 @@ async fn ilo_persistent_boot(
             .unwrap(),
     ) {
         Ok(l) => l,
-        Err(e) => {
+        Err(_) => {
             return Err(anyhow::Error::msg(format!(
                 "Failed to get boot device list for host {}",
                 host.server_name
@@ -230,12 +230,11 @@ async fn set_hpe_boot(
     persistent: bool,
     boot_to: BootTo,
 ) -> Result<(), anyhow::Error> {
-    let result: Result<(), anyhow::Error>;
-    if persistent {
-        result = ilo_persistent_boot(host_url, host.clone(), boot_to).await;
+    let result = if persistent {
+        ilo_persistent_boot(host_url, host.clone(), boot_to).await
     } else {
-        result = ilo_one_time_boot(host_url, host.clone(), boot_to).await;
-    }
+        ilo_one_time_boot(host_url, host.clone(), boot_to).await
+    };
 
     match result {
         Ok(_) => Ok(()),
@@ -276,14 +275,14 @@ async fn set_ipmi_boot(
             "-C",
             "3",
             "-H",
-            &host_url,
+            host_url,
             "-U",
             &host.ipmi_user,
             "-P",
             &host.ipmi_pass,
             "chassis",
             "bootdev",
-            &bdev,
+            bdev,
         ]);
 
         if let BootTo::Network = boot_to {
@@ -437,7 +436,7 @@ fn xml_to_boot_device_list(xml: String) -> Result<Vec<BootDevice>, ()> {
 
     let res = from_str(&xml);
     tracing::info!("res is {res:?}");
-    let ribcl: RIBCL = match res {
+    let ribcl: Ribcl = match res {
         Ok(r) => r,
         Err(msg) => {
             tracing::warn!("Failed to get boot device list. Is host an HPE? {:?}", msg);

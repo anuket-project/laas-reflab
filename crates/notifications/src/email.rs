@@ -47,7 +47,7 @@ pub async fn send(env: &Env, notification: Notification) -> Result<(), anyhow::E
                                 .expect("Expected to render template"),
                         ),
                     )
-                    .singlepart(Attachment::new(String::from(attachment.name.clone())).body(
+                    .singlepart(Attachment::new(attachment.name.clone()).body(
                         fs::read(attachment.path.clone()).unwrap(),
                         ContentType::TEXT_PLAIN,
                     )),

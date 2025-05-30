@@ -138,7 +138,7 @@ impl<V> ResultWithCode<V> for Option<V> {
             None => {
                 let conv_e = anyhow::Error::msg("object did not exist");
                 let conv_c: LLStatusCode = code.into();
-                let conv_c: axum::http::StatusCode = conv_c.into();
+                let _conv_c: axum::http::StatusCode = conv_c.into();
 
                 let outward_message: String = outward_message.into();
                 let outward_message = format!("Error handling request: {outward_message}");
@@ -147,7 +147,7 @@ impl<V> ResultWithCode<V> for Option<V> {
                     tracing::error!("Error occurred while handling a request: {conv_e}");
                 }
 
-                return Err((code, outward_message));
+                Err((code, outward_message))
             }
         }
     }
@@ -172,13 +172,13 @@ where
 
 impl<T> AnyWaySpecStr<T> for Result<T, &'static str> {
     fn anyway(self) -> Result<T, anyhow::Error> {
-        self.map_err(|e| anyhow::Error::msg(format!("{e}")))
+        self.map_err(anyhow::Error::msg)
     }
 }
 
 impl<T> AnyWaySpecStr<T> for Result<T, String> {
     fn anyway(self) -> Result<T, anyhow::Error> {
-        self.map_err(|e| anyhow::Error::msg(format!("{e}")))
+        self.map_err(anyhow::Error::msg)
     }
 }
 

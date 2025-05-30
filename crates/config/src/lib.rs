@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 #![doc = include_str!("../README.md")]
 
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, fmt::Display, path::PathBuf};
 
 use serde::{Deserialize, Serialize};
 use strum_macros::Display;
@@ -11,7 +11,6 @@ use tracing_subscriber::filter::LevelFilter;
 #[derive(Debug, Deserialize, Clone)]
 pub struct LibLaaSConfig {
     pub dev: Dev,
-    pub database: DatabaseConfig,
     pub web: WebConfig,
     pub mailbox: MailboxConfig,
     pub cli: CliConfig,
@@ -96,14 +95,6 @@ impl Email {
 pub struct Dev {
     pub status: bool,
     pub hosts: Vec<String>,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct DatabaseConfig {
-    pub url: HostPortPair,
-    pub username: String,
-    pub password: String,
-    pub database_name: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -293,9 +284,9 @@ impl<'de> Deserialize<'de> for HostPortPair {
     }
 }
 
-impl ToString for HostPortPair {
-    fn to_string(&self) -> String {
-        format!("{}:{}", self.host, self.port)
+impl Display for HostPortPair {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.host, self.port)
     }
 }
 

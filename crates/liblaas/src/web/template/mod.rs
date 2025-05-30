@@ -358,8 +358,8 @@ pub async fn make_template(
 }
 
 pub fn routes(state: AppState) -> ApiRouter {
-    return ApiRouter::new()
+    ApiRouter::new()
         .route("/list/:lab_name/:user_id", get(list_templates))
         .route("/:template_id", delete(delete_template))
-        .route("/:lab_name/create", post(make_template));
+        .route("/:lab_name/create", post(make_template))
 }

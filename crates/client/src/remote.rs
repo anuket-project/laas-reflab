@@ -1,3 +1,6 @@
+#![allow(clippy::await_holding_lock)]
+
+#[allow(deprecated)]
 use std::{
     io::{stdout, Write},
     mem::swap,
@@ -372,7 +375,7 @@ impl ToClientQuery {
 
                 let res = match help_message.as_ref() {
                     None => res,
-                    Some(hm) => res.with_help_message(&hm),
+                    Some(help_message) => res.with_help_message(help_message),
                 };
 
                 let res = res.prompt();
@@ -392,7 +395,7 @@ impl ToClientQuery {
 
                 let res = match help_message.as_ref() {
                     None => res,
-                    Some(hm) => res.with_help_message(&hm),
+                    Some(hm) => res.with_help_message(hm),
                 };
 
                 let res = res.prompt();
@@ -409,7 +412,7 @@ impl ToClientQuery {
 
                 let res = match help_message.as_ref() {
                     None => res,
-                    Some(hm) => res.with_help_message(&hm),
+                    Some(hm) => res.with_help_message(hm),
                 };
 
                 let res = res.prompt();
@@ -427,7 +430,7 @@ impl ToClientQuery {
 
                 let res = match help_message.as_ref() {
                     None => res,
-                    Some(hm) => res.with_help_message(&hm),
+                    Some(hm) => res.with_help_message(hm),
                 };
 
                 let res = res.prompt();
@@ -545,7 +548,7 @@ impl Server {
 impl std::io::Write for &Server {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         let output: std::io::Result<usize> = self.outgoing_buffer.lock().write(buf);
-        self.flush();
+        let _ = self.flush();
         output
     }
 
@@ -854,12 +857,13 @@ pub async fn cli_server_entry(
 }
 
 thread_local! {
-    static SERVER_STUB: Mutex<Option<Arc<Server>>> = Mutex::new(None);
+    static SERVER_STUB: Mutex<Option<Arc<Server>>> = const { Mutex::new(None) };
 }
 
 pub async fn cli_server(tascii_rt: &'static Runtime, server: Server) -> LiblaasStateInstruction {
     let sr = Arc::new(server);
 
+    #[allow(deprecated)]
     fn panic_handler(info: &PanicInfo<'_>) {
         let style = if !info.can_unwind() {
             Some(BacktraceStyle::Full)

@@ -1,7 +1,20 @@
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use strum_macros::{Display, EnumString};
+
 #[derive(
-    Serialize, Deserialize, Clone, Debug, Hash, Copy, EnumString, Display, Eq, PartialEq, Default,
+    Serialize,
+    Deserialize,
+    Clone,
+    Debug,
+    Hash,
+    Copy,
+    EnumString,
+    Display,
+    Eq,
+    PartialEq,
+    Default,
+    JsonSchema,
 )]
 pub enum Arch {
     #[default]

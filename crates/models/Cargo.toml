@@ -17,7 +17,6 @@ sqlx = { workspace = true, features = [
   "json",
 ] }
 mac_address = { workspace = true, features = ["serde"] }
-base16ct = { workspace = true }
 eui48 = { workspace = true }
 inventory = { workspace = true }
 itertools = { workspace = true }
@@ -26,9 +25,7 @@ lazy_static = { workspace = true }
 rand = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true }
-serde_with = { workspace = true }
 serde_json = { workspace = true }
-sha2 = { workspace = true }
 strum_macros = { workspace = true }
 strum = { workspace = true }
 tokio-postgres = { workspace = true, features = [
@@ -39,9 +36,10 @@ tokio-postgres = { workspace = true, features = [
 ] }
 tokio = { workspace = true }
 tracing = { workspace = true }
-uuid = { workspace = true }
-regex = { workspace = true }
 
 common = { path = "../common" }
 dal = { path = "../dal" }
 testing_utils = { path = "../testing_utils" }
+
+[package.metadata.cargo-machete]
+ignored = ["strum", "tokio"]

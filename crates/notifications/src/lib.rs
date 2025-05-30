@@ -418,12 +418,12 @@ pub async fn request_booking_extension(
             "Booking Extension Request ({} - {})",
             info.project, info.purpose
         ),
-        send_to: format!("N/A"), // Ignored by the send_to_admins_email_template() function.
+        send_to: "N/A".to_string(), // Ignored by the send_to_admins_email_template() function.
         by_methods: vec![Method::Email()],
         situation: Situation::RequestBookingExtension,
         project: env.project.clone(),
-        context: context,
         attachment: None,
+        context,
     };
 
     match send_to_admins_email_template(env, notification).await {
@@ -554,7 +554,7 @@ pub mod templates {
         template_name: &str,
         context: &tera::Context,
     ) -> Result<String, tera::Error> {
-        TERA.render(&template_name, &context)
+        TERA.render(template_name, context)
     }
 
     /// Uses [`TERA`] to render the generic/grub_config.j2 template with the provided context variables.
@@ -566,7 +566,7 @@ pub mod templates {
     /// * `system_name` - &[`str`]
     /// * `kernel_path` -  &[`str`] path to kernel on tftp server (i.e. /images/distro/vmlinuz)
     /// * `kernel_args` - [`Vec<&str>`] of values to set as kernel options. Format is usually `key=value` or just `key`.
-    ///     Keys may be repeated to set multiple values such as `initrd=amd64.initrd.img` and `initrd=amd64.installer.img`
+    ///   keys may be repeated to set multiple values such as `initrd=amd64.initrd.img` and `initrd=amd64.installer.img`
     /// * `initrd_paths` - [`Vec<&str>`] of paths to initrd file locations on the tftp server (i.e. /images/distro/amd64.initrd.img)
     ///
     /// # Returns
@@ -594,6 +594,7 @@ pub mod templates {
     }
 
     /// Uses [`TERA`] to render generic/grub_config.j2 template for an EVE-OS netboot installation.
+    ///
     /// Provides known working kernel arguments, assuming that the required files exist at the specified location on your TFTP server
     /// Currently only supported for x86_64 architecture
     ///

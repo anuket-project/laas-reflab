@@ -71,9 +71,7 @@ impl<A, B, C> PhantomSendParams<A, B, C> {
     /// This is just for "nice generics", not for using
     /// for black magic
     pub unsafe fn new() -> Self {
-        Self {
-            _pd: PhantomData::default(),
-        }
+        Self { _pd: PhantomData }
     }
 }
 
@@ -90,6 +88,7 @@ pub struct ServiceWrapper<Req: Send, Resp: Send, Handler: Service<Req, Resp>> {
     ///
     /// We send an option of a RequestParcel so we can, on shutdown,
     /// simply send a None through and break any wait loop
+    #[allow(clippy::type_complexity)]
     started: Mutex<Option<Sender<Option<RequestParcel<Req, Resp>>>>>,
 
     /// Wait for a notify on this to know when the service has started
@@ -107,6 +106,7 @@ pub struct ServiceWrapper<Req: Send, Resp: Send, Handler: Service<Req, Resp>> {
 }
 
 impl<Req: Send, Resp: Send, Handler: Service<Req, Resp>> ServiceWrapper<Req, Resp, Handler> {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         // don't include channel pair yet, this means that every attempt
         // to send() will error out with a helpful error message
@@ -172,12 +172,14 @@ impl<Req: Send, Resp: Send, Handler: Service<Req, Resp>> ServiceWrapper<Req, Res
 
         let (back_s, back_r) = crossbeam_channel::unbounded();
 
-        let res = if let Some(v) = r {
+        if let Some(v) = r {
             let parcel = RequestParcel {
                 request: v,
                 respond: back_s,
             };
-            sender.send(Some(parcel)).expect(msg.as_str());
+            sender
+                .send(Some(parcel))
+                .unwrap_or_else(|_| panic!("{}", msg));
 
             std::mem::drop(sender); // make sure to lose the lock once we've sent
 
@@ -185,7 +187,7 @@ impl<Req: Send, Resp: Send, Handler: Service<Req, Resp>> ServiceWrapper<Req, Res
                 "Unexpected receive channel error when waiting for message back from {}",
                 Handler::service_name()
             );
-            let resp = back_r.recv().expect(msg.as_str());
+            let resp = back_r.recv().unwrap_or_else(|_| panic!("{}", msg));
 
             Some(resp)
         } else {
@@ -194,9 +196,7 @@ impl<Req: Send, Resp: Send, Handler: Service<Req, Resp>> ServiceWrapper<Req, Res
                 .expect("couldn't send an empty message to service");
 
             None
-        };
-
-        res
+        }
     }
 
     /// Panics if service was already started
@@ -224,7 +224,7 @@ impl<Req: Send, Resp: Send, Handler: Service<Req, Resp>> ServiceWrapper<Req, Res
         std::thread::spawn(move || {
             let mut handler = Handler::init();
 
-            while self.shutdown.lock().unwrap().0 == false {
+            while !self.shutdown.lock().unwrap().0 {
                 let req = r.recv().ok().flatten();
 
                 if let Some(v) = req {

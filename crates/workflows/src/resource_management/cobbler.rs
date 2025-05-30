@@ -74,7 +74,7 @@ pub struct CobblerActions {}
 
 impl ModuleInitializer for CobblerActions {
     fn init(py: Python<'_>) -> &PyAny {
-        let config::CobblerConfig { api, ssh } = config::settings().cobbler.clone();
+        let config::CobblerConfig { api, ssh: _ } = config::settings().cobbler.clone();
 
         let config: HashMap<&str, String> =
             hashmap! { "url" => api.url, "user" => api.username, "pass" => api.password };
@@ -236,13 +236,12 @@ pub async fn override_system_grub_config(
         ssh2::Session::new().expect("Failed to create a new SSH session for cobbler.");
     let connection =
         std::net::TcpStream::connect(format!("{}:{}", cobbler.ssh.address, cobbler.ssh.port))
-            .expect(
-                format!(
+            .unwrap_or_else(|_| {
+                panic!(
                     "Failed to open TCP stream to cobbler at {}:{}.",
                     cobbler.ssh.address, cobbler.ssh.port
                 )
-                .as_str(),
-            );
+            });
 
     session.set_tcp_stream(connection);
     session.handshake().unwrap();

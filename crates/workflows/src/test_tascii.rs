@@ -1,6 +1,3 @@
-// Copyright (c) 2023 University of New Hampshire
-// SPDX-License-Identifier: MIT
-
 use dal::ID;
 use std::{env::args, time::Duration};
 

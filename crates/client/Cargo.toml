@@ -6,10 +6,8 @@ edition = "2021"
 [dependencies]
 sqlx = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
-serde_with = { workspace = true }
 remoc = { workspace = true, features = ['rtc'] }
 uuid = { workspace = true }
-eui48 = { workspace = true }
 strum = { workspace = true }
 strum_macros = { workspace = true }
 

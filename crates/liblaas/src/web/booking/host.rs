@@ -1,6 +1,5 @@
 use aide::OperationIo;
 use axum::{
-    debug_handler,
     extract::{Json, Path},
     http::StatusCode,
     response::{IntoResponse, Response},
@@ -9,7 +8,7 @@ use common::prelude::serde_json;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use tracing::{debug, error, info, span::Id, warn};
+use tracing::{debug, error, info, warn};
 
 use uuid::Uuid;
 
@@ -19,12 +18,9 @@ use models::{
     dashboard::{Aggregate, Instance, LifeCycleState},
     inventory::Host,
 };
-use workflows::{
-    deploy_booking::set_host_power_state::{
-        get_host_power_state, set_host_power_state, HostConfig, PowerState, PowerStateError,
-        TimeoutConfig,
-    },
-    entry::{Action, DISPATCH},
+use workflows::deploy_booking::set_host_power_state::{
+    get_host_power_state, set_host_power_state, HostConfig, PowerState, PowerStateError,
+    TimeoutConfig,
 };
 
 /// Respective error types for the handlers. All of these error messages will be converted into an

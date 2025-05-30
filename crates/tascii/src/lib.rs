@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 #![allow(dead_code, clippy::await_holding_lock, async_fn_in_trait)]
 #![feature(
-    async_closure,
     async_iterator,
     result_flattening,
     ptr_metadata,
@@ -25,6 +24,7 @@ mod workflows;
 mod task_runtime;
 mod task_shim;
 
+#[allow(deprecated)]
 use std::{
     cell::RefCell,
     panic::{BacktraceStyle, PanicInfo},
@@ -53,9 +53,11 @@ extern crate lazy_static;
 use crate::runtime::Runtime;
 
 thread_local! {
-    static CAPTURED_CONTEXT: RefCell<bool> = RefCell::new(true);
+    static CAPTURED_CONTEXT: RefCell<bool> = const { RefCell::new(true) };
 }
 
+// TODO: Update to [`PanicHookInfo`] and remove `#[allow(deprecated)]`
+#[allow(deprecated)]
 fn panic_hook(info: &PanicInfo<'_>) {
     LOCAL_HOOK.with(|m| {
         let g = m.lock();
@@ -113,6 +115,7 @@ fn panic_hook(info: &PanicInfo<'_>) {
     });
 }
 
+#[allow(deprecated)]
 type BoxedPanic = Box<dyn Fn(&PanicInfo<'_>) + Sync + Send + 'static>;
 
 static DEFAULT_HOOK: RwLock<Option<BoxedPanic>> = RwLock::new(None);
@@ -121,6 +124,7 @@ thread_local! {
     static LOCAL_HOOK: parking_lot::Mutex<Option<BoxedPanic>> = parking_lot::Mutex::new(None);
 }
 
+#[allow(deprecated)]
 pub fn set_local_hook<F>(f: Option<Box<F>>)
 where
     F: Fn(&PanicInfo<'_>) + Sync + Send + 'static,

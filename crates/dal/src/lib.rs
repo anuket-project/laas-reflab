@@ -18,11 +18,9 @@ use common::prelude::{
 };
 use std::{
     any::type_name, backtrace::Backtrace, collections::HashMap, hash::Hash, marker::PhantomData,
-    path::PathBuf,
 };
 
 use common::prelude::{itertools::Itertools, schemars::JsonSchema, *};
-use config::settings;
 use serde::de::DeserializeOwned;
 use tokio_postgres::{types::ToSql, Client, NoTls, Transaction};
 
@@ -32,22 +30,14 @@ use sqlx::{postgres::PgPoolOptions, PgPool};
 pub trait ToSqlObject = ToSql + Send + Sync + 'static;
 
 pub async fn get_db_pool() -> Result<PgPool, sqlx::Error> {
-    let db_config = settings().database.clone();
-
-    let connection_str = format!(
-        "postgres://{}:{}@{}:{}/{}",
-        db_config.username,
-        db_config.password,
-        db_config.url.host,
-        db_config.url.port,
-        db_config.database_name
-    );
+    let connection_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
 
     PgPoolOptions::new()
         .max_connections(10)
-        .connect(&connection_str)
+        .connect(&connection_url)
         .await
 }
+
 pub async fn initialize() -> Result<(), Vec<Error>> {
     tracing::warn!("Setting up the database connection pool");
 
@@ -72,6 +62,7 @@ pub async fn initialize() -> Result<(), Vec<Error>> {
     derive_more::From,
     PartialEq,
     Eq,
+    Default,
 )]
 pub struct ID(uuid::Uuid);
 
@@ -80,11 +71,15 @@ pub use tokio_postgres::Row;
 /// UUID impl
 impl ID {
     pub fn new() -> Self {
-        Self(uuid::Uuid::new_v4())
+        Self::from(uuid::Uuid::new_v4())
     }
 
     pub fn nil() -> Self {
         Self(uuid::Uuid::nil())
+    }
+
+    pub fn into_uuid(&self) -> uuid::Uuid {
+        self.0
     }
 }
 
@@ -132,13 +127,13 @@ impl ToSql for ID {
 }
 
 impl FromSql<'_> for ID {
-    fn from_sql<'a>(
+    fn from_sql(
         ty: &tokio_postgres::types::Type,
-        raw: &'a [u8],
+        raw: &[u8],
     ) -> Result<Self, Box<dyn std::error::Error + Sync + Send>> {
         match uuid::Uuid::from_sql(ty, raw) {
-            Ok(u) => return Ok(ID(u)),
-            Err(e) => return Err(e),
+            Ok(u) => Ok(ID(u)),
+            Err(e) => Err(e),
         }
     }
 
@@ -178,7 +173,7 @@ impl<'de, T: DBTable> Deserialize<'de> for FKey<T> {
         let id = ID::deserialize(deserializer)?;
 
         Ok(Self {
-            _p: PhantomData::default(),
+            _p: PhantomData,
             id,
         })
     }
@@ -223,7 +218,7 @@ impl<T: DBTable> Eq for FKey<T> {}
 
 impl<T: DBTable> Clone for FKey<T> {
     fn clone(&self) -> Self {
-        Self { ..*self }
+        *self
     }
 }
 impl<T: DBTable> Copy for FKey<T> {}
@@ -243,7 +238,7 @@ impl<'a, T: DBTable> tokio_postgres::types::FromSql<'a> for FKey<T> {
 
         Ok(FKey {
             id: ID::from(id),
-            _p: PhantomData::default(),
+            _p: PhantomData,
         })
     }
 
@@ -292,7 +287,7 @@ impl<T: DBTable> FKey<T> {
     pub fn from_id(id: ID) -> Self {
         Self {
             id,
-            _p: PhantomData::default(),
+            _p: PhantomData,
         }
     }
 
@@ -378,8 +373,8 @@ impl<T: DBTable> ExistingRow<T> {
             self.had_id,
             "user tried to change the id of a model during update"
         );
-        let res = self.data.update(client, Protect::new()).await;
-        res
+
+        self.data.update(client, Protect::new()).await
     }
 
     pub async fn delete(self, client: &mut EasyTransaction<'_>) -> Result<(), anyhow::Error> {
@@ -432,6 +427,7 @@ pub struct WhereBuilder<T> {
     field_name: String,
 }
 
+#[allow(async_fn_in_trait)]
 pub trait Gotten<T: DBTable> {
     async fn gotten(self, t: &mut EasyTransaction) -> Vec<Result<ExistingRow<T>, anyhow::Error>>;
 }
@@ -512,7 +508,7 @@ impl<T: DBTable> SelectBuilder<T> {
         transaction: &mut EasyTransaction<'_>,
     ) -> Result<Vec<ExistingRow<T>>, anyhow::Error> {
         let where_clauses = if self.filters.is_empty() {
-            format!("")
+            String::new()
         } else {
             let clauses = self
                 .filters
@@ -555,11 +551,18 @@ impl<T: DBTable> SelectBuilder<T> {
     }
 }
 
+impl<T: DBTable> Default for SelectBuilder<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub trait Named {
     fn name_parts(&self) -> Vec<String>;
     fn name_columnnames() -> Vec<String>;
 }
 
+#[allow(async_fn_in_trait)]
 pub trait Lookup: DBTable + Named {
     async fn lookup(
         transaction: &mut EasyTransaction<'_>,
@@ -585,6 +588,7 @@ pub trait Lookup: DBTable + Named {
     }
 }
 
+#[allow(async_fn_in_trait)]
 /// If you're making a SQL model, implement this directly
 /// including `id`, `table_name`, `from_row`, `to_rowlike`, and `migrations`
 ///
@@ -712,7 +716,7 @@ pub trait DBTable: Sized + 'static + Send + Sync {
                 .map(|col| format!("{col} = EXCLUDED.{col}"))
                 .join(",\n");
 
-            format!("{r}")
+            r.to_string()
         };
 
         let columns = columns.into_iter().join(", ");
@@ -845,6 +849,7 @@ pub async fn new_client() -> Result<ClientPair, anyhow::Error> {
     Ok(ClientPair { client })
 }
 
+#[allow(async_fn_in_trait)]
 pub trait AsEasyTransaction {
     async fn easy_transaction(&mut self) -> Result<EasyTransaction, anyhow::Error>;
 }

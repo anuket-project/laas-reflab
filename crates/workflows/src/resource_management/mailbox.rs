@@ -33,7 +33,7 @@ use tascii::{
 };
 use tracing::{error, info, warn};
 
-const MESSAGE_EXPIRY_TIME_MINUTES: f32 = 5.0;
+// const MESSAGE_EXPIRY_TIME_MINUTES: f32 = 5.0;
 
 #[derive(Serialize, Deserialize, Clone, Debug, Hash, JsonSchema, PartialEq, Eq)]
 pub struct Message {
@@ -42,9 +42,9 @@ pub struct Message {
     pub message: String,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct AppState {
-    state: String,
+    _state: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, Hash, PartialEq, Eq, JsonSchema)]
@@ -106,18 +106,14 @@ impl AsyncRunnable for WaitMailbox {
     }
 }
 
+pub type MailboxResult = Result<MailboxOk, MailboxErr>;
+
 pub struct Mailbox {
     pub messages: HashMap<Endpoint, VecDeque<Message>>,
 
     pub un_acked: HashSet<Message>,
 
-    pub notify_when: HashMap<
-        Endpoint,
-        (
-            Sender<Result<MailboxOk, MailboxErr>>,
-            Receiver<Result<MailboxOk, MailboxErr>>,
-        ),
-    >,
+    pub notify_when: HashMap<Endpoint, (Sender<MailboxResult>, Receiver<MailboxResult>)>,
 }
 
 lazy_static::lazy_static! {
@@ -137,14 +133,14 @@ pub struct MailboxErr {
 }
 
 pub struct MailboxMessageReceiver {
-    recv: Receiver<Result<MailboxOk, MailboxErr>>,
-    received: Vec<Result<MailboxOk, MailboxErr>>,
+    recv: Receiver<MailboxResult>,
+    received: Vec<MailboxResult>,
 
     for_endpoint: Endpoint,
 }
 
 impl MailboxMessageReceiver {
-    pub fn wait_next(&mut self, timeout: Duration) -> Result<MailboxOk, MailboxErr> {
+    pub fn wait_next(&mut self, timeout: Duration) -> MailboxResult {
         tracing::info!("Waiter is waiting on endpoint {:?}", self.for_endpoint);
         let v = self.recv.recv_timeout(timeout).map_err(|e| MailboxErr {
             failure_reason: format!("{e:?}"),
@@ -166,7 +162,7 @@ impl MailboxMessageReceiver {
         v
     }
 
-    pub fn get_log(&self) -> &Vec<Result<MailboxOk, MailboxErr>> {
+    pub fn get_log(&self) -> &Vec<MailboxResult> {
         &self.received
     }
 
@@ -538,9 +534,9 @@ pub async fn entry(_rt: &'static Runtime) {
     .await;
 }
 
-async fn serve_api(Extension(api): Extension<OpenApi>) -> impl IntoApiResponse {
-    Json(api)
-}
+// async fn serve_api(Extension(api): Extension<OpenApi>) -> impl IntoApiResponse {
+//      Json(api)
+// }
 
 async fn test() -> String {
     "Test :".to_owned()
