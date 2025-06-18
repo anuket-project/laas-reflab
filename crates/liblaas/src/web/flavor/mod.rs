@@ -7,7 +7,7 @@ use super::{
     AppState,
 };
 use crate::web::{
-    api::{AggregateDescription, AllocationBlob, HostBlob, ImageBlob},
+    api::{HostBlob, ImageBlob},
     WebError,
 };
 use aide::{
@@ -19,9 +19,9 @@ use axum::{
     http::StatusCode,
 };
 use common::prelude::*;
+use dal::get_db_pool;
 use dal::{web::*, *};
 use models::{
-    allocator::{Allocation, AllocationReason, ResourceHandle},
     dashboard::Image,
     inventory::{Flavor, Host, Lab},
 };
@@ -210,103 +210,28 @@ pub struct ListFlavorsRequest {
     flavor_id: Uuid,
 }
 
-/// List hosts, filtering to only hosts for the given project (dashboard)
+/// List hosts with active allocation (if one exists), filtering to only hosts for the given project (dashboard)
 pub async fn list_hosts(
     Path(lab_name): Path<String>,
 ) -> Result<Json<Vec<api::HostBlob>>, WebError> {
     tracing::info!("API call to list_hosts()");
-    let mut client = new_client().await.log_db_client_error()?;
-    let mut transaction = client.easy_transaction().await.log_db_client_error()?;
 
-    let hosts = Host::all_hosts(&mut transaction).await.log_error(
-        StatusCode::INTERNAL_SERVER_ERROR,
-        "Failed to retrieve all hosts",
-        true,
-    )?;
+    let pool = get_db_pool()
+        .await
+        .map_err(|e| anyhow::Error::msg("Failed to connect to db"))
+        .log_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed to retrieve all hosts",
+            true,
+        )?;
 
-    let mut blobs = Vec::new();
-
-    for host in hosts {
-        let host = host.into_inner();
-        if ResourceHandle::handle_for_host(&mut transaction, host.id)
-            .await
-            .expect("Expected lab to exist")
-            .lab
-            .get(&mut transaction)
-            .await
-            .expect("Expected lab to exist")
-            .name
-            != lab_name
-        {
-            continue;
-        }
-
-        let handle = ResourceHandle::handle_for_host(&mut transaction, host.id).await;
-
-        let handle = if let Ok(h) = handle {
-            h
-        } else {
-            tracing::error!("Didn't find a handle for {host:?}");
-            continue;
-        };
-
-        let allocation = if let Ok(Some(a)) = Allocation::find(&mut transaction, handle.id, false)
-            .await
-            .map(|v| v.into_iter().next())
-        {
-            let a = a.into_inner();
-
-            let agg_desc = if let Some(agg) = a.for_aggregate {
-                let agg = agg.get(&mut transaction).await;
-
-                if let Ok(agg) = agg {
-                    let agg = agg.into_inner();
-                    Some(AggregateDescription {
-                        id: agg.id,
-                        purpose: agg.metadata.purpose,
-                        project: agg.metadata.project,
-                        origin: agg
-                            .lab
-                            .get(&mut transaction)
-                            .await
-                            .expect("Expected lab to exist")
-                            .name
-                            .clone(),
-                    })
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-
-            let reason = match a.reason_started {
-                AllocationReason::ForBooking => "booked",
-                AllocationReason::ForRetiry => "retired",
-                AllocationReason::ForMaintenance => "maintenance",
-            };
-
-            Some(AllocationBlob {
-                for_aggregate: agg_desc,
-                reason: reason.to_owned(),
-            })
-        } else {
-            None
-        };
-
-        let hb = HostBlob {
-            id: Some(host.id),
-            name: host.server_name,
-            arch: host.flavor.get(&mut transaction).await.unwrap().arch,
-            flavor: host.flavor,
-            ipmi_fqdn: host.ipmi_fqdn,
-            allocation,
-        };
-
-        blobs.push(hb);
-    }
-
-    transaction.commit().await.log_db_client_error()?;
+    let blobs = HostBlob::all_active_hosts_with_resource_handles_in_lab_name(&pool, &lab_name)
+        .await
+        .log_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed to retrieve all hosts",
+            true,
+        )?;
 
     Ok(Json(blobs))
 }
