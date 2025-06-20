@@ -158,6 +158,10 @@ build:
     - name: LibLaaS Tascii Docker Images
       location: images
       pattern: "**/*.tar"
+    - name: Build Revision
+      pattern: revision.txt
+      shared: true
+      required: true
   final-tasks:
   - script:
       interpreter: SHELL
