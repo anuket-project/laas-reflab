@@ -174,3 +174,9 @@ triggers:
 
 branches:
   create: for-new-branch
+dependencies:
+  require-all-stages-passing: true
+  enabled-for-branches: true
+  block-strategy: none
+  plans:
+  - OST-BAFL
