@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM switchports",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "21f54daa76dbb6c5e6786f11d6717f8fe8dc9370ef499e7333d525c011a6157d"
+}

@@ -1,0 +1,80 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n          h.server_name           AS \"server_name!\",\n          hp.id                   AS \"id: uuid::Uuid\",\n          hp.on_host              AS \"on_host: uuid::Uuid\",\n          hp.switchport           AS \"switchport?: uuid::Uuid\",\n          hp.name                 AS \"name!\",\n          hp.speed                AS \"speed?: DataValue\",\n          hp.mac                  AS \"mac: MacAddress\",\n          hp.switch               AS \"switch!\",\n          hp.bus_addr             AS \"bus_addr!\",\n          hp.bmc_vlan_id          AS \"bmc_vlan_id?: i16\",\n          hp.management_vlan_id   AS \"management_vlan_id?: i16\"\n        FROM host_ports hp\n        JOIN hosts      h   ON hp.on_host = h.id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "server_name!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "id: uuid::Uuid",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "on_host: uuid::Uuid",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "switchport?: uuid::Uuid",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "name!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "speed?: DataValue",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 6,
+        "name": "mac: MacAddress",
+        "type_info": "Macaddr"
+      },
+      {
+        "ordinal": 7,
+        "name": "switch!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "bus_addr!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 9,
+        "name": "bmc_vlan_id?: i16",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 10,
+        "name": "management_vlan_id?: i16",
+        "type_info": "Int2"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "b002e92da8f749afed1797e5cddd16c9a91b96b756f1ff1499033285bfc5862f"
+}

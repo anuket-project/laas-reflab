@@ -1,0 +1,84 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE host_ports hp\n           SET\n             switchport          = (SELECT id FROM switchports WHERE name = $3 AND for_switch = (SELECT id FROM switches WHERE name = $6)),\n             name                = $2,\n             speed               = $4,\n             mac                 = $5,\n             switch              = $6,\n             bus_addr            = $7,\n             bmc_vlan_id         = $8,\n             management_vlan_id  = $9\n          FROM hosts h\n          WHERE hp.on_host = h.id\n            AND h.server_name = $1\n            AND hp.name        = $2\n        RETURNING\n            hp.id,\n            hp.on_host,\n            hp.switchport,\n            hp.name,\n            hp.speed,\n            hp.mac,\n            hp.switch,\n            hp.bus_addr,\n            hp.bmc_vlan_id,\n            hp.management_vlan_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "on_host",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "switchport",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "speed",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 5,
+        "name": "mac",
+        "type_info": "Macaddr"
+      },
+      {
+        "ordinal": 6,
+        "name": "switch",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "bus_addr",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "bmc_vlan_id",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 9,
+        "name": "management_vlan_id",
+        "type_info": "Int2"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Jsonb",
+        "Macaddr",
+        "Text",
+        "Varchar",
+        "Int2",
+        "Int2"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "3c83fbad016a91b6550b6bc8bbd858235c1ab93b2a3535f622997cc501262077"
+}

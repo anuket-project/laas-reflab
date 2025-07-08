@@ -1,14 +1,17 @@
+use clap::{Parser, Subcommand};
 use client::remote::{cli_client_entry, cli_server_entry};
 use common::prelude::{
     axum::{extract::Path, Json},
     chrono::{Days, Utc},
-    itertools::Itertools,
     tokio::{self, sync::mpsc, task::LocalSet},
     tracing,
 };
 use config::settings;
 use core::panic;
 use dal::{new_client, web::ResultWithCode, AsEasyTransaction, DBTable, FKey, NewRow};
+use inventory_cli::prelude::{
+    import_inventory, match_and_print, validate_inventory, InventoryCommand,
+};
 use liblaas::{
     self,
     web::{api::TemplateBlob, template::make_template},
@@ -18,9 +21,31 @@ use models::{
     dashboard::{Aggregate, NetworkAssignmentMap, *},
     inventory::*,
 };
-use std::{env::args, sync::OnceLock, time::Duration};
+use std::{sync::OnceLock, time::Duration};
 use tascii::{self, prelude::*};
 use workflows::{self, resource_management::allocator::Allocator};
+
+#[derive(Parser, Debug)]
+#[command(name = "LibLaaS", author, version, about = "LibLaaS server and CLI")]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+#[derive(Subcommand, Debug)]
+enum Command {
+    /// Run in CLI mode
+    Cli,
+
+    /// Run in server mode
+    Server,
+
+    /// Inventory operations (validate/import) against the database.
+    Inventory {
+        #[clap(subcommand)]
+        action: InventoryCommand,
+    },
+}
 
 pub async fn allocate_unreserved_hosts() {
     let dev_hosts = settings().dev.hosts.clone();
@@ -155,26 +180,39 @@ pub fn clear_tasks() {
 /// 4. start web
 #[tokio::main]
 async fn main() {
-    let args = args().collect_vec();
-    match args.get(1).map(|s| s.as_str()) {
-        Some("--cli") => {
+    let cli = Cli::parse();
+
+    match cli.command {
+        Some(Command::Cli) => {
             println!("Starting in CLI Mode");
             cli_client_entry().await;
             return;
         }
-        Some("--server") => {
+        Some(Command::Server) => {
             println!("Starting in Server Mode");
         }
-        Some(other) => {
-            panic!("Unknown CLI option: {other}");
-        }
-        _ => {
+        Some(Command::Inventory { action }) => match action {
+            InventoryCommand::Validate { path, detailed } => {
+                println!("Validating inventory");
+                match_and_print(validate_inventory(&path, detailed).await);
+            }
+            InventoryCommand::Import {
+                path,
+                detailed,
+                yes,
+                ignore_errors,
+            } => {
+                println!("Importing inventory");
+                match_and_print(import_inventory(&path, yes, detailed, ignore_errors).await);
+            }
+        },
+        None => {
             println!(
                 "WARN: zero-arg invocation of LibLaaS will be deprecated soon, pending CLI parsing"
             );
             println!("Defaulting to Starting in Server Mode");
         }
-    };
+    }
 
     let subscriber = tracing_subscriber::fmt::fmt().pretty();
 

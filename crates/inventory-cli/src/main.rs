@@ -1,15 +1,15 @@
 use clap::Parser;
 use inventory_cli::prelude::{import_inventory, validate_inventory};
-use inventory_cli::{Cli, Commands, match_and_print};
+use inventory_cli::{Cli, InventoryCommand, match_and_print};
 
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
     match cli.command {
-        Commands::Validate { path, detailed } => {
+        InventoryCommand::Validate { path, detailed } => {
             match_and_print(validate_inventory(&path, detailed).await)
         }
-        Commands::Import {
+        InventoryCommand::Import {
             path,
             yes,
             detailed,

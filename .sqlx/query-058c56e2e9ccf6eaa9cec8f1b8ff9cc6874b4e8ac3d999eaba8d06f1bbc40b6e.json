@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM host_ports WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "058c56e2e9ccf6eaa9cec8f1b8ff9cc6874b4e8ac3d999eaba8d06f1bbc40b6e"
+}

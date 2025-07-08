@@ -13,6 +13,7 @@ incremental = true
 [dependencies]
 tracing-subscriber = "0.3"
 backtrace-on-stack-overflow = "*"
+clap = { workspace = true }
 
 # local workspaces/crates
 common = { path = "crates/common" }
@@ -26,6 +27,7 @@ models = { path = "crates/models" }
 tascii = { path = "crates/tascii" }
 # users = { path = "crates/users" }
 workflows = { path = "crates/workflows" }
+inventory_cli = { path = "crates/inventory-cli" }
 
 [workspace]
 members = ["crates/*"]

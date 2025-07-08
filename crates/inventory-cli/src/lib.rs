@@ -1,6 +1,6 @@
 mod command;
 mod error;
-mod fetch;
+mod handlers;
 mod modified;
 pub mod prelude;
 mod report;
@@ -8,18 +8,20 @@ mod schema;
 mod utils;
 
 use crate::prelude::InventoryError;
+
 use clap::{Parser, Subcommand};
 use colored::Colorize;
+use sqlx::PgPool;
 
 #[derive(Parser)]
 #[clap(name = "LaaS Inventory CLI", version = "0.1.0")]
 pub struct Cli {
     #[clap(subcommand)]
-    pub command: Commands,
+    pub command: InventoryCommand,
 }
 
-#[derive(Subcommand)]
-pub enum Commands {
+#[derive(Subcommand, Debug)]
+pub enum InventoryCommand {
     /// Check inventory against the database
     Validate {
         /// Path to inventory folder
@@ -44,6 +46,16 @@ pub enum Commands {
         #[clap(short, long, default_value = "false")]
         ignore_errors: bool,
     },
+}
+
+pub(crate) async fn get_db_pool() -> Result<PgPool, InventoryError> {
+    let url = std::env::var("DATABASE_URL")?;
+    PgPool::connect(&url)
+        .await
+        .map_err(|e| InventoryError::Sqlx {
+            context: "While attempting to connect to database".to_string(),
+            source: e,
+        })
 }
 
 pub fn match_and_print(result: Result<(), InventoryError>) {

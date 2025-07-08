@@ -114,6 +114,19 @@ cargo sqlx prepare --workspace
 
 If you would like to generate an html report, you can run:
 
+## Running Inventory CLI
+
+If trying to perform inventory operations on a running instance of LaaS. Use a docker container to run the CLI:
+
+```
+docker run --rm -it \
+  -v "<PATH_TO_INVENTORY>":/inventory \
+  -e DATABASE_URL=<DATABASE_URL> \
+  --network=<DOCKER_NETWORK_NAME> \
+  laas-reflab:latest \
+  laas-reflab inventory validate -d -p <path-to-inventory>
+```
+
 ```bash
 cargo llvm-cov --workspace --html nextest
 ```

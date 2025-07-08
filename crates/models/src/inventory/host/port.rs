@@ -8,13 +8,13 @@ use mac_address::MacAddress;
 use sqlx::FromRow;
 use sqlx::{query_as, PgPool};
 
-use crate::inventory::{DataValue, Host, InterfaceFlavor, SwitchPort};
+use crate::inventory::{DataValue, Host, SwitchPort};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, FromRow, sqlx::Type)]
 pub struct HostPort {
     pub id: FKey<HostPort>,
     pub on_host: FKey<Host>,
-    pub switchport: FKey<SwitchPort>,
+    pub switchport: Option<FKey<SwitchPort>>,
     pub name: String,
     pub speed: DataValue,
     pub mac: MacAddress,
@@ -22,7 +22,6 @@ pub struct HostPort {
     pub bus_addr: String,
     pub bmc_vlan_id: Option<i16>,
     pub management_vlan_id: Option<i16>,
-    pub is_a: FKey<InterfaceFlavor>,
 }
 
 impl DBTable for HostPort {
@@ -58,7 +57,6 @@ impl DBTable for HostPort {
             bus_addr: row.try_get("bus_addr")?,
             bmc_vlan_id: row.try_get("bmc_vlan_id")?,
             management_vlan_id: row.try_get("management_vlan_id")?,
-            is_a: row.try_get("is_a")?,
         }))
     }
 
@@ -88,7 +86,6 @@ impl DBTable for HostPort {
             ("bus_addr", Box::new(clone.bus_addr)),
             ("bmc_vlan_id", Box::new(clone.bmc_vlan_id)),
             ("management_vlan_id", Box::new(clone.management_vlan_id)),
-            ("is_a", Box::new(self.is_a)),
         ];
 
         Ok(c.into_iter().collect())
@@ -101,7 +98,7 @@ impl HostPort {
         let sql = r#"
             SELECT id, on_host, switchport, name,
                    speed, mac, switch, bus_addr,
-                   bmc_vlan_id, management_vlan_id, is_a
+                   bmc_vlan_id, management_vlan_id
               FROM host_ports
              WHERE on_host = $1
         "#;
@@ -124,17 +121,16 @@ mod test {
 
     pub fn host_port_strategy() -> impl Strategy<Value = HostPort> {
         (
-            any::<FKey<HostPort>>(),        // id
-            any::<FKey<Host>>(),            // on_host
-            any::<FKey<SwitchPort>>(),      // switchport
-            "[a-zA-Z0-9-]{1,50}",           // name
-            any::<DataValue>(),             // speed
-            mac_address_strategy(),         // mac
-            "[a-zA-Z0-9]{1,20}",            // switch
-            "[a-zA-Z0-9]{1,20}",            // bus_addr
-            of(i16::MIN..i16::MAX),         // bmc_vlan_id
-            of(i16::MIN..i16::MAX),         // management_vlan_id
-            any::<FKey<InterfaceFlavor>>(), // is_a
+            any::<FKey<HostPort>>(),       // id
+            any::<FKey<Host>>(),           // on_host
+            of(any::<FKey<SwitchPort>>()), // switchport
+            "[a-zA-Z0-9-]{1,50}",          // name
+            any::<DataValue>(),            // speed
+            mac_address_strategy(),        // mac
+            "[a-zA-Z0-9]{1,20}",           // switch
+            "[a-zA-Z0-9]{1,20}",           // bus_addr
+            of(i16::MIN..i16::MAX),        // bmc_vlan_id
+            of(i16::MIN..i16::MAX),        // management_vlan_id
         )
             .prop_map(
                 |(
@@ -148,7 +144,6 @@ mod test {
                     bus_addr,
                     bmc_vlan_id,
                     management_vlan_id,
-                    is_a,
                 )| HostPort {
                     id,
                     on_host,
@@ -160,7 +155,6 @@ mod test {
                     bus_addr: bus_addr.to_string(),
                     bmc_vlan_id,
                     management_vlan_id,
-                    is_a,
                 },
             )
     }

@@ -1,13 +1,13 @@
 use dal::*;
 use serde::{Deserialize, Serialize};
+use sqlx::FromRow;
 use std::collections::HashMap;
 
 use crate::inventory::Switch;
 
-#[derive(Serialize, Deserialize, Debug, Clone, Hash)]
+#[derive(Serialize, Deserialize, Debug, Clone, Hash, PartialEq, Eq, FromRow)]
 pub struct SwitchPort {
     pub id: FKey<SwitchPort>,
-
     pub for_switch: FKey<Switch>,
     pub name: String,
 }
@@ -58,7 +58,7 @@ impl SwitchPort {
         let existing = t.query_opt(&q, &[&on, &name.clone()]).await.unwrap();
 
         match existing {
-            Some(r) => Ok(Self::from_row(r)?),
+            Some(r) => Ok(<SwitchPort as dal::DBTable>::from_row(r)?),
             None => {
                 // need to create the port
                 let sp = SwitchPort {

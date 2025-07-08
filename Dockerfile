@@ -48,5 +48,5 @@ COPY --from=builder /app/target/release/laas-reflab /usr/local/bin
 COPY --from=builder /app/migrations /app/migrations
 COPY templates /app/templates
 
-ENTRYPOINT ["/usr/local/bin/laas-reflab", "--server"]
-
+ENTRYPOINT ["/usr/local/bin/laas-reflab"]
+CMD ["server"]

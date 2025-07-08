@@ -5,7 +5,7 @@ use crate::prelude::{
     Host, InventoryError, ModifiedFields, fqdn_to_hostname_and_domain, hostname_and_domain_to_fqdn,
 };
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub struct IpmiYaml {
     pub hostname: String,
     pub ip4: String,

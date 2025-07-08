@@ -1,13 +1,15 @@
-use crate::prelude::{HostYaml, InventoryError, InventoryYaml};
+use crate::prelude::{InventoryError, InventoryYaml};
 
 use glob::glob;
 use std::path::Path;
 
-pub(crate) fn load_inventory_hosts(dir: &Path) -> Result<Vec<HostYaml>, Vec<InventoryError>> {
-    let mut hosts = Vec::new();
+/// Loads all YAML inventory files under the given directory and
+/// returns a single `InventoryYaml` containing all switches and hosts.
+pub(crate) fn load_inventory(dir: &Path) -> Result<InventoryYaml, Vec<InventoryError>> {
+    let mut all_switches = Vec::new();
+    let mut all_hosts = Vec::new();
     let mut errors = Vec::new();
 
-    // path checks
     if !dir.exists() {
         errors.push(InventoryError::IoPath {
             path: dir.to_path_buf(),
@@ -23,9 +25,7 @@ pub(crate) fn load_inventory_hosts(dir: &Path) -> Result<Vec<HostYaml>, Vec<Inve
         return Err(errors);
     }
 
-    // construct glob pattern from dir path argument
     let pattern = format!("{}/**/*.yaml", dir.display());
-
     let entries = match glob(&pattern) {
         Ok(paths) => paths,
         Err(e) => {
@@ -39,7 +39,7 @@ pub(crate) fn load_inventory_hosts(dir: &Path) -> Result<Vec<HostYaml>, Vec<Inve
             Ok(path) => {
                 let path_str = path.display().to_string();
 
-                // read file
+                // Read file contents
                 let data = match std::fs::read_to_string(&path) {
                     Ok(s) => s,
                     Err(e) => {
@@ -51,9 +51,11 @@ pub(crate) fn load_inventory_hosts(dir: &Path) -> Result<Vec<HostYaml>, Vec<Inve
                     }
                 };
 
-                // parse into yaml
                 match serde_yaml::from_str::<InventoryYaml>(&data) {
-                    Ok(inv) => hosts.push(inv.host),
+                    Ok(inv) => {
+                        all_switches.extend(inv.switches);
+                        all_hosts.extend(inv.hosts);
+                    }
                     Err(e) => errors.push(InventoryError::Yaml {
                         path: path_str,
                         source: e,
@@ -67,7 +69,10 @@ pub(crate) fn load_inventory_hosts(dir: &Path) -> Result<Vec<HostYaml>, Vec<Inve
     }
 
     if errors.is_empty() {
-        Ok(hosts)
+        Ok(InventoryYaml {
+            switches: all_switches,
+            hosts: all_hosts,
+        })
     } else {
         Err(errors)
     }
