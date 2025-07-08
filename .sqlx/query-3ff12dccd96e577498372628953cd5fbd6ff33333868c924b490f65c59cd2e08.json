@@ -1,0 +1,85 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO host_ports (\n            id,\n            on_host,\n            switchport,\n            name,\n            speed,\n            mac,\n            switch,\n            bus_addr,\n            bmc_vlan_id,\n            management_vlan_id\n        ) VALUES (\n            $1,\n            (SELECT id FROM hosts WHERE server_name = $2),\n            (SELECT id FROM switchports WHERE name = $3 AND for_switch = (SELECT id FROM switches WHERE name = $7)),\n            $4,\n            $5,\n            $6,\n            $7,\n            $8,\n            $9,\n            $10\n            )\n            RETURNING\n                id,\n                on_host,\n                switchport,\n                name,\n                speed,\n                mac,\n                switch,\n                bus_addr,\n                bmc_vlan_id,\n                management_vlan_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "on_host",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "switchport",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "speed",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 5,
+        "name": "mac",
+        "type_info": "Macaddr"
+      },
+      {
+        "ordinal": 6,
+        "name": "switch",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "bus_addr",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "bmc_vlan_id",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 9,
+        "name": "management_vlan_id",
+        "type_info": "Int2"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Varchar",
+        "Jsonb",
+        "Macaddr",
+        "Text",
+        "Varchar",
+        "Int2",
+        "Int2"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "3ff12dccd96e577498372628953cd5fbd6ff33333868c924b490f65c59cd2e08"
+}

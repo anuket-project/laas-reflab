@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio_postgres::types::ToSql;
@@ -18,7 +19,7 @@ pub struct Allocation {
     pub reason_ended: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Eq, PartialEq, JsonSchema)]
 pub enum AllocationReason {
     /// If a resource is to be used within a booking, allocate
     /// with ForBooking
@@ -134,6 +135,25 @@ impl Allocation {
         let rows = t.query(&q, &[&for_resource]).await.anyway()?;
 
         Allocation::from_rows(rows)
+    }
+
+    /// Returns the most recent allocation for a resource based on started time.
+    /// Returns None if the resource has never been allocated
+    /// Returns an error if the DB lookup failed
+    pub async fn get_most_recent_allocation_for_resource(
+        t: &mut EasyTransaction<'_>,
+        for_resource: FKey<ResourceHandle>,
+    ) -> Result<Option<Allocation>, anyhow::Error> {
+        let query = format!(
+            "SELECT * FROM {} where for_resource = $1 ORDER BY started DESC LIMIT 1",
+            Self::table_name()
+        );
+        let rows = t.query(&query, &[&for_resource]).await.anyway()?;
+
+        match Allocation::from_rows(rows)?.first() {
+            Some(row) => Ok(Some(row.clone().into_inner())),
+            None => Ok(None),
+        }
     }
 
     pub async fn all_for_aggregate(

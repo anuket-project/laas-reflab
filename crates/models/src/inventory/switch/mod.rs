@@ -1,5 +1,6 @@
 use dal::{web::AnyWay, *};
 use serde::{Deserialize, Serialize};
+use sqlx::FromRow;
 use std::collections::HashMap;
 
 mod os;
@@ -8,7 +9,7 @@ mod port;
 pub use os::SwitchOS;
 pub use port::SwitchPort;
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, FromRow, PartialEq, Eq)]
 pub struct Switch {
     pub id: FKey<Switch>,
     pub name: String,
@@ -16,17 +17,6 @@ pub struct Switch {
     pub user: String,
     pub pass: String,
     pub switch_os: Option<FKey<SwitchOS>>,
-}
-
-impl PartialEq for Switch {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
-            && self.name == other.name
-            && self.ip == other.ip
-            && self.user == other.user
-            && self.pass == other.pass
-            && self.switch_os == other.switch_os
-    }
 }
 
 impl DBTable for Switch {
@@ -78,7 +68,7 @@ impl Switch {
         let opt_row = transaction.query_opt(&q, &[&ip]).await.anyway()?;
         Ok(match opt_row {
             None => None,
-            Some(row) => Some(Self::from_row(row)?),
+            Some(row) => Some(<Switch as dal::DBTable>::from_row(row)?),
         })
     }
 
@@ -92,7 +82,7 @@ impl Switch {
         let opt_row = transaction.query_opt(&q, &[&name]).await.anyway()?;
         Ok(match opt_row {
             None => None,
-            Some(row) => Some(Self::from_row(row)?),
+            Some(row) => Some(<Switch as dal::DBTable>::from_row(row)?),
         })
     }
 }

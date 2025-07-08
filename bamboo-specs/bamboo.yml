@@ -146,15 +146,37 @@ build:
       interpreter: SHELL
       scripts:
       - |-
-        docker -t laas-reflab build .
-        docker image rm -f laas-reflab
+        docker build --tag bamboo-laas-reflab-liblaas:${bamboo.repository.revision.number} .
+        mkdir images
+        docker save -o images/ost-laas-reflab-liblaas.tar bamboo-laas-reflab-liblaas:${bamboo.repository.revision.number}
+        echo "${bamboo.repository.revision.number}" > revision.txt
       description: Build laas-reflab docker image
   requirements:
   - Docker
-  - linuxos 
+  - linuxos
+  artifacts:
+    - name: LibLaaS Tascii Docker Images
+      location: images
+      pattern: "**/*.tar"
+    - name: Build Revision
+      pattern: revision.txt
+      shared: true
+      required: true
+  final-tasks:
+  - script:
+      interpreter: SHELL
+      scripts:
+      - docker image rm bamboo-laas-reflab-liblaas:${bamboo.repository.revision.number} || true
+      description: Delete Docker Images From Local Registry
 
 triggers:
   - remote
 
 branches:
   create: for-new-branch
+dependencies:
+  require-all-stages-passing: true
+  enabled-for-branches: true
+  block-strategy: none
+  plans:
+  - OST-BAFL

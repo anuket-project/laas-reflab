@@ -242,7 +242,7 @@ async fn process_bondgroup(
 async fn validate_hostport(
     member: &FKey<HostPort>,
     transaction: &mut EasyTransaction<'_>,
-) -> Result<FKey<Switch>> {
+) -> Result<FKey<Switch>, anyhow::Error> {
     // fetch the `HostPort`
     let host_port = member
         .get(transaction)
@@ -252,29 +252,39 @@ async fn validate_hostport(
     // fetch the associated `SwitchPort` from the host port
     let switch_port = host_port
         .switchport
+        .unwrap_or_else(|| {
+            panic!(
+                "HostPort {} does not have an associated SwitchPort",
+                host_port.name
+            )
+        })
         .get(transaction)
         .await
         .map_err(|e| anyhow!("Failed to get SwitchPort: {}", e))?;
 
-    // fetch the associated `Switch` from the switch port
-    let switch = switch_port
-        .for_switch
-        .get(transaction)
-        .await
-        .map_err(|e| anyhow!("Failed to get Switch: {}", e))?;
+    // TODO: once SwitchOS lifecycle management is fully implemented by the import CLI. This
+    // validation logic can be reimplemented. There is no way to create a new switch with a
+    // specified OS and this logic could lead to failures in provisions for any new switches.
+
+    // // fetch the associated `Switch` from the switch port
+    // let switch = switch_port
+    //     .for_switch
+    //     .get(transaction)
+    //     .await
+    //     .map_err(|e| anyhow!("Failed to get Switch: {}", e))?;
 
     // fetch the associated `SwitchOS` from the swictch
-    let switch_os = switch
-        .switch_os
-        .ok_or_else(|| anyhow!("SwitchOS is not set for the Switch"))?
-        .get(transaction)
-        .await
-        .map_err(|e| anyhow!("Failed to get SwitchOS: {}", e))?;
+    // let switch_os = switch
+    //     .switch_os
+    //     .ok_or_else(|| anyhow!("SwitchOS is not set for the Switch"))?
+    //     .get(transaction)
+    //     .await
+    //     .map_err(|e| anyhow!("Failed to get SwitchOS: {}", e))?;
 
     // check if the OS type is "NXOS"
-    if switch_os.os_type != "NXOS" {
-        return Err(anyhow!("Switch OS type is not NXOS"));
-    }
+    // if switch_os.os_type != "NXOS" {
+    // return Err(anyhow!("Switch OS type is not NXOS"));
+    // }
 
     Ok(switch_port.for_switch)
 }
@@ -304,6 +314,7 @@ async fn configure_port(
         .await
         .unwrap()
         .switchport
+        .unwrap_or_else(|| panic!("HostPort does not have an associated SwitchPort"))
         .get(transaction)
         .await
         .unwrap();

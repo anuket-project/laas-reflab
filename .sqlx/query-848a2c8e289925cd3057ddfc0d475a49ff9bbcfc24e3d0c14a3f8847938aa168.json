@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO switchports (id, for_switch, name)\n        VALUES (\n            $1,\n            (SELECT id FROM switches WHERE name = $2 LIMIT 1),\n            $3\n        )\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "848a2c8e289925cd3057ddfc0d475a49ff9bbcfc24e3d0c14a3f8847938aa168"
+}

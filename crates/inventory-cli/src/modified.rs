@@ -19,6 +19,19 @@ impl ModifiedFields {
         ModifiedFields::default()
     }
 
+    /// If `field_name` was modified, returns `Some((&old_value, &new_value))`,
+    /// otherwise `None`.
+    pub fn get(&self, field_name: &str) -> Option<(&String, &String)> {
+        if self.fields.contains(field_name) {
+            // both maps must have the key if it’s in `fields`
+            let old = self.old.get(field_name)?;
+            let new = self.new.get(field_name)?;
+            Some((old, new))
+        } else {
+            None
+        }
+    }
+
     pub(crate) fn modified<S, T, U>(
         &mut self,
         field_name: S,
@@ -77,10 +90,6 @@ impl ModifiedFields {
 
 impl fmt::Display for ModifiedFields {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.fields.is_empty() {
-            return write!(f, "{}", "No modifications recorded".black().bold());
-        }
-
         // split into top-level vs nested
         let mut top = Vec::new();
         let mut nested: HashMap<String, Vec<(String, String, String)>> = HashMap::new();

@@ -71,10 +71,13 @@ mod sqlx_impl {
 
     impl<'r> Decode<'r, Postgres> for DataValue {
         fn decode(value: PgValueRef<'r>) -> Result<Self, Box<dyn Error + Send + Sync>> {
-            // decode the raw JSONB bytes into serde_json::Value
+            // first decode into serde_json::Value
             let raw: JsonValue = Decode::decode(value)?;
-            // convert the JSON Value into your DataValue via Serde
-            serde_json::from_value(raw).map_err(|e| Box::new(e) as _)
+            // if the JSON is null, return the default DataValue
+            match raw {
+                JsonValue::Null => Ok(DataValue::default()),
+                other => serde_json::from_value(other).map_err(|e| Box::new(e) as _),
+            }
         }
     }
 
@@ -83,19 +86,15 @@ mod sqlx_impl {
             &self,
             buf: &mut <Postgres as Database>::ArgumentBuffer<'q>,
         ) -> Result<IsNull, Box<dyn Error + Send + Sync>> {
-            // serialize `self` to serde_json::Value
             let raw = serde_json::to_value(self)?;
-            // delegate to Value’s JSONB encoder
             <JsonValue as Encode<'q, Postgres>>::encode(raw, buf)
         }
 
-        ///  tell SQLx the type we produce
         fn produces(&self) -> Option<<Postgres as Database>::TypeInfo> {
             Some(<JsonValue as Type<Postgres>>::type_info())
         }
 
         fn size_hint(&self) -> usize {
-            // delegate to Value’s hint impl
             match serde_json::to_value(self) {
                 Ok(raw) => <JsonValue as Encode<'q, Postgres>>::size_hint(&raw),
                 Err(_) => 0,

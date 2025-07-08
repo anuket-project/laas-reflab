@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                hosts.id,\n                hosts.server_name,\n                flavors.arch AS arch,\n                hosts.flavor AS flavor,\n                hosts.ipmi_fqdn AS ipmi_fqdn,\n                resource_handles.id AS resource_handle_id,\n                allocations.reason_started AS \"reason_started?\",\n                allocations.ended AS allocation_ended\n            FROM\n                hosts\n                JOIN resource_handles ON hosts.id = resource_handles.tracks_resource\n                JOIN labs ON resource_handles.lab = labs.id\n                JOIN flavors ON flavors.id = hosts.flavor\n                LEFT JOIN LATERAL (\n                    SELECT\n                        *\n                    FROM\n                        allocations\n                    WHERE\n                        allocations.for_resource = resource_handles.id\n                    ORDER BY\n                        allocations.started DESC\n                    LIMIT\n                        1\n                ) allocations ON true\n\n            WHERE\n                hosts.deleted = false\n                AND labs.name = $1;\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "server_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "arch",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "flavor",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "ipmi_fqdn",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "resource_handle_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 6,
+        "name": "reason_started?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "allocation_ended",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "4d30cc61f98132aab68996d638b26b70658522ecebffaac21d59362919c3a91c"
+}

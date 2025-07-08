@@ -1,0 +1,86 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, server_name, flavor, serial,\n               ipmi_fqdn, iol_id, ipmi_mac, ipmi_user,\n               ipmi_pass, fqdn, projects, sda_uefi_device\n          FROM hosts WHERE deleted = false\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "server_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "flavor",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "serial",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "ipmi_fqdn",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "iol_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "ipmi_mac",
+        "type_info": "Macaddr"
+      },
+      {
+        "ordinal": 7,
+        "name": "ipmi_user",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "ipmi_pass",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 9,
+        "name": "fqdn",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 10,
+        "name": "projects",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 11,
+        "name": "sda_uefi_device",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "f2abbe111e8ff346e271429bbb0a062e930eb26a7fe5b4919ec52253296378dc"
+}

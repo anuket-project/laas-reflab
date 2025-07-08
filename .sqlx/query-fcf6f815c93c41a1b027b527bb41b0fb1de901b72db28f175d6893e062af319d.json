@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM switchports\n        WHERE for_switch = (\n            SELECT id\n            FROM switches\n            WHERE name = $1\n            LIMIT 1\n        )\n        AND name = $2\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fcf6f815c93c41a1b027b527bb41b0fb1de901b72db28f175d6893e062af319d"
+}

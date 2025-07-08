@@ -30,6 +30,9 @@ pub enum InventoryError {
     #[error("{0}")]
     Json(#[from] serde_json::Error),
 
+    #[error("{0}")]
+    Anyhow(#[from] anyhow::Error),
+
     #[error("SQLX error: {context}: {source}")]
     Sqlx {
         context: String,
@@ -97,4 +100,20 @@ pub enum InventoryError {
 
     #[error("{0}")]
     Conflict(String),
+
+    #[error("Error encountered while parsing address: {value}: {source}")]
+    AddrParse {
+        value: String,
+        #[source]
+        source: std::net::AddrParseError,
+    },
+
+    #[error("Invalid report type: {expected}, got {actual}")]
+    InvalidReportType {
+        expected: &'static str,
+        actual: &'static str,
+    },
+
+    #[error("{0}")]
+    NotImplemented(String),
 }

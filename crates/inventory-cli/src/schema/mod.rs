@@ -4,16 +4,23 @@ mod host;
 mod interface;
 mod ipmi;
 mod parse;
+mod switch;
 
 pub(crate) use host::{HostInfo, HostYaml};
-pub(crate) use interface::{ConnectionYaml, InterfaceYaml};
-pub(crate) use parse::load_inventory_hosts;
+pub(crate) use interface::{
+    InterfaceYaml, generate_created_interface_reports, generate_interface_reports,
+};
+pub(crate) use ipmi::IpmiYaml;
+pub(crate) use parse::load_inventory;
+pub(crate) use switch::{SwitchDatabaseInfo, SwitchYaml};
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
-pub enum Report {}
-
-// TODO: make this make a little more sense with hosts as a vec in a yaml list
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct InventoryYaml {
-    pub host: HostYaml,
+    /// All switches in this inventory
+    #[serde(default)]
+    pub switches: Vec<SwitchYaml>,
+
+    /// All hosts in this inventory
+    #[serde(default)]
+    pub hosts: Vec<HostYaml>,
 }

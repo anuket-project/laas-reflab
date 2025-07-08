@@ -4,13 +4,13 @@
 //! to be sent over the API, but should never be directly stored into any database
 //! They are fundamentally ephemeral, and describe the shape of the API
 
-use models::{dashboard::NetworkBlob, inventory::Arch};
-
 use dal::*;
+use models::{allocator::AllocationReason, dashboard::NetworkBlob, inventory::Arch};
 use models::{
-    dashboard::{Aggregate, Image, Template},
+    dashboard::{Image, Template},
     inventory::{self, CardType, DataValue, Flavor},
 };
+use std::str::FromStr;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -20,6 +20,8 @@ use common::prelude::*;
 pub struct AggregateBlob {
     with_template: FKey<Template>,
 }
+
+use sqlx::{query, PgPool};
 
 /// The highest level blob containing all the neccessary information to create a template
 /// Dashboard sends TemplateBlob
@@ -50,27 +52,87 @@ pub struct HostConfigBlob {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema)]
+/// Dashboard friendly JSON of a host. Includes most recent allocation reason if allocated, or None if not currently allocated.
 pub struct HostBlob {
     pub id: Option<FKey<inventory::Host>>,
     pub name: String,
     pub arch: Arch,
     pub flavor: FKey<inventory::Flavor>,
     pub ipmi_fqdn: String,
-    pub allocation: Option<AllocationBlob>,
+    pub allocation: Option<AllocationReason>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema)]
-pub struct AggregateDescription {
-    pub id: FKey<Aggregate>,
-    pub purpose: Option<String>,
-    pub project: Option<String>,
-    pub origin: String,
-}
+impl HostBlob {
+    /// Returns a list of all hosts (and accompanying metadata) that are not deleted and are held by an existing resource handle
+    pub async fn all_active_hosts_with_resource_handles_in_lab_name(
+        pg_pool: &PgPool,
+        for_lab_name: &str,
+    ) -> Result<Vec<Self>, anyhow::Error> {
+        let rows = query!(
+            r#"
+            SELECT
+                hosts.id,
+                hosts.server_name,
+                flavors.arch AS arch,
+                hosts.flavor AS flavor,
+                hosts.ipmi_fqdn AS ipmi_fqdn,
+                resource_handles.id AS resource_handle_id,
+                allocations.reason_started AS "reason_started?",
+                allocations.ended AS allocation_ended
+            FROM
+                hosts
+                JOIN resource_handles ON hosts.id = resource_handles.tracks_resource
+                JOIN labs ON resource_handles.lab = labs.id
+                JOIN flavors ON flavors.id = hosts.flavor
+                LEFT JOIN LATERAL (
+                    SELECT
+                        *
+                    FROM
+                        allocations
+                    WHERE
+                        allocations.for_resource = resource_handles.id
+                    ORDER BY
+                        allocations.started DESC
+                    LIMIT
+                        1
+                ) allocations ON true
 
-#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema)]
-pub struct AllocationBlob {
-    pub for_aggregate: Option<AggregateDescription>,
-    pub reason: String,
+            WHERE
+                hosts.deleted = false
+                AND labs.name = $1;
+            "#,
+            for_lab_name
+        )
+        .fetch_all(pg_pool)
+        .await?;
+
+        let mut blobs: Vec<Self> = Vec::new();
+
+        for row in rows {
+            blobs.push(HostBlob {
+                id: Some(FKey::from_id(ID::from(row.id))),
+                name: row.server_name,
+                arch: Arch::from_str(&row.arch)?,
+                flavor: FKey::from_id(ID::from(row.flavor)),
+                ipmi_fqdn: row.ipmi_fqdn,
+                allocation: match row.allocation_ended {
+                    Some(_) => {
+                        // Not currently allocated, previously allocated
+                        None
+                    }
+                    None => {
+                        // If ended is null it means one of two things
+                        row.reason_started.map(|reason| {
+                            serde_json::from_str(&reason)
+                                .unwrap_or(AllocationReason::ForMaintenance)
+                        })
+                    }
+                },
+            });
+        }
+
+        Ok(blobs)
+    }
 }
 
 /// corresponds to aggregation groups within the backplane,

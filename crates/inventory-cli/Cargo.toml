@@ -13,11 +13,13 @@ path = "src/main.rs"
 
 
 [dependencies]
+anyhow = { workspace = true }
+enum_dispatch = { workspace = true }
 mac_address = { workspace = true, features = ["serde"] }
 tokio = { workspace = true }
 models = { path = "../models" }
 dal = { path = "../dal" }
-sqlx = { workspace = true }
+sqlx = { workspace = true, features = ["mac_address"] }
 clap = { workspace = true, features = ["derive"] }
 serde = { workspace = true, features = ["derive"] }
 serde_yaml = { workspace = true }

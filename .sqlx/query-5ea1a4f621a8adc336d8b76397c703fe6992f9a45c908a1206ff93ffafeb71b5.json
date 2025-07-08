@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n    UPDATE hosts\n    SET\n      fqdn        = $2,\n      flavor      = (SELECT id FROM flavors WHERE name = $3),\n      iol_id      = $4,\n      serial      = $5,\n      ipmi_fqdn   = $6,\n      ipmi_mac    = $7,\n      ipmi_user   = $8,\n      ipmi_pass   = $9,\n      projects    = $10\n    WHERE server_name = $1;\n    ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Varchar",
+        "Text",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Macaddr",
+        "Varchar",
+        "Varchar",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5ea1a4f621a8adc336d8b76397c703fe6992f9a45c908a1206ff93ffafeb71b5"
+}
