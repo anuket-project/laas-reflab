@@ -3,12 +3,16 @@ use models::dashboard::{AggregateConfiguration, Instance, StatusSentiment, Templ
 
 use self::host::fetch_ipmi_fqdn;
 use super::{api, AppState, WebError};
-use crate::{booking::{self, make_aggregate}, web::api::ImageBlob};
+use crate::{
+    booking::{self, make_aggregate},
+    web::api::ImageBlob,
+};
 use aide::{
     axum::{
         routing::{delete, get},
         ApiRouter,
-    }, OperationIo
+    },
+    OperationIo,
 };
 use axum::{
     extract::{Json, Path},
@@ -218,7 +222,8 @@ async fn booking_status(Path(agg_id): Path<Uuid>) -> Result<Json<BookingStatus>,
 
         let inst_hn = instance.config.hostname.clone();
 
-        let (assigned_host, assigned_host_info, image_list) = if let Some(v) = instance.linked_host {
+        let (assigned_host, assigned_host_info, image_list) = if let Some(v) = instance.linked_host
+        {
             let host = v
                 .get(&mut transaction)
                 .await
@@ -235,26 +240,23 @@ async fn booking_status(Path(agg_id): Path<Uuid>) -> Result<Json<BookingStatus>,
                 model: flavor.model.clone(),
             };
 
-
             let flavor_query = "SELECT * FROM images where $1=ANY(flavors)";
             let image_rows = transaction
                 .query(flavor_query, &[&flavor.id])
                 .await
                 .unwrap();
-            
 
             let mut image_blob_vec: Vec<ImageBlob> = vec![];
 
             for image_row in image_rows.iter() {
                 let image_id: FKey<Image> = image_row.get(0);
                 let image_name: String = image_row.get(2);
-                
-                image_blob_vec.push(ImageBlob{
+
+                image_blob_vec.push(ImageBlob {
                     image_id: image_id,
                     name: image_name,
                 });
             }
-
 
             (Some(host.server_name), Some(host_info), image_blob_vec)
         } else {
