@@ -253,7 +253,7 @@ async fn booking_status(Path(agg_id): Path<Uuid>) -> Result<Json<BookingStatus>,
                 let image_name: String = image_row.get(2);
 
                 image_blob_vec.push(ImageBlob {
-                    image_id: image_id,
+                    image_id,
                     name: image_name,
                 });
             }
