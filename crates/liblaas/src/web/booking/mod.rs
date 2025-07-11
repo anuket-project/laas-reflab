@@ -19,7 +19,7 @@ use axum::{
     http::StatusCode,
 };
 use config::Situation;
-use dal::{new_client, web::*, AsEasyTransaction, DBTable, ExistingRow, FKey, get_db_pool};
+use dal::{get_db_pool, new_client, web::*, AsEasyTransaction, DBTable, ExistingRow, FKey};
 use host::{instance_power_control, instance_power_state};
 use models::dashboard::Image;
 
