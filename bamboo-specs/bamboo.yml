@@ -31,6 +31,12 @@ check:
         scripts:
           - docker pull ${CI_IMAGE}
           - docker run --rm -v "$(pwd)":/app -w /app ${bamboo.CI_IMAGE} cargo make check
+  other:
+    clean-working-dir: true
+    all-other-apps:
+      custom:
+        auto: {}
+        buildHangingConfig.enabled: "false"
   requirements:
   - Docker
   - linuxos
@@ -44,6 +50,12 @@ format:
         scripts:
           - docker pull ${CI_IMAGE}
           - docker run --rm -v "$(pwd)":/app -w /app ${bamboo.CI_IMAGE} cargo make fmt
+  other:
+    clean-working-dir: true
+    all-other-apps:
+      custom:
+        auto: {}
+        buildHangingConfig.enabled: "false"
   requirements:
   - Docker
   - linuxos
@@ -58,6 +70,12 @@ clippy:
           - docker pull ${CI_IMAGE}
         # temporarily allow clippy warnings
           - docker run --rm -v "$(pwd)":/app -w /app ${bamboo.CI_IMAGE} cargo make clippy
+  other:
+    clean-working-dir: true
+    all-other-apps:
+      custom:
+        auto: {}
+        buildHangingConfig.enabled: "false"
   requirements:
   - Docker
   - linuxos
@@ -135,6 +153,12 @@ test:
         type: junit
         test-results:
           - junit.xml
+  other:
+    clean-working-dir: true
+    all-other-apps:
+      custom:
+        auto: {}
+        buildHangingConfig.enabled: "false"
   requirements:
     - Docker
     - linuxos
@@ -180,3 +204,14 @@ dependencies:
   block-strategy: none
   plans:
   - OST-BAFL
+
+other:
+  concurrent-build-plugin: system-default
+  force-stop-build: true
+  all-other-apps:
+    custom.buildExpiryConfig:
+      period: days
+      maximumBuildsToKeep: "1"
+      enabled: "true"
+      expiryTypeArtifact: "true"
+      duration: "1"
