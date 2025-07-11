@@ -19,7 +19,7 @@ use axum::{
     http::StatusCode,
 };
 use config::Situation;
-use dal::{new_client, web::*, AsEasyTransaction, DBTable, ExistingRow, FKey};
+use dal::{new_client, web::*, AsEasyTransaction, DBTable, ExistingRow, FKey, get_db_pool};
 use host::{instance_power_control, instance_power_state};
 use models::dashboard::Image;
 
@@ -240,17 +240,13 @@ async fn booking_status(Path(agg_id): Path<Uuid>) -> Result<Json<BookingStatus>,
                 model: flavor.model.clone(),
             };
 
-            let flavor_query = "SELECT * FROM images where $1=ANY(flavors)";
-            let image_rows = transaction
-                .query(flavor_query, &[&flavor.id])
-                .await
-                .unwrap();
-
+            let pool = get_db_pool().await.unwrap();
+            let image_vec: Vec<Image> = flavor.get_images(&pool).await;
             let mut image_blob_vec: Vec<ImageBlob> = vec![];
 
-            for image_row in image_rows.iter() {
-                let image_id: FKey<Image> = image_row.get(0);
-                let image_name: String = image_row.get(2);
+            for image in image_vec.iter() {
+                let image_id: FKey<Image> = image.id;
+                let image_name: String = image.name.clone();
 
                 image_blob_vec.push(ImageBlob {
                     image_id,
