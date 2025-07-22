@@ -197,7 +197,7 @@ pub struct BookingMetric {
     /// **Field:** The number of hosts associated with the booking.
     pub num_hosts: i32,
 
-    #[telegraf(field)]
+    #[telegraf(tag)]
     #[serde(default)]
     /// **Field:** The number of collaborators associated with the booking.
     pub num_collaborators: i32,
@@ -217,7 +217,7 @@ pub struct BookingMetric {
     /// **Tag:** The project associated with this booking.
     pub project: String,
 
-    #[telegraf(field)]
+    #[telegraf(tag)]
     #[serde(default)]
     /// **Tag:** The purpose of this booking. ex. "ONAP_DEV"
     pub purpose: String,
