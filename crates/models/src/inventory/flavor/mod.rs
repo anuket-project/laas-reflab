@@ -1,9 +1,14 @@
 use dal::*;
 use serde::{Deserialize, Serialize};
+use sqlx;
+use sqlx::PgPool;
 use std::collections::HashMap;
 use std::str::FromStr;
 
-use crate::inventory::{Arch, DataValue};
+use crate::{
+    dashboard::Image,
+    inventory::{Arch, DataValue},
+};
 
 mod extra_info;
 mod interface;
@@ -84,6 +89,42 @@ impl Flavor {
         transaction: &mut EasyTransaction<'_>,
     ) -> Result<Vec<ExistingRow<InterfaceFlavor>>, anyhow::Error> {
         InterfaceFlavor::all_for_flavor(transaction, self.id).await
+    }
+
+    pub async fn get_images(&self, pool: &PgPool) -> Vec<Image> {
+        let image_records = sqlx::query!(
+            "SELECT * FROM images where $1=ANY(flavors)",
+            self.id().into_uuid()
+        )
+        .fetch_all(pool)
+        .await
+        .unwrap();
+
+        if image_records.is_empty() {
+            return vec![];
+        }
+
+        let mut ret_image_vec: Vec<Image> = vec![];
+        for image_record in image_records {
+            let mut flavors: Vec<FKey<Flavor>> = vec![];
+            for flavor_uuid in image_record.flavors {
+                flavors.push(FKey::from_id(ID::from(flavor_uuid)));
+            }
+
+            let image: Image = Image {
+                id: FKey::from_id(ID::from(image_record.id)),
+                owner: image_record.owner,
+                name: image_record.name,
+                deleted: image_record.deleted,
+                cobbler_name: image_record.cobbler_name,
+                public: image_record.public,
+                flavors,
+            };
+
+            ret_image_vec.push(image);
+        }
+
+        ret_image_vec
     }
 }
 
