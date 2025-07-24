@@ -12,8 +12,8 @@ use axum::{
 use common::prelude::{
     aide, anyhow, axum, crossbeam_channel,
     itertools::Itertools,
-    lazy_static, schemars,
-    tracing::{self, debug},
+    lazy_static,
+    tracing::{self},
 };
 use crossbeam_channel::{Receiver, Sender};
 use dal::{new_client, web::*, AsEasyTransaction, FKey, ID};
@@ -415,7 +415,7 @@ async fn get_ci_file(
     let mut transaction = client.easy_transaction().await.log_db_client_error()?;
     // todo - finish this
     //let config = dashboard::HostConfig::get(&mut new_client().unwrap(), server.);
-    debug!("Mailbox was asked to get the CI files for {instance_id:?}");
+    info!("Mailbox was asked to get the CI files for {instance_id:?}");
     let instance = instance_id
         .get(&mut transaction)
         .await

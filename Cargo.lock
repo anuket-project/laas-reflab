@@ -5411,6 +5411,7 @@ dependencies = [
  "strum",
  "strum_macros",
  "tascii",
+ "tera",
  "thiserror 1.0.69",
  "tokio",
  "tracing",

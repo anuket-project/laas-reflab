@@ -4,16 +4,18 @@ use common::prelude::{
     tracing::{error, info, trace, warn},
 };
 
+use config::settings;
 use dal::{new_client, AsEasyTransaction, FKey, ID};
 use metrics::prelude::*;
 
 use models::{
-    dashboard::{Aggregate, StatusSentiment},
+    dashboard::{Aggregate, Instance, NetworkAssignmentMap, StatusSentiment},
     inventory::{BootTo, Host, Lab},
     EasyLog,
 };
 use notifications::{email::send_to_admins, templates::render_eve_grub_config};
 use serde::{Deserialize, Serialize};
+use users::ipa;
 
 use std::sync::{atomic::AtomicBool, Arc};
 use strum_macros::EnumString;
@@ -21,12 +23,17 @@ use tascii::{prelude::*, task_trait::AsyncRunnable};
 
 use super::{set_boot::SetBoot, set_host_power_state::SetPower};
 use crate::{
-    configure_networking::{mgmt_network_config, prod_network_config, ConfigureNetworking},
+    configure_networking::{
+        mgmt_network_config, prod_network_config,
+        vlan_connection::create_network_manager_vlan_connections_from_bondgroups,
+        ConfigureNetworking,
+    },
     deploy_booking::{
         cobbler_set_config::*,
         set_host_power_state::{confirm_power_state, HostConfig, PowerState, TimeoutConfig},
         wait_host_os_reachable::WaitHostOSReachable,
     },
+    render_kickstart_template,
     resource_management::{
         cobbler::*,
         ipmi_accounts::CreateIPMIAccount,
@@ -372,6 +379,63 @@ impl DeployHost {
         Ok(host.into_inner())
     }
 
+    async fn fetch_instance_config(
+        &mut self,
+    ) -> Result<models::dashboard::HostConfig, anyhow::Error> {
+        let instance = self.fetch_instance().await?;
+        let config = instance.config;
+
+        Ok(config)
+    }
+
+    async fn fetch_instance(&mut self) -> Result<Instance, anyhow::Error> {
+        let mut client = new_client().await?;
+        let mut transaction = client.easy_transaction().await?;
+
+        let instance = self.using_instance.get(&mut transaction).await?;
+        transaction.commit().await.unwrap();
+
+        Ok(instance.into_inner())
+    }
+
+    async fn fetch_network_assignment_map(
+        &mut self,
+    ) -> Result<NetworkAssignmentMap, anyhow::Error> {
+        let mut client = new_client().await?;
+        let mut transaction = client.easy_transaction().await?;
+
+        let aggregate = self.aggregate_id.get(&mut transaction).await?;
+
+        let network_assignment_map = aggregate.vlans.get(&mut transaction).await?;
+        transaction.commit().await.unwrap();
+
+        Ok(network_assignment_map.into_inner())
+    }
+
+    async fn fetch_users(&mut self) -> Result<Vec<ipa::User>, anyhow::Error> {
+        let mut client = new_client().await?;
+        let mut transaction = client.easy_transaction().await?;
+
+        let aggregate = self.aggregate_id.get(&mut transaction).await?;
+
+        let mut ipa = ipa::IPA::init()
+            .await
+            .expect("Expected to initialize IPA connection");
+
+        let mut ipa_users: Vec<ipa::User> = vec![];
+
+        for username in aggregate.users.iter() {
+            let user = ipa
+                .find_matching_user(username.clone(), true, false)
+                .await
+                .unwrap();
+
+            ipa_users.push(user);
+        }
+
+        Ok(ipa_users)
+    }
+
     /// Updates the 'soft_serial' key with the provided value in the instance metadata.
     async fn set_soft_serial(&mut self, value: &str) -> Result<(), anyhow::Error> {
         let mut client = new_client().await?;
@@ -435,6 +499,7 @@ impl DeployHost {
                 self.host_id,
                 None,
                 None,
+                vec![],
             ),
         });
 
@@ -570,7 +635,7 @@ impl DeployHost {
         host_name: &str,
     ) -> Result<(), TaskError> {
         let mut client = new_client().await.unwrap();
-        let transaction = client.easy_transaction().await.unwrap();
+        let mut transaction = client.easy_transaction().await.unwrap();
 
         // Note - careful of too many open transactions at once. If things unexpectly stop working, check that first
 
@@ -593,6 +658,37 @@ impl DeployHost {
                 self.host_id,
                 Some(postimage_endpoint),
                 Some(preimage_endpoint),
+                match workflow_distro {
+                    WorkflowDistro::Fedora => {
+                        let host = self
+                            .host_id
+                            .get(&mut transaction)
+                            .await
+                            .expect("host did not exist by given fk?");
+
+                        let mut port_args: Vec<(String, String)> = vec![];
+
+                        for port in host
+                            .ports(&mut transaction)
+                            .await
+                            .expect("didn't get ports?")
+                        {
+                            port_args.push((
+                                "ifname".to_string(),
+                                format!("{}:{}", port.name, port.mac),
+                            ));
+                        }
+
+                        let cobbler_address = settings().cobbler.ssh.address.clone();
+                        port_args.push((
+                            "inst.ks".to_string(),
+                            format!("http://{cobbler_address}/laas_files/fedora-kickstarts/{host_name}.ks"),
+                        ));
+
+                        port_args
+                    }
+                    _ => vec![],
+                },
             ),
         });
 
@@ -638,6 +734,54 @@ impl DeployHost {
             WorkflowDistro::Eve => {
                 self.configure_cobbler_for_eve().await?;
             }
+            WorkflowDistro::Fedora => {
+                info!("Configuring host {} for Fedora on Cobbler", host_name);
+
+                let interfaces = self
+                    .host_id
+                    .get(&mut transaction)
+                    .await?
+                    .ports(&mut transaction)
+                    .await
+                    .unwrap();
+
+                let network_assignment_map = self.fetch_network_assignment_map().await?;
+                let host_config = self.fetch_instance_config().await?;
+                let vlan_configs: Vec<String> =
+                    create_network_manager_vlan_connections_from_bondgroups(
+                        &network_assignment_map,
+                        &host_config.connections,
+                    )
+                    .await?
+                    .iter()
+                    .map(|nm_conn| nm_conn.render_kickstart_network_config())
+                    .collect();
+
+                let kickstart_template = render_kickstart_template(
+                    self.fetch_instance_image().await.unwrap().cobbler_name,
+                    self.fetch_users().await.unwrap(),
+                    interfaces,
+                    vlan_configs,
+                    preimage_endpoint,
+                    postimage_endpoint,
+                )
+                .unwrap();
+
+                info!("Kickstart template successfully rendered for {}", host_name);
+
+                let mut directory = settings().cobbler.ssh.laas_files.clone();
+
+                directory.push_str("fedora-kickstarts/");
+
+                let mut filename: String = "".to_string();
+                filename.push_str(host_name);
+                filename.push_str(".ks");
+
+                write_file_to_cobbler(directory, filename, kickstart_template)
+                    .await
+                    .unwrap()
+            }
+
             _ => {
                 info!(
                     "set cobbler configuration and finished mgmt net config, also set host next boot dev"
@@ -890,8 +1034,7 @@ impl DeployHost {
         let workflow_distro = self.get_workflow_distro().await?;
 
         match workflow_distro {
-            WorkflowDistro::Eve => {}
-            _ => {
+            WorkflowDistro::Ubuntu => {
                 self.log(
                     "Wait Host Pre-Configure",
                     "wait for host to boot into pre-configure mode and bootstrap the configuration environment",
@@ -899,6 +1042,7 @@ impl DeployHost {
                 )
                 .await;
 
+                // This is where ubuntu waits for cloud init to finish running
                 match post_boot_waiter.wait_next(Duration::from_secs(60 * 35)) {
                     Ok(_) => {
                         info!("Host came back up after imaging");
@@ -914,6 +1058,9 @@ impl DeployHost {
                         return Err(TaskError::Reason("Mailbox error".to_owned()));
                     }
                 }
+            }
+            _ => {
+                info!("No postprovision network configuration needed.")
             }
         }
 
@@ -961,15 +1108,7 @@ impl DeployHost {
         let workflow_distro = self.get_workflow_distro().await?;
 
         match workflow_distro {
-            WorkflowDistro::Eve => {
-                self.log(
-                    "Wait Host Online",
-                    "wait for host to come online",
-                    StatusSentiment::InProgress,
-                )
-                .await;
-            }
-            _ => {
+            WorkflowDistro::Ubuntu => {
                 self.log(
                     "Wait Host Online",
                     "wait for host to complete on-device setup steps (incl Cloud-Init)",
@@ -993,6 +1132,15 @@ impl DeployHost {
                         return Err(TaskError::Reason("Mailbox error".to_owned()));
                     }
                 }
+            }
+
+            _ => {
+                self.log(
+                    "Wait Host Online",
+                    "wait for host to come online",
+                    StatusSentiment::InProgress,
+                )
+                .await;
             }
         }
 

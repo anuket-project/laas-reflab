@@ -148,6 +148,7 @@ pub struct CobblerSSHConfig {
     pub password: String,
     pub writable_directory: String, // i.e. /tmp
     pub system_directory: String,   // i.e. /srv/tftpboot/grub/system
+    pub laas_files: String,         // ie. /srv/www/laas_files/
 }
 
 #[derive(Debug, Deserialize, Clone)]
