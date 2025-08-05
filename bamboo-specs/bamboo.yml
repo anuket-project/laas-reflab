@@ -7,7 +7,7 @@ plan:
 
 variables:
   REGISTRY: nexus.iol.unh.edu
-  CI_IMAGE: nexus.iol.unh.edu/liblaas-ci:latest
+  CI_IMAGE: nexus.iol.unh.edu/liblaas-ci:08-05-2025
 
 stages:
   - Run Checks:
@@ -30,7 +30,7 @@ check:
         interpreter: SHELL
         scripts:
           - docker pull ${CI_IMAGE}
-          - docker run --rm -v "$(pwd)":/app -w /app ${bamboo.CI_IMAGE} cargo make check
+          - docker run -e uid=$(id -u) -e gid=$(id -g) --rm -v "$(pwd)":/app -w /app ${bamboo.CI_IMAGE} cargo make check
   other:
     clean-working-dir: true
     all-other-apps:
@@ -49,7 +49,7 @@ format:
         interpreter: SHELL
         scripts:
           - docker pull ${CI_IMAGE}
-          - docker run --rm -v "$(pwd)":/app -w /app ${bamboo.CI_IMAGE} cargo make fmt
+          - docker run -e uid=$(id -u) -e gid=$(id -g) --rm -v "$(pwd)":/app -w /app ${bamboo.CI_IMAGE} cargo make fmt
   other:
     clean-working-dir: true
     all-other-apps:
@@ -69,7 +69,7 @@ clippy:
         scripts:
           - docker pull ${CI_IMAGE}
         # temporarily allow clippy warnings
-          - docker run --rm -v "$(pwd)":/app -w /app ${bamboo.CI_IMAGE} cargo make clippy
+          - docker run -e uid=$(id -u) -e gid=$(id -g) --rm -v "$(pwd)":/app -w /app ${bamboo.CI_IMAGE} cargo make clippy
   other:
     clean-working-dir: true
     all-other-apps:
@@ -88,7 +88,7 @@ audit:
         description: "Audit Dependencies"
         scripts:
           - docker pull ${CI_IMAGE}
-          - docker run --rm -v "$(pwd)":/app -w /app ${bamboo.CI_IMAGE} bash -c "cargo make audit > audit_output.txt || true"
+          - docker run -e uid=$(id -u) -e gid=$(id -g) --rm -v "$(pwd)":/app -w /app ${bamboo.CI_IMAGE} bash -c "cargo make audit > audit_output.txt || true"
   requirements:
    - linuxos 
    - Docker
@@ -105,7 +105,7 @@ machete:
         description: "Check for Unnused Dependencies"
         scripts:
           - docker pull ${CI_IMAGE}
-          - docker run --rm -v "$(pwd)":/app -w /app ${bamboo.CI_IMAGE} bash -c "cargo make machete > machete_output.txt"
+          - docker run -e uid=$(id -u) -e gid=$(id -g) --rm -v "$(pwd)":/app -w /app ${bamboo.CI_IMAGE} bash -c "cargo make machete > machete_output.txt"
   requirements:
   - Docker
   - linuxos 
@@ -127,7 +127,7 @@ test:
             docker network rm test_net || true
             docker network create test_net 
 
-            docker run --rm --network test_net --name test_db \
+            docker run -e uid=$(id -u) -e gid=$(id -g) --rm --network test_net --name test_db \
               -e POSTGRES_USER=postgres \
               -e POSTGRES_DB=liblaas \
               -e POSTGRES_PASSWORD=password \
@@ -137,7 +137,7 @@ test:
 
             docker pull ${bamboo.CI_IMAGE}
 
-            docker run --rm \
+            docker run -e uid=$(id -u) -e gid=$(id -g) --rm \
               --network test_net \
               -e DATABASE_URL="$DATABASE_URL" \
               -v "$(pwd)":/app \

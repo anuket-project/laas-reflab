@@ -13,4 +13,10 @@ RUN apt-get update && apt-get install -y \
 
 RUN cargo install cargo-make cargo-nextest sqlx-cli cargo-audit cargo-limit cargo-llvm-cov
 
+RUN rustup component add clippy
+
 WORKDIR /app
+
+COPY bamboo-specs/entrypoint.sh /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
