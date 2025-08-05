@@ -29,6 +29,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
+use tracing::{info, warn};
 use uuid::Uuid;
 use workflows::resource_management::allocator;
 
@@ -149,6 +150,9 @@ async fn build_flavor_blobs(
                 .map(|img| ImageBlob {
                     image_id: img.id,
                     name: img.name,
+                    distro: img.distro,
+                    version: img.version,
+                    arch: img.arch,
                 })
                 .collect();
 
@@ -236,8 +240,40 @@ pub async fn list_hosts(
     Ok(Json(blobs))
 }
 
+pub async fn list_images() -> Result<Json<Vec<ImageBlob>>, WebError> {
+    info!("API call to list_images()");
+
+    let mut client = new_client().await.log_db_client_error()?;
+    let mut transaction = client.easy_transaction().await.log_db_client_error()?;
+
+    let image_row = Image::select().run(&mut transaction).await.map_err(|e| {
+        warn!("Error within list_images() API: {:?}", e);
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to retrieve images: {e}"),
+        )
+    })?;
+
+    let mut image_blobs: Vec<ImageBlob> = vec![];
+
+    for image in image_row {
+        image_blobs.push(ImageBlob {
+            image_id: image.id,
+            name: image.name.clone(),
+            distro: image.distro,
+            version: image.version.clone(),
+            arch: image.arch,
+        });
+    }
+
+    transaction.commit().await.log_db_client_error()?;
+
+    Ok(Json(image_blobs))
+}
+
 pub fn routes(_state: AppState) -> ApiRouter {
     ApiRouter::new()
         .api_route("/:lab_name", get(list_flavors))
         .api_route("/:lab_name/hosts", get(list_hosts))
+        .api_route("/images", get(list_images))
 }

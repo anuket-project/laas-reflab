@@ -2,7 +2,7 @@ mod flavor;
 mod host;
 mod lab;
 mod switch;
-mod types;
+pub(crate) mod types;
 mod vlan;
 
 pub use flavor::{CardType, ExtraFlavorInfo, Flavor, InterfaceFlavor};

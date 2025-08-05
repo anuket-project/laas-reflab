@@ -119,6 +119,9 @@ impl Flavor {
                 cobbler_name: image_record.cobbler_name,
                 public: image_record.public,
                 flavors,
+                distro: serde_json::from_str(image_record.distro.as_str()).unwrap(),
+                version: image_record.version,
+                arch: serde_json::from_str(image_record.arch.as_str()).unwrap(),
             };
 
             ret_image_vec.push(image);

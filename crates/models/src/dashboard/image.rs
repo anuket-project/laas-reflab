@@ -2,10 +2,38 @@ use common::prelude::reqwest::StatusCode;
 use dal::{web::*, *};
 
 use common::prelude::*;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::{collections::HashMap, str::FromStr};
+use strum_macros::{Display, EnumString};
 
-use crate::inventory::Flavor;
+use crate::{inventory::types::arch::Arch, inventory::Flavor};
+
+#[derive(
+    Serialize,
+    Deserialize,
+    Clone,
+    Debug,
+    Hash,
+    Copy,
+    EnumString,
+    Display,
+    Eq,
+    PartialEq,
+    Default,
+    JsonSchema,
+)]
+pub enum Distro {
+    #[default]
+    #[strum(serialize = "Ubuntu")]
+    Ubuntu,
+    #[strum(serialize = "Fedora")]
+    Fedora,
+    #[strum(serialize = "EVE")]
+    // Needed because the JSON parser defaults to "Eve"
+    #[serde(rename = "EVE")]
+    Eve,
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
 pub struct Image {
@@ -16,6 +44,9 @@ pub struct Image {
     pub cobbler_name: String,
     pub public: bool,
     pub flavors: Vec<FKey<Flavor>>, // vector of compatible flavor IDs
+    pub distro: Distro,
+    pub version: String,
+    pub arch: Arch,
 }
 
 impl Named for Image {
@@ -50,6 +81,9 @@ impl DBTable for Image {
             cobbler_name: row.try_get("cobbler_name")?,
             public: row.try_get("public")?,
             flavors: row.try_get("flavors")?,
+            distro: Distro::from_str(row.try_get("distro")?).unwrap(),
+            version: row.try_get("version")?,
+            arch: Arch::from_str(row.try_get("arch")?).unwrap(),
         }))
     }
 
@@ -63,6 +97,9 @@ impl DBTable for Image {
             ("cobbler_name", Box::new(clone.cobbler_name)),
             ("public", Box::new(clone.public)),
             ("flavors", Box::new(clone.flavors)),
+            ("distro", Box::new(clone.distro.to_string())),
+            ("version", Box::new(clone.version)),
+            ("arch", Box::new(clone.arch.to_string())),
         ];
 
         Ok(c.into_iter().collect())
@@ -143,10 +180,26 @@ impl Image {
 
 #[cfg(test)]
 mod tests {
+    use crate::inventory::Arch;
+
     use super::*;
     use prop::collection::vec;
     use proptest::prelude::*;
     use testing_utils::block_on_runtime;
+
+    impl Arbitrary for Distro {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+            prop_oneof![
+                Just(Distro::Ubuntu),
+                Just(Distro::Fedora),
+                Just(Distro::Eve),
+            ]
+            .boxed()
+        }
+    }
 
     impl Arbitrary for Image {
         type Parameters = ();
@@ -161,9 +214,12 @@ mod tests {
                 "[a-zA-Z]{1,20}",                 // cobbler_name
                 any::<bool>(),                    // public
                 vec(any::<FKey<Flavor>>(), 0..3), // flavors
+                any::<Distro>(),
+                "[a-zA-Z]{1,20}",
+                any::<Arch>(),
             )
                 .prop_map(
-                    |(id, owner, name, deleted, cobbler_name, public, flavors)| Image {
+                    |(
                         id,
                         owner,
                         name,
@@ -171,6 +227,20 @@ mod tests {
                         cobbler_name,
                         public,
                         flavors,
+                        distro,
+                        version,
+                        arch,
+                    )| Image {
+                        id,
+                        owner,
+                        name,
+                        deleted,
+                        cobbler_name,
+                        public,
+                        flavors,
+                        distro,
+                        version,
+                        arch,
                     },
                 )
                 .boxed()

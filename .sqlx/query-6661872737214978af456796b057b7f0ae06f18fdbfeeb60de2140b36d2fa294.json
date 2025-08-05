@@ -37,6 +37,21 @@
         "ordinal": 6,
         "name": "flavors",
         "type_info": "UuidArray"
+      },
+      {
+        "ordinal": 7,
+        "name": "distro",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "version",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 9,
+        "name": "arch",
+        "type_info": "Varchar"
       }
     ],
     "parameters": {
@@ -45,6 +60,9 @@
       ]
     },
     "nullable": [
+      false,
+      false,
+      false,
       false,
       false,
       false,

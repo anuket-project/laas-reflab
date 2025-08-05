@@ -1,4 +1,4 @@
-mod arch;
+pub mod arch;
 mod boot_option;
 mod ip;
 mod units;
