@@ -218,6 +218,8 @@ pub struct BookingMetadataBlob {
     pub purpose: Option<String>,
     /// Project a booking belongs to
     pub project: Option<String>,
+    /// Details regarding a booking
+    pub details: Option<String>,
     /// The length in days of a booking
     pub length: Option<u64>,
 }

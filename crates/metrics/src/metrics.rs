@@ -220,6 +220,11 @@ pub struct BookingMetric {
     /// **Tag:** The purpose of this booking. ex. "ONAP_DEV"
     pub purpose: String,
 
+    #[telegraf(tag)]
+    #[serde(default)]
+    /// **Tag:** The details associated with the booking. ex "Compile time optimization"
+    pub details: String,
+
     /// **Tag:** Metadata tag to differentiate between fake/mock data and real data in the
     /// dashboard.
     #[telegraf(tag)]

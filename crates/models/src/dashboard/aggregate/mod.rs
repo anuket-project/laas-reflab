@@ -28,6 +28,8 @@ pub struct BookingMetadata {
     pub purpose: Option<String>,
     /// Project a booking belongs to
     pub project: Option<String>,
+    /// Details a booking has
+    pub details: Option<String>,
     /// DateTime<Utc> that contains the start of a booking
     pub start: Option<DateTime<Utc>>,
     /// DateTime<Utc> that contains the end of a booking
@@ -144,16 +146,18 @@ mod tests {
                 of("[a-zA-Z]{1,20}"),
                 of("[a-zA-Z]{1,20}"),
                 of("[a-zA-Z]{1,20}"),
+                of("[a-zA-Z]{1,20}"),
                 of(datetime_utc_strategy()),
                 of(datetime_utc_strategy()),
             )
-                .prop_map(|(booking_id, owner, lab, purpose, project, start, end)| {
+                .prop_map(|(booking_id, owner, lab, purpose, project, details, start, end)| {
                     BookingMetadata {
                         booking_id,
                         owner,
                         lab,
                         purpose,
                         project,
+                        details,
                         start,
                         end,
                     }

@@ -79,6 +79,7 @@ impl AsyncRunnable for Notify {
                 .clone(),
             purpose: agg.metadata.purpose.clone().unwrap_or("None".to_owned()),
             project: agg.metadata.project.clone().unwrap_or("None".to_owned()),
+            details: agg.metadata.details.clone().unwrap_or("None".to_owned()),
             start_date: agg.metadata.start,
             end_date: match context_map.get("ending_override") {
                 Some(o) => match chrono::DateTime::parse_from_rfc2822(&o.to_string()) {

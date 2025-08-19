@@ -518,6 +518,7 @@ async fn mark_not_working(hosts: Vec<ResourceHandle>, original_agg: FKey<Aggrega
                 lab: None,
                 purpose: Some(String::from("Hold bad hosts")),
                 project: None,
+                details: None,
                 start: None,
                 end: None,
             },
