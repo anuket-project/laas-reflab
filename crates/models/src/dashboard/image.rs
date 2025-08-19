@@ -29,6 +29,8 @@ pub enum Distro {
     Ubuntu,
     #[strum(serialize = "Fedora")]
     Fedora,
+    #[strum(serialize = "Alma")]
+    Alma,
     #[strum(serialize = "EVE")]
     // Needed because the JSON parser defaults to "Eve"
     #[serde(rename = "EVE")]
@@ -195,6 +197,7 @@ mod tests {
             prop_oneof![
                 Just(Distro::Ubuntu),
                 Just(Distro::Fedora),
+                Just(Distro::Alma),
                 Just(Distro::Eve),
             ]
             .boxed()

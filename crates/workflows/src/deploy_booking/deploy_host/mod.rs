@@ -9,7 +9,7 @@ use dal::{new_client, AsEasyTransaction, FKey, ID};
 use metrics::prelude::*;
 
 use models::{
-    dashboard::{Aggregate, Instance, NetworkAssignmentMap, StatusSentiment},
+    dashboard::{image::Distro, Aggregate, Instance, NetworkAssignmentMap, StatusSentiment},
     inventory::{BootTo, Host, Lab},
     EasyLog,
 };
@@ -18,7 +18,6 @@ use serde::{Deserialize, Serialize};
 use users::ipa;
 
 use std::sync::{atomic::AtomicBool, Arc};
-use strum_macros::EnumString;
 use tascii::{prelude::*, task_trait::AsyncRunnable};
 
 use super::{set_boot::SetBoot, set_host_power_state::SetPower};
@@ -42,38 +41,12 @@ use crate::{
     retry_for,
 };
 
-/// A WorkflowDistro is used for path branching within a workflow.
-#[derive(Debug, Hash, EnumString, Deserialize, Serialize, Clone)]
-#[strum(serialize_all = "lowercase")]
-pub enum WorkflowDistro {
-    Ubuntu,
-    Fedora,
-    Eve,
-}
-
-impl WorkflowDistro {
-    fn from_str(s: &str) -> Result<Self, anyhow::Error> {
-        let s = s.to_lowercase();
-        if s.contains("ubuntu") {
-            return Ok(WorkflowDistro::Ubuntu);
-        }
-        if s.contains("fedora") {
-            return Ok(WorkflowDistro::Fedora);
-        }
-        if s.contains("eve") {
-            return Ok(WorkflowDistro::Eve);
-        }
-
-        Err(anyhow::anyhow!("Unable to parse WorkflowDistro from {}", s))
-    }
-}
-
 #[derive(Debug, Clone, Hash, Serialize, Deserialize)]
 pub struct DeployHost {
     pub host_id: FKey<Host>,
     pub aggregate_id: FKey<Aggregate>,
     pub using_instance: FKey<models::dashboard::Instance>,
-    pub distribution: Option<WorkflowDistro>,
+    pub distribution: Option<Distro>,
 }
 
 tascii::mark_task!(DeployHost);
@@ -167,14 +140,14 @@ impl DeployHost {
     /// Fetches the image name for an instance and converts it to a workflow distro
     /// Returns an error if it is unable to do so
     /// Currently recomputes the workflow distro every time this is called
-    async fn get_workflow_distro(&mut self) -> Result<WorkflowDistro, anyhow::Error> {
+    async fn get_distro(&mut self) -> Result<Distro, anyhow::Error> {
         if let Some(distro) = &self.distribution {
-            Ok(distro.clone())
+            Ok(*distro)
         } else {
             let mut client = new_client().await.unwrap();
             let mut transaction = client.easy_transaction().await.unwrap();
 
-            let image_name = self
+            let distro = self
                 .using_instance
                 .get(&mut transaction)
                 .await?
@@ -185,11 +158,9 @@ impl DeployHost {
                 .await
                 .unwrap()
                 .into_inner()
-                .name;
+                .distro;
             transaction.commit().await.unwrap();
-            let distro = WorkflowDistro::from_str(&image_name).unwrap();
 
-            self.distribution = Some(distro.clone());
             Ok(distro)
         }
     }
@@ -461,8 +432,8 @@ impl DeployHost {
         )
         .await;
 
-        match self.get_workflow_distro().await? {
-            WorkflowDistro::Eve => self.prepare_eve_environment(context, host_name).await,
+        match self.get_distro().await? {
+            Distro::Eve => self.prepare_eve_environment(context, host_name).await,
             _ => {
                 self.log(
                     "Host environment ready",
@@ -648,7 +619,7 @@ impl DeployHost {
         )
         .await;
 
-        let workflow_distro = self.get_workflow_distro().await?;
+        let workflow_distro = self.get_distro().await?;
 
         let cobbler_config_jh = context.spawn(CobblerSetConfiguration {
             host_id: self.host_id,
@@ -659,7 +630,7 @@ impl DeployHost {
                 Some(postimage_endpoint),
                 Some(preimage_endpoint),
                 match workflow_distro {
-                    WorkflowDistro::Fedora => {
+                    Distro::Fedora | Distro::Alma => {
                         let host = self
                             .host_id
                             .get(&mut transaction)
@@ -731,10 +702,10 @@ impl DeployHost {
         cobbler_config_jh.join()?;
 
         match workflow_distro {
-            WorkflowDistro::Eve => {
+            Distro::Eve => {
                 self.configure_cobbler_for_eve().await?;
             }
-            WorkflowDistro::Fedora => {
+            Distro::Fedora | Distro::Alma => {
                 info!("Configuring host {} for Fedora on Cobbler", host_name);
 
                 let interfaces = self
@@ -814,8 +785,8 @@ impl DeployHost {
     }
 
     async fn set_power_off(&mut self, context: &Context, host_name: &str) -> Result<(), TaskError> {
-        match self.get_workflow_distro().await? {
-            WorkflowDistro::Eve => {}
+        match self.get_distro().await? {
+            Distro::Eve => {}
             _ => {
                 warn!("Setting host {} power off", host_name);
                 retry_for(SetPower::off(self.host_id), context, 5, 10)?;
@@ -837,7 +808,7 @@ impl DeployHost {
         )
         .await;
 
-        let workflow_distro = self.get_workflow_distro().await?;
+        let workflow_distro = self.get_distro().await?;
 
         warn!("Booting host {} from disk", host_name);
         let result = retry_for(
@@ -845,7 +816,7 @@ impl DeployHost {
                 host_id: self.host_id,
                 persistent: true,
                 boot_to: match workflow_distro {
-                    WorkflowDistro::Eve => BootTo::SpecificDisk,
+                    Distro::Eve => BootTo::SpecificDisk,
                     _ => BootTo::Disk,
                 },
             },
@@ -927,10 +898,10 @@ impl DeployHost {
         )
         .await;
 
-        let workflow_distro = self.get_workflow_distro().await?;
+        let workflow_distro = self.get_distro().await?;
 
         match workflow_distro {
-            WorkflowDistro::Eve => {
+            Distro::Eve => {
                 // The EVE-OS installer will turn the host off when it is done.
                 // We do not have access to cloud init or late commands of any kind, so this is the working solution for now.
                 // If it actually failed to install, it is highly likely that the next tasks will fail regardless.
@@ -1031,10 +1002,10 @@ impl DeployHost {
         lab: Lab,
         post_boot_waiter: &mut MailboxMessageReceiver,
     ) -> Result<(), TaskError> {
-        let workflow_distro = self.get_workflow_distro().await?;
+        let workflow_distro = self.get_distro().await?;
 
         match workflow_distro {
-            WorkflowDistro::Ubuntu => {
+            Distro::Ubuntu => {
                 self.log(
                     "Wait Host Pre-Configure",
                     "wait for host to boot into pre-configure mode and bootstrap the configuration environment",
@@ -1105,10 +1076,10 @@ impl DeployHost {
         host_name: &str,
         post_provision_waiter: &mut MailboxMessageReceiver,
     ) -> Result<(), TaskError> {
-        let workflow_distro = self.get_workflow_distro().await?;
+        let workflow_distro = self.get_distro().await?;
 
         match workflow_distro {
-            WorkflowDistro::Ubuntu => {
+            Distro::Ubuntu => {
                 self.log(
                     "Wait Host Online",
                     "wait for host to complete on-device setup steps (incl Cloud-Init)",
