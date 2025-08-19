@@ -851,11 +851,11 @@ pub async fn new_client() -> Result<ClientPair, anyhow::Error> {
 
 #[allow(async_fn_in_trait)]
 pub trait AsEasyTransaction {
-    async fn easy_transaction(&mut self) -> Result<EasyTransaction, anyhow::Error>;
+    async fn easy_transaction(&mut self) -> Result<EasyTransaction<'_>, anyhow::Error>;
 }
 
 impl AsEasyTransaction for Client {
-    async fn easy_transaction(&mut self) -> Result<EasyTransaction, anyhow::Error> {
+    async fn easy_transaction(&mut self) -> Result<EasyTransaction<'_>, anyhow::Error> {
         let t = self.transaction().await;
 
         let as_s = match &t {
@@ -871,7 +871,7 @@ impl AsEasyTransaction for Client {
 }
 
 impl<'a> AsEasyTransaction for Transaction<'a> {
-    async fn easy_transaction(&mut self) -> Result<EasyTransaction, anyhow::Error> {
+    async fn easy_transaction(&mut self) -> Result<EasyTransaction<'_>, anyhow::Error> {
         Ok(EasyTransaction {
             inner: Some(self.transaction().await.anyway()?),
         })
@@ -879,7 +879,7 @@ impl<'a> AsEasyTransaction for Transaction<'a> {
 }
 
 impl<'a> AsEasyTransaction for EasyTransaction<'a> {
-    async fn easy_transaction(&mut self) -> Result<EasyTransaction, anyhow::Error> {
+    async fn easy_transaction(&mut self) -> Result<EasyTransaction<'_>, anyhow::Error> {
         self.transaction().await
     }
 }
@@ -918,7 +918,7 @@ impl<'a> EasyTransaction<'a> {
     }
 
     /// Create a nested transaction within this transaction
-    pub async fn transaction(&mut self) -> Result<EasyTransaction, anyhow::Error> {
+    pub async fn transaction(&mut self) -> Result<EasyTransaction<'_>, anyhow::Error> {
         let inner = self
             .inner
             .as_mut()
