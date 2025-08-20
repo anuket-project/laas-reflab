@@ -1,4 +1,4 @@
-FROM rustlang/rust:nightly AS chef
+FROM rustlang/rust:nightly-bookworm AS chef
 
 COPY rust-toolchain.toml rust-toolchain.toml
 RUN rustup show 
