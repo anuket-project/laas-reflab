@@ -1,7 +1,7 @@
 mod bond_group;
 mod net_config;
 mod net_config_builder;
-mod vlan_connection;
+pub mod vlan_connection;
 
 pub use bond_group::BondGroup;
 pub use net_config::NetworkConfig;

@@ -37,8 +37,6 @@
 //!   processing is shifted to a deserialized file. If a timestamp field is not provided to telegraf,
 //!   it will insert the **time that telegraf recieves the metric** as the timestamp. This can
 //!   cause all sorts of synchronization issues.
-//! - Manually storing the timestamp allows rewriting a metric if the timestamp is known. This is useful
-//!   for metrics like [`ProvisionMetric`] where we may want to update the timestamp if a retry is successful.
 //!  
 //! Every tag field must be annotated with `#[telegraf(tag)]`. Tags are indexed, fields are not.
 //!
@@ -197,7 +195,7 @@ pub struct BookingMetric {
     /// **Field:** The number of hosts associated with the booking.
     pub num_hosts: i32,
 
-    #[telegraf(tag)]
+    #[telegraf(field)]
     #[serde(default)]
     /// **Field:** The number of collaborators associated with the booking.
     pub num_collaborators: i32,
@@ -221,6 +219,11 @@ pub struct BookingMetric {
     #[serde(default)]
     /// **Tag:** The purpose of this booking. ex. "ONAP_DEV"
     pub purpose: String,
+
+    #[telegraf(tag)]
+    #[serde(default)]
+    /// **Tag:** The details associated with the booking. ex "Compile time optimization"
+    pub details: String,
 
     /// **Tag:** Metadata tag to differentiate between fake/mock data and real data in the
     /// dashboard.
@@ -316,7 +319,7 @@ pub struct BookingExpiredMetric {
 
     #[telegraf(field)]
     #[serde(default)]
-    pub extension_length_days: i32,
+    pub total_booking_length_days: i32,
 
     #[telegraf(field)]
     #[serde(default)]

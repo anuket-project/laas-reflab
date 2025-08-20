@@ -251,6 +251,9 @@ async fn booking_status(Path(agg_id): Path<Uuid>) -> Result<Json<BookingStatus>,
                 image_blob_vec.push(ImageBlob {
                     image_id,
                     name: image_name,
+                    distro: image.distro,
+                    version: image.version.clone(),
+                    arch: image.arch,
                 });
             }
 

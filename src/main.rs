@@ -127,6 +127,7 @@ pub async fn allocate_unreserved_hosts() {
             lab: Some("Dev lab".to_string()),
             purpose: Some("Unallocatted host".to_owned()),
             project: Some("LibLaaS".to_owned()),
+            details: Some("Holds unallocatted hosts".to_string()),
             start: Some(now),
             end: Some(now + Days::new(1000)),
         },

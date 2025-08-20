@@ -508,6 +508,7 @@ async fn summarize_aggregate(
         lab,
         purpose,
         project,
+        details,
         start,
         end,
     } = agg.metadata.clone();
@@ -519,6 +520,7 @@ async fn summarize_aggregate(
     writeln!(session, "End: {end:?}")?;
     writeln!(session, "Lab: {lab:?}")?;
     writeln!(session, "Project: {project:?}")?;
+    writeln!(session, "Details: {details:?}")?;
 
     writeln!(session, "Collaborators:")?;
     for user in agg.users.iter() {

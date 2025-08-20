@@ -37,6 +37,7 @@ impl CobblerConfig {
         _host: FKey<inventory::Host>,
         mailbox_endpoint: Option<Endpoint>,
         preimage_endpoint: Option<Endpoint>,
+        extra_kernel_args: Vec<(String, String)>,
     ) -> CobblerConfig {
         let ci_url = format!(
             "{}/{}",
@@ -61,6 +62,10 @@ impl CobblerConfig {
                 "pre_image_target".to_owned(),
                 format!("{}/push", preimage_endpoint.to_url()),
             ));
+        }
+
+        for kernel_arg in extra_kernel_args {
+            kargs.push(kernel_arg);
         }
 
         CobblerConfig {
@@ -280,6 +285,69 @@ pub async fn override_system_grub_config(
 
         channel.exec(&format!("sudo cp {remote_temp_path} {system_directory}"))?;
     }
+
+    Ok(())
+}
+
+// Uses SFTP and SSH to write a given file to Cobbler
+pub async fn write_file_to_cobbler(
+    directory_path: String, // ex "/srv/www/laas_files/fedora-kickstarts/"
+    file_name: String,      // ex "hpe1.ks"
+    file_content: String,
+) -> Result<(), anyhow::Error> {
+    info!("Attempting to connect to cobbler via ssh");
+
+    let cobbler = settings().cobbler.clone();
+    let mut session =
+        ssh2::Session::new().expect("Failed to create a new SSH session for cobbler.");
+    let connection =
+        std::net::TcpStream::connect(format!("{}:{}", cobbler.ssh.address, cobbler.ssh.port))
+            .unwrap_or_else(|_| {
+                panic!(
+                    "Failed to open TCP stream to cobbler at {}:{}.",
+                    cobbler.ssh.address, cobbler.ssh.port
+                )
+            });
+
+    session.set_tcp_stream(connection);
+    session.handshake().unwrap();
+    session
+        .userauth_password(&cobbler.ssh.user, &cobbler.ssh.password)
+        .expect("SSH basic authentication failed");
+
+    info!("Connected to cobbler successfully, attempting to write via sftp");
+
+    let sftp = session.sftp().expect("Expected to open sftp session");
+
+    let writable_directory = &cobbler.ssh.writable_directory; // At the time of writing this is /tmp
+    let temp_path = format!("{writable_directory}/{file_name}");
+
+    // We cannot write a file with sftp with elevated (sudo) privileges (at least not easily), so we write to /tmp then copy it over with privileges
+    info!("Writing given file content to {temp_path}",);
+    std::io::Write::write_all(
+        &mut sftp
+            .open_mode(
+                Path::new(&temp_path),
+                ssh2::OpenFlags::CREATE | ssh2::OpenFlags::WRITE | ssh2::OpenFlags::TRUNCATE,
+                0o644,
+                ssh2::OpenType::File,
+            )
+            .unwrap(),
+        file_content.as_bytes(),
+    )
+    .unwrap();
+
+    info!("Was able to write a file to {temp_path} successfully, copying to {directory_path}");
+
+    let mut channel = session.channel_session()?;
+    channel.exec(&format!("sudo cp {temp_path} {directory_path}"))?;
+
+    channel.close().unwrap();
+
+    info!(
+        "Was able to successfully copy file {} to {}",
+        file_name, directory_path
+    );
 
     Ok(())
 }

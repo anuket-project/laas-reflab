@@ -1,0 +1,27 @@
+%ksappend http://10.13.0.3/laas_files/{{os_name}}/base.ks
+
+{% for user in ipa_users %}
+user --name={{user["username"]}} --groups=wheel --lock 
+sshkey --username={{user["username"]}} "{{user["ssh_keys"]}}"
+
+{% endfor %}
+
+{% for config in vlan_configs %}
+{{config}}
+
+{% endfor %}
+
+%pre
+curl -X POST -H "Content-Type: application/json" {{mailbox_endpoint.preimage_waiter}}/push -d '{"success": true}'
+
+%end
+
+%post 
+
+{% for interface in interfaces %}
+nmcli con del {{interface}}
+
+{% endfor %}
+
+curl -X POST -H "Content-Type: application/json" {{mailbox_endpoint.imaging_waiter}}/push -d '{"success": true}'
+%end

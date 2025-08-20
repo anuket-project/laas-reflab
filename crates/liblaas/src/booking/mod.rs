@@ -69,6 +69,7 @@ pub async fn make_aggregate(blob: api::BookingBlob) -> Result<FKey<Aggregate>, a
         lab: blob.origin.clone(),
         project: blob.metadata.project.clone().unwrap_or("None".to_string()),
         purpose: blob.metadata.purpose.clone().unwrap_or("None".to_string()),
+        details: blob.metadata.details.clone().unwrap_or("None".to_string()),
         mock: false,
 
         // defaults to current time.
@@ -106,6 +107,7 @@ pub async fn make_aggregate(blob: api::BookingBlob) -> Result<FKey<Aggregate>, a
             lab: blob.metadata.lab,
             purpose: blob.metadata.purpose,
             project: blob.metadata.project,
+            details: blob.metadata.details,
             start: Some(now),
             end: blob.metadata.length.map(|l| now + Days::new(l)),
         },

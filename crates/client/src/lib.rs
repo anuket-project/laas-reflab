@@ -513,6 +513,7 @@ async fn create_booking(mut session: &Server) -> Result<(), anyhow::Error> {
             lab: Some(Text::new("Lab:").prompt(session)?),
             purpose: Some(Text::new("Purpose:").prompt(session)?),
             project: Some(Text::new("Project:").prompt(session)?),
+            details: Some(Text::new("Details").prompt(session)?),
             length: Some(u64::from_str(
                 Text::new("Sec:")
                     .with_validator(|input: &str| match u64::from_str(input) {

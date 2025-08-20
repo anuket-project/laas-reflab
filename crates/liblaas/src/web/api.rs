@@ -7,7 +7,7 @@
 use dal::*;
 use models::{allocator::AllocationReason, dashboard::NetworkBlob, inventory::Arch};
 use models::{
-    dashboard::{Image, Template},
+    dashboard::{image::Distro, Image, Template},
     inventory::{self, CardType, DataValue, Flavor},
 };
 use std::str::FromStr;
@@ -161,6 +161,9 @@ pub struct ImageBlob {
     /// UUID of associated image
     pub image_id: FKey<Image>,
     pub name: String,
+    pub distro: Distro,
+    pub version: String,
+    pub arch: Arch,
 }
 
 /// Workflow friendly representation of a Flavor
@@ -215,6 +218,8 @@ pub struct BookingMetadataBlob {
     pub purpose: Option<String>,
     /// Project a booking belongs to
     pub project: Option<String>,
+    /// Details regarding a booking
+    pub details: Option<String>,
     /// The length in days of a booking
     pub length: Option<u64>,
 }

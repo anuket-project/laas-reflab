@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = { workspace = true }
+chrono = { workspace = true }
 dashmap = { workspace = true }
 serde = { workspace = true, features = ["derive", "rc"] }
 thiserror = { workspace = true }
@@ -23,6 +24,8 @@ strum = { workspace = true }
 strum_macros = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+tera = { workspace = true }
+
 
 tascii = { path = "../tascii/" }
 models = { path = "../models/" }
