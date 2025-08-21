@@ -150,18 +150,20 @@ mod tests {
                 of(datetime_utc_strategy()),
                 of(datetime_utc_strategy()),
             )
-                .prop_map(|(booking_id, owner, lab, purpose, project, details, start, end)| {
-                    BookingMetadata {
-                        booking_id,
-                        owner,
-                        lab,
-                        purpose,
-                        project,
-                        details,
-                        start,
-                        end,
-                    }
-                })
+                .prop_map(
+                    |(booking_id, owner, lab, purpose, project, details, start, end)| {
+                        BookingMetadata {
+                            booking_id,
+                            owner,
+                            lab,
+                            purpose,
+                            project,
+                            details,
+                            start,
+                            end,
+                        }
+                    },
+                )
                 .boxed()
         }
     }
