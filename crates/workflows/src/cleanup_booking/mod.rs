@@ -1,5 +1,7 @@
 mod clean_host;
 
+use std::time::Duration;
+
 use common::prelude::tracing;
 use dal::{new_client, AsEasyTransaction, FKey, ID};
 use models::{
@@ -30,7 +32,7 @@ impl AsyncRunnable for CleanupAggregate {
         )
     }
 
-    async fn run(
+    async fn execute_task(
         &mut self,
         context: &tascii::prelude::Context,
     ) -> Result<Self::Output, tascii::prelude::TaskError> {
@@ -118,5 +120,14 @@ impl AsyncRunnable for CleanupAggregate {
 
     fn identifier() -> tascii::task_trait::TaskIdentifier {
         TaskIdentifier::named("CleanAggTask").versioned(1)
+    }
+    
+    fn timeout() -> std::time::Duration {
+        let estimated_overhead_time = Duration::from_secs(3 * 60);
+        CleanupHost::overall_timeout() + SyncVPN::overall_timeout() + estimated_overhead_time
+    }
+    
+    fn retry_count() -> usize {
+        0
     }
 }

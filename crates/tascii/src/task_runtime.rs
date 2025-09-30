@@ -177,7 +177,7 @@ impl RuntimeTask {
 
         let proto_summary = proto.task().summarize(self_id);
         let proto_ident = proto.task().identifier();
-        tracing::info!("starts run of task {self_id} in RuntimeTask, summary: {proto_summary}, ident: {proto_ident:?}");
+        tracing::debug!("starts run of task {self_id} in RuntimeTask, summary: {proto_summary}, ident: {proto_ident:?}");
 
         compiler_fence(std::sync::atomic::Ordering::SeqCst);
 

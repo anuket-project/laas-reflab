@@ -19,11 +19,6 @@ use crate::{runtime::Runtime, task_trait::AsyncRunnable};
 
 #[derive(Serialize, Deserialize, Clone)]
 pub enum TaskError {
-    /// Task timed out, so contract was revoked
-    ///
-    /// No message is provided here
-    Timeout(),
-
     /// Task panicked during execution,
     /// the panic was caught by the runtime and
     /// the message from the panic is contained within
@@ -43,7 +38,6 @@ pub enum TaskError {
 impl std::fmt::Debug for TaskError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TaskError::Timeout() => writeln!(f, "Timeout"),
             TaskError::Internal(i) => i.fmt(f),
             TaskError::Panic(p) => {
                 writeln!(f, "Panic: {p}")
@@ -223,7 +217,7 @@ impl Context {
             .expect("there was no runtime for context")
             .enroll(t.into());
 
-        info!("(task {tid}) Enrolled the task by id {id}, spawned into the runtime");
+        debug!("(task {tid}) Enrolled the task by id {id}, spawned into the runtime");
 
         inner.rt.unwrap().set_target(id);
 
@@ -312,7 +306,7 @@ impl Context {
         id: ID,
     ) -> Result<D, TaskError> {
         self.with_inner(|inner| {
-            info!(
+            debug!(
                 "(task {}) join called against {id}, waiting for it to complete",
                 inner.tid
             )
@@ -341,7 +335,7 @@ impl Context {
             .wait()
             .expect("wait for a oneshot failed, bad recv?");
 
-        self.with_inner(|inner| info!("(task {}) join returns from waiting on {id} after it completed. It returned {tr:?}", inner.tid));
+        self.with_inner(|inner| debug!("(task {}) join returns from waiting on {id} after it completed. It returned {tr:?}", inner.tid));
 
         tr
     }
@@ -379,16 +373,6 @@ impl Context {
     /// cause that config to be lost
     pub fn set_volatile(&self) {
         self.inner.lock().log.truncate(0); // empty the log
-    }
-
-    /// Use for cancellations, timeouts, and everything in between
-    ///
-    /// If a context has been canceled, all blocking calls to the context will
-    /// return immediately with a failed result
-    ///
-    /// All other calls will turn into no-ops
-    pub fn cancel(&self) {
-        todo!("impl cancel on contexts")
     }
 
     pub fn set_runtime(&self, rt: &'static Runtime) {

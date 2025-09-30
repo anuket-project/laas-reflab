@@ -26,18 +26,10 @@ pub enum TaskMessage {
     /// Notification that work was completed for <task_id>
     Complete(ID),
 
-    /// Instruction to cancel <task_id> if there are any active contracts for it
-    Cancel(ID),
-
     /// <task_id, contract_id>
     /// States that the given contract was not fulfilled
     /// because of an early failure
     Failure(ID, TaskError),
-
-    /// <task_id, contract_id>
-    /// States that the given contract may have timed out,
-    /// and should be revoked if it is not marked as complete
-    Timeout(ID),
 
     /// <task_id>
     /// Says to revoke the contract, provided it is not already complete
@@ -124,7 +116,7 @@ impl Orchestrator {
                 }
 
                 TaskMessage::Complete(task_id) => {
-                    info!(
+                    debug!(
                         "Orchestrator heard that task {} was completed, so committing it",
                         task_id
                     );
@@ -181,30 +173,8 @@ impl Orchestrator {
                     self.runtime().unset_target(task_id);
                 }
 
-                TaskMessage::Cancel(task_id) => {
-                    // user asked to cancel the task, so we find the matching contract and issue a
-                    // revocation
-                    info!("Orchestrator was asked to cancel task {}", task_id);
-
-                    let _ = self.tx.send(TaskMessage::Stop(
-                        task_id,
-                        TaskError::Reason("user canceled the task".to_owned()),
-                    ));
-                }
-
-                TaskMessage::Timeout(task_id) => {
-                    debug!(
-                        "Orchestrator processed a timeout timer for task {}",
-                        task_id
-                    );
-
-                    let _ = self
-                        .tx
-                        .send(TaskMessage::Stop(task_id, TaskError::Timeout()));
-                }
-
                 TaskMessage::Failure(task_id, reason) => {
-                    info!(
+                    debug!(
                         "Orchestrator processed a failure notification for task {}, reason {:?}",
                         task_id, reason
                     );
@@ -370,7 +340,7 @@ impl Orchestrator {
             return;
         }
 
-        info!("Starts run of task {task_id}");
+        debug!("Starts run of task {task_id}");
 
         let rt = self.runtime(); // rearrange here to avoid reborrowing self and making bchecker
                                  // unhappy

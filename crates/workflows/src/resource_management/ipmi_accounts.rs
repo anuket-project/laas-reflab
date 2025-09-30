@@ -25,7 +25,7 @@ tascii::mark_task!(DeleteIPMIAccount);
 impl AsyncRunnable for DeleteIPMIAccount {
     type Output = ();
 
-    async fn run(&mut self, context: &Context) -> Result<Self::Output, TaskError> {
+    async fn execute_task(&mut self, context: &Context) -> Result<Self::Output, TaskError> {
         let mut client = new_client().await.unwrap();
         let mut transaction = client.easy_transaction().await.unwrap();
 
@@ -38,7 +38,6 @@ impl AsyncRunnable for DeleteIPMIAccount {
         let ipmi_url = context
             .spawn(WaitReachable {
                 endpoint: ipmi_fqdn.clone(),
-                timeout: Duration::from_secs(120),
             })
             .join()?;
 
@@ -69,12 +68,17 @@ impl AsyncRunnable for DeleteIPMIAccount {
         Ok(())
     }
 
-    fn summarize(&self, _id: ID) -> String {
-        todo!()
-    }
-
     fn identifier() -> TaskIdentifier {
         TaskIdentifier::named("CreateIPMIAccount").versioned(1)
+    }
+    
+    fn timeout() -> Duration {
+        let estimated_overhead_time = Duration::from_secs(30);
+        WaitReachable::overall_timeout() + estimated_overhead_time
+    }
+    
+    fn retry_count() -> usize {
+        0
     }
 }
 
@@ -82,7 +86,7 @@ tascii::mark_task!(CreateIPMIAccount);
 impl AsyncRunnable for CreateIPMIAccount {
     type Output = ();
 
-    async fn run(&mut self, context: &Context) -> Result<Self::Output, TaskError> {
+    async fn execute_task(&mut self, context: &Context) -> Result<Self::Output, TaskError> {
         let mut client = new_client().await.unwrap();
         let mut transaction = client.easy_transaction().await.unwrap();
 
@@ -95,7 +99,6 @@ impl AsyncRunnable for CreateIPMIAccount {
         let ipmi_url = context
             .spawn(WaitReachable {
                 endpoint: ipmi_fqdn.clone(),
-                timeout: Duration::from_secs(120),
             })
             .join()?;
 
@@ -146,12 +149,17 @@ impl AsyncRunnable for CreateIPMIAccount {
         Ok(())
     }
 
-    fn summarize(&self, _id: ID) -> String {
-        todo!()
-    }
-
     fn identifier() -> TaskIdentifier {
         TaskIdentifier::named("CreateIPMIAccount").versioned(1)
+    }
+    
+    fn timeout() -> Duration {
+        let estimated_overhead_time = Duration::from_secs(30);
+        WaitReachable::overall_timeout() + estimated_overhead_time
+    }
+    
+    fn retry_count() -> usize {
+        0
     }
 }
 

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 
 use common::prelude::{chrono, serde_json::json, tracing};
 use config::{settings, Situation};
@@ -27,7 +27,7 @@ tascii::mark_task!(Notify);
 impl AsyncRunnable for Notify {
     type Output = ();
 
-    async fn run(&mut self, _context: &Context) -> Result<Self::Output, TaskError> {
+    async fn execute_task(&mut self, _context: &Context) -> Result<Self::Output, TaskError> {
         let mut client = new_client().await.expect("Expected to connect to db");
         let mut transaction = client
             .easy_transaction()
@@ -168,7 +168,11 @@ impl AsyncRunnable for Notify {
         TaskIdentifier::named("send_notifications").versioned(1)
     }
 
-    fn retry_count(&self) -> usize {
+    fn retry_count() -> usize {
         0
+    }
+    
+    fn timeout() -> std::time::Duration {
+        Duration::from_secs(5 * 60)
     }
 }
