@@ -107,7 +107,7 @@ tascii::mark_task!(CobblerSync);
 impl AsyncRunnable for CobblerSync {
     type Output = bool;
 
-    async fn run(
+    async fn execute_task(
         &mut self,
         _context: &tascii::prelude::Context,
     ) -> Result<Self::Output, tascii::prelude::TaskError> {
@@ -165,7 +165,7 @@ impl AsyncRunnable for CobblerSync {
         std::time::Duration::from_secs_f64(120.0)
     }
 
-    fn retry_count(&self) -> usize {
+    fn retry_count() -> usize {
         0
     }
 }

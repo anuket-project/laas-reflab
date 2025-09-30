@@ -200,11 +200,20 @@ async fn booking_status(Path(agg_id): Path<Uuid>) -> Result<Json<BookingStatus>,
     let agg: ExistingRow<dashboard::Aggregate> = FKey::from_id(agg_id.into())
         .get(&mut transaction)
         .await
-        .log_error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "failed to look up aggregate by given ID",
-            true,
-        )?;
+        .map_err(|err| {
+            tracing::error!(
+                aggregate_id = %agg_id,
+                error = ?err,
+                "Database lookup for aggregate failed"
+            );
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!(
+                    "Failed to retrieve aggregate with ID `{}`. Reason: {}",
+                    agg_id, err
+                ),
+            )
+        })?;
 
     let mut statuses = HashMap::new();
 

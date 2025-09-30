@@ -9,7 +9,6 @@ use std::{
 use common::prelude::{itertools::Itertools, parking_lot::Mutex, *};
 
 pub mod cobbler_set_config;
-pub mod cobbler_start_provision;
 pub mod deploy_host;
 pub mod notify;
 pub mod reachable;
@@ -24,6 +23,7 @@ use dal::{new_client, AsEasyTransaction, EasyTransaction, FKey, NewRow, ID};
 use macaddr::MacAddr6;
 use maplit::hashmap;
 
+use metrics::{MetricHandler, ProvisionMetric, Timestamp};
 use models::{
     allocator::{AllocationReason, ResourceHandle, ResourceHandleInner},
     dashboard::{
@@ -64,51 +64,25 @@ impl AsyncRunnable for BookingTask {
         format!("BookingTask with id {id}")
     }
 
-    async fn run(&mut self, context: &Context) -> Result<Self::Output, TaskError> {
-        info!("Starts running BookingTask");
+    async fn execute_task(&mut self, context: &Context) -> Result<Self::Output, TaskError> {
+        info!("Starting Task: BookingTask");
         let mut client = new_client().await.unwrap();
         let mut transaction = client.easy_transaction().await.unwrap();
 
         let agg = self.aggregate_id.get(&mut transaction).await.unwrap();
 
-        let mut handles = Vec::new();
+        let mut single_host_deploy_tasks = Vec::new();
 
         for config in agg.instances(&mut transaction).await.unwrap().into_iter() {
-            tracing::error!("Continuing past host setup while we hash out vpn and notifications");
             tracing::info!("Doing a single host deploy: {config:?}");
             let single = SingleHostDeploy {
                 instance: config.id,
                 for_aggregate: agg.id,
             };
 
-            handles.push(context.spawn(single));
+            single_host_deploy_tasks.push(context.spawn(single));
         }
 
-        // make sure all of them are done
-
-        tracing::info!(
-            "Booking task sees that host finished provisioning, moves on to working on VPN sync"
-        );
-
-        // now need to set up things like vpn, notify booking done, etc
-        // give each user a VPN token
-        let project = agg
-            .lab
-            .get(&mut transaction)
-            .await
-            .expect("Expected to get lab")
-            .name
-            .clone();
-        tracing::info!("Processing a booking for project {project}");
-        for user in agg.users.clone() {
-            tracing::info!("Adding user {user} to have vpn access");
-            Allocator::instance()
-                .allocate_vpn(&mut transaction, self.aggregate_id, user, project.clone())
-                .await
-                .unwrap();
-        }
-
-        // synchronize which VPNs they should be able to access
         let vpn_succeeded = context
             .spawn(SyncVPN {
                 users: agg.users.to_owned(),
@@ -119,12 +93,10 @@ impl AsyncRunnable for BookingTask {
             send_to_admins(format!("Failed to sync vpn, error: {e:?}")).await;
         }
 
-        tracing::info!("VPN sync succeeded");
-
         let mut results = Vec::new();
 
-        for handle in handles {
-            results.push(handle.join()); // TODO: assess error handling here
+        for single_host_deploy_task in single_host_deploy_tasks {
+            results.push(single_host_deploy_task.join());
         }
 
         tracing::info!("VPN config succeeded, hosts have all provisioned, now notify users their booking is done");
@@ -186,7 +158,12 @@ impl AsyncRunnable for BookingTask {
     }
 
     fn timeout() -> std::time::Duration {
-        (SingleHostDeploy::timeout()) + Notify::timeout() + Duration::from_secs(120)
+        let estimated_overhead = Duration::from_secs(5 * 60);
+        SingleHostDeploy::overall_timeout() + SyncVPN::overall_timeout() + Notify::overall_timeout() + estimated_overhead
+    }
+
+    fn retry_count() -> usize {
+        0
     }
 }
 
@@ -205,7 +182,7 @@ impl AsyncRunnable for AllocateHostTask {
         format!("AllocateHostTask with id {id}")
     }
 
-    async fn run(&mut self, _context: &Context) -> Result<Self::Output, TaskError> {
+    async fn execute_task(&mut self, _context: &Context) -> Result<Self::Output, TaskError> {
         let mut client = new_client().await?;
         let mut transaction = client.easy_transaction().await?;
 
@@ -262,10 +239,19 @@ impl AsyncRunnable for AllocateHostTask {
     fn identifier() -> TaskIdentifier {
         TaskIdentifier::named("AllocationTask").versioned(1)
     }
+
+    fn timeout() -> Duration {
+        Duration::from_secs(5 * 60)
+    }
+
+    fn retry_count() -> usize {
+        0
+    }
 }
 
 tascii::mark_task!(SingleHostDeploy);
 #[derive(Clone, Serialize, Deserialize, Debug, Hash)]
+/// Task responsible for allocating and provisioning a single host within a template.
 struct SingleHostDeploy {
     instance: FKey<Instance>,
     for_aggregate: FKey<Aggregate>,
@@ -274,22 +260,29 @@ struct SingleHostDeploy {
 impl AsyncRunnable for SingleHostDeploy {
     type Output = String;
 
-    //HostState;
-
     fn timeout() -> Duration {
-        (DeployHost::timeout() + AllocateHostTask::timeout()) * 6 + Duration::from_secs(60)
+
+        let estimated_overhead = Duration::from_secs(5 * 60);
+
+        (DeployHost::overall_timeout() * 3) + (AllocateHostTask::overall_timeout() * 3) + estimated_overhead
     }
 
     fn summarize(&self, id: ID) -> String {
         format!("SingleHostDeploy with id {id}")
     }
 
-    fn retry_count(&self) -> usize {
-        3
+    /// SingleHostDeploy should not rely on the native tascii retry loop as it needs to handle errors very differently.
+    fn retry_count() -> usize {
+        0
     }
 
-    async fn run(&mut self, context: &Context) -> Result<Self::Output, TaskError> {
+    async fn execute_task(&mut self, context: &Context) -> Result<Self::Output, TaskError> {
         tracing::info!("doing a SingleHostDeploy for instance: {:?}", self.instance);
+
+        // Total number of hosts this task is willing to try to allocate and provision before giving up
+        // If all hosts fail, they are all freed as the issue is likely due to infrastructure or the template config.
+        // If only some fail but one eventually succeeds, the failed hosts are marked as not working.
+        let max_hosts_to_try = 3;
 
         let mut client = new_client().await.unwrap();
         let mut transaction = client.easy_transaction().await.unwrap();
@@ -304,7 +297,7 @@ impl AsyncRunnable for SingleHostDeploy {
         let mut maybe_bad_hosts: Vec<ResourceHandle> = Vec::new();
 
         transaction.commit().await.unwrap();
-        for _task_retry_no in 0..(self.retry_count() + 1) {
+        for _task_retry_no in 0..max_hosts_to_try {
             match context
                 .spawn(AllocateHostTask {
                     instance: self.instance,
@@ -314,18 +307,7 @@ impl AsyncRunnable for SingleHostDeploy {
                 .join()
             {
                 Ok((host, rh)) => {
-                    tracing::info!("got an allocation, going to get db conn for other things");
-                    tracing::debug!("we got an allocation, id is: {host:?}");
                     let mut transaction = client.easy_transaction().await.unwrap();
-                    tracing::info!("Got client and transaction for making CI files");
-
-                    self.instance
-                        .log(
-                            "Generating Cloud Config",
-                            "generating composite cloud config to send to the host",
-                            StatusSentiment::InProgress,
-                        )
-                        .await;
 
                     let mut inst = self.instance.get(&mut transaction).await.unwrap();
                     inst.linked_host = Some(host); // so cleanup knows what to clean up
@@ -336,15 +318,25 @@ impl AsyncRunnable for SingleHostDeploy {
 
                     transaction.commit().await.unwrap();
 
-                    match context
+                    let start_time = Timestamp::now();
+                    let deploy_host_result = context
                         .spawn(DeployHost {
                             host_id: host,
                             aggregate_id: self.for_aggregate,
                             using_instance: self.instance,
                             distribution: None,
                         })
-                        .join()
-                    {
+                        .join();
+
+                    let provisioning_time_seconds = start_time.elapsed();
+                    send_provision_metric(
+                        &inst.config.hostname,
+                        &self.for_aggregate,
+                        provisioning_time_seconds,
+                        deploy_host_result.is_ok(),
+                    )
+                    .await;
+                    match deploy_host_result {
                         Ok(_) => {
                             tracing::warn!(
                                 "{:?} Bad Hosts: {:?}",
@@ -368,6 +360,12 @@ impl AsyncRunnable for SingleHostDeploy {
                                 .await;
 
                             maybe_bad_hosts.push(rh.clone());
+
+                            send_to_admins(format!(
+                                "Failure to provision a host for instance {:?}",
+                                self.instance
+                            ))
+                            .await;
                         }
                     }
                 }
@@ -1454,4 +1452,46 @@ fn ci_serialize_sysinfo(
     let m: HashMap<usize, Value> = hashmap! {};
 
     to_value(m).unwrap()
+}
+
+async fn send_provision_metric(
+    host_name: &str,
+    aggregate: &FKey<Aggregate>,
+    duration: u64,
+    success: bool,
+) {
+    let mut client = new_client().await.unwrap();
+    let mut transaction = client.easy_transaction().await.unwrap();
+
+    let aggregate = aggregate.get(&mut transaction).await.unwrap();
+
+    let provision_metric = ProvisionMetric {
+        hostname: host_name.to_string(),
+        owner: aggregate
+            .metadata
+            .owner
+            .clone()
+            .unwrap_or_else(|| "None".to_string()),
+        lab: aggregate
+            .lab
+            .get(&mut transaction)
+            .await
+            .map_or_else(|_| "None".to_string(), |v| v.name.clone()),
+        project: aggregate
+            .metadata
+            .project
+            .clone()
+            .unwrap_or_else(|| "None".to_string()),
+        provisioning_time_seconds: duration,
+        success,
+        ..Default::default()
+    };
+
+    transaction.commit().await.unwrap();
+
+    if let Err(e) = MetricHandler::send(provision_metric) {
+        tracing::error!("Failed to send provision metric: {:?}", e);
+    } else {
+        tracing::trace!("Provision metric sent successfully");
+    }
 }

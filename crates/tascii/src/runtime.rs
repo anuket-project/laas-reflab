@@ -170,7 +170,7 @@ impl Runtime {
             .commit()
             .expect("couldn't create a task");
 
-        info!("Create task, now has id {id}");
+        debug!("Create task, now has id {id}");
 
         id
     }
@@ -213,7 +213,7 @@ impl Runtime {
 
     pub fn start_task_loop(&self) {
         self.orchestrator.lock().task_loop();
-        tracing::info!("Task loop broke");
+        tracing::debug!("Task loop broke");
     }
 
     pub async fn async_with_task<'env, T>(

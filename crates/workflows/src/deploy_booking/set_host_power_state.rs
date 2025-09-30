@@ -66,14 +66,11 @@ tascii::mark_task!(SetPower);
 impl AsyncRunnable for SetPower {
     type Output = ();
 
-    //Return true if succeeded, else false
-
-    async fn run(&mut self, context: &Context) -> Result<Self::Output, TaskError> {
+    async fn execute_task(&mut self, context: &Context) -> Result<Self::Output, TaskError> {
         let mut client = new_client().await.unwrap();
         let mut transaction = client.easy_transaction().await.unwrap();
 
-        // std::thread::sleep(Duration::from_secs_f64(5.0)); // TODO: get rid of wait
-        tracing::warn!("Setting power.");
+        tracing::info!("Setting power to {} for {:?}", self.pstate, self.host);
         let host = self.host.get(&mut transaction).await.unwrap();
         transaction.commit().await.unwrap();
 
@@ -86,7 +83,6 @@ impl AsyncRunnable for SetPower {
         let ipmi_url = context
             .spawn(WaitReachable {
                 endpoint: ipmi_fqdn.clone(),
-                timeout: Duration::from_secs(120),
             })
             .join()?;
 
@@ -180,7 +176,12 @@ impl AsyncRunnable for SetPower {
     }
 
     fn timeout() -> std::time::Duration {
-        std::time::Duration::from_secs_f64(240.0)
+        let estimated_overhead_time = Duration::from_secs(60);
+        WaitReachable::overall_timeout() + estimated_overhead_time
+    }
+
+    fn retry_count() -> usize {
+        1
     }
 }
 

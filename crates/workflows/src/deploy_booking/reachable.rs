@@ -1,5 +1,4 @@
-use dal::ID;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use common::prelude::{tokio, tracing};
 
@@ -9,7 +8,6 @@ use tascii::prelude::*;
 #[derive(Debug, Clone, Hash, Serialize, Deserialize)]
 pub struct WaitReachable {
     pub endpoint: String,
-    pub timeout: Duration,
 }
 
 tascii::mark_task!(WaitReachable);
@@ -19,12 +17,10 @@ tascii::mark_task!(WaitReachable);
 impl AsyncRunnable for WaitReachable {
     type Output = String;
 
-    async fn run(&mut self, _context: &Context) -> Result<Self::Output, TaskError> {
+    async fn execute_task(&mut self, _context: &Context) -> Result<Self::Output, TaskError> {
         let hostname = self.endpoint.clone();
 
-        let end = std::time::Instant::now() + self.timeout;
-        while Instant::now() < end {
-            tokio::time::sleep(Duration::from_secs(2)).await;
+        while true {
             let res = common::prelude::tokio::process::Command::new("ping")
                 .args(["-c", "1", "-n", "-q", hostname.as_str()])
                 .output()
@@ -46,23 +42,22 @@ impl AsyncRunnable for WaitReachable {
                     return Ok(responder.unwrap_or(self.endpoint.clone()));
                 }
             }
-
             tracing::info!("Endpoint {hostname} wasn't reachable yet, retrying...");
+            tokio::time::sleep(Duration::from_secs(2)).await;
         }
 
-        Err(TaskError::Timeout())
-    }
-
-    fn summarize(&self, _id: ID) -> String {
-        todo!()
-    }
-
-    fn variable_timeout(&self) -> Duration {
-        // we already time ourselves out by giving up after a while
-        self.timeout + Duration::from_secs(20)
+        unreachable!()
     }
 
     fn identifier() -> TaskIdentifier {
         TaskIdentifier::named("WaitReachableTask").versioned(1)
+    }
+
+    fn timeout() -> Duration {
+        Duration::from_secs(10 * 60)
+    }
+
+    fn retry_count() -> usize {
+        0
     }
 }

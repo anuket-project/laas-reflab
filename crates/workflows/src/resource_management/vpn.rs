@@ -14,10 +14,14 @@ pub struct SyncVPN {
 impl AsyncRunnable for SyncVPN {
     type Output = ();
 
-    async fn run(
+    async fn execute_task(
         &mut self,
         _context: &tascii::prelude::Context,
     ) -> Result<Self::Output, tascii::prelude::TaskError> {
+        tracing::info!(
+            "Starting Task: SyncVPN"
+        );
+
         let mut client = new_client().await.expect("Expected to connect to db");
         let mut transaction = client
             .easy_transaction()
@@ -56,10 +60,10 @@ impl AsyncRunnable for SyncVPN {
     }
 
     fn timeout() -> std::time::Duration {
-        std::time::Duration::from_secs_f64(120.0)
+        std::time::Duration::from_secs(60 * 5)
     }
 
-    fn retry_count(&self) -> usize {
+    fn retry_count() -> usize {
         0
     }
 }
