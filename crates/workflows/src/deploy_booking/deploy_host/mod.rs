@@ -6,7 +6,6 @@ use common::prelude::{
 
 use config::settings;
 use dal::{new_client, AsEasyTransaction, FKey, ID};
-use metrics::prelude::*;
 
 use models::{
     dashboard::{image::Distro, Aggregate, Instance, NetworkAssignmentMap, StatusSentiment},
@@ -17,7 +16,6 @@ use notifications::{email::send_to_admins, templates::render_eve_grub_config};
 use serde::{Deserialize, Serialize};
 use users::ipa;
 
-use std::sync::{atomic::AtomicBool, Arc};
 use tascii::{prelude::*, task_trait::AsyncRunnable};
 
 use super::{set_boot::SetBoot, set_host_power_state::SetPower};
@@ -29,8 +27,8 @@ use crate::{
     },
     deploy_booking::{
         cobbler_set_config::*,
+        reachable::WaitReachable,
         set_host_power_state::{confirm_power_state, HostConfig, PowerState, TimeoutConfig},
-        wait_host_os_reachable::WaitHostOSReachable,
     },
     render_kickstart_template,
     resource_management::{
@@ -38,7 +36,6 @@ use crate::{
         ipmi_accounts::CreateIPMIAccount,
         mailbox::{Endpoint, Mailbox, MailboxMessageReceiver},
     },
-    retry_for,
 };
 
 #[derive(Debug, Clone, Hash, Serialize, Deserialize)]
@@ -54,63 +51,29 @@ tascii::mark_task!(DeployHost);
 impl AsyncRunnable for DeployHost {
     type Output = ();
 
-    async fn run(&mut self, context: &Context) -> Result<Self::Output, TaskError> {
+    async fn execute_task(&mut self, context: &Context) -> Result<Self::Output, TaskError> {
         // reset the context as we can't recover from a partial run
         context.reset();
 
         let (aggregate, host_name, lab) = self.fetch_host_details().await?;
-        // start time of the provision
-        let start_time = Timestamp::now();
 
-        let mut err: TaskError = TaskError::Reason(String::from("Host failed to attempt deploy."));
-        for _task_retry_no in 0..(self.retry_count() + 1) {
-            let result = self
-                .deploy_host(context, (&aggregate, &host_name, &lab))
-                .await;
+        let deploy_host_result = self
+            .deploy_host(context, (&aggregate, &host_name, &lab))
+            .await;
 
-            let provisioning_time_seconds = start_time.elapsed();
-            self.send_provision_metric(
-                &host_name,
-                &aggregate,
-                provisioning_time_seconds,
-                result.is_ok(),
+        if let Err(e) = deploy_host_result {
+            self.log(
+                "Host Deployment Attempt Failed",
+                "something went wrong, and admins have been notified",
+                StatusSentiment::InProgress,
             )
             .await;
 
-            match result {
-                Ok(_) => return result,
-                Err(e) => {
-                    err = e;
-                    continue;
-                }
-            }
+            tracing::error!("{e:?}");
+            return Err(e);
         }
 
-        let mut client = new_client().await.unwrap();
-        let mut transaction = client.easy_transaction().await.unwrap();
-        let profile = self
-            .using_instance
-            .get(&mut transaction)
-            .await
-            .unwrap()
-            .into_inner()
-            .config
-            .flavor
-            .get(&mut transaction)
-            .await
-            .unwrap()
-            .into_inner()
-            .name;
-
-        send_to_admins(format!(
-            "Failure to provision a host for instance {:?}, this is of profile {profile}",
-            self.using_instance
-        ))
-        .await;
-
-        transaction.commit().await.unwrap();
-
-        Err(err)
+        Ok(())
     }
 
     fn summarize(&self, id: ID) -> String {
@@ -122,11 +85,15 @@ impl AsyncRunnable for DeployHost {
     }
 
     fn timeout() -> std::time::Duration {
-        Duration::from_secs(60 * 60) // 60 minute per individual provision try
+        // Any individual provision attempt won't realistically take longer than 45 minutes.
+        // It isn't useful or valuable to base this timeout on the overall timeouts of child tasks
+        // as something is likely wrong if it takes that long, so we're better off
+        // just failing early and trying again.
+        Duration::from_secs(60 * 45)
     }
 
-    fn retry_count(&self) -> usize {
-        3
+    fn retry_count() -> usize {
+        1
     }
 }
 
@@ -267,7 +234,7 @@ impl DeployHost {
         )
         .await;
 
-        match mock_waiter.wait_next(Duration::from_secs(60)) {
+        match mock_waiter.wait_next(Duration::from_secs(10)) {
             Ok(v) => {
                 let val = v.msg.message;
                 match serde_json::from_str::<bool>(val.as_str()) {
@@ -482,18 +449,13 @@ impl DeployHost {
         )
         .await;
 
-        let res = retry_for(
-            SetBoot {
+        context
+            .spawn(SetBoot {
                 host_id: self.host_id,
                 persistent: true,
                 boot_to: BootTo::Network,
-            },
-            context,
-            5,
-            10,
-        );
-
-        info!("set boot res: {:?}", res);
+            })
+            .join()?;
 
         sleep(Duration::from_secs(2)).await;
 
@@ -504,7 +466,7 @@ impl DeployHost {
         )
         .await;
 
-        retry_for(SetPower::off(self.host_id), context, 5, 10)?;
+        context.spawn(SetPower::off(self.host_id)).join()?;
 
         self.log(
             "Waiting for provisioning server",
@@ -672,19 +634,13 @@ impl DeployHost {
         )
         .await;
 
-        let res = retry_for(
-            SetBoot {
+        context
+            .spawn(SetBoot {
                 host_id: self.host_id,
                 persistent: true,
                 boot_to: BootTo::Network,
-            },
-            context,
-            5,
-            10,
-        );
-
-        // Setting boot dev before powering host off as that seems to matter to the intels.
-        info!("set boot res: {:?}", res);
+            })
+            .join()?;
 
         sleep(Duration::from_secs(2)).await;
 
@@ -695,7 +651,7 @@ impl DeployHost {
         )
         .await;
 
-        retry_for(SetPower::off(self.host_id), context, 5, 10)?;
+        context.spawn(SetPower::off(self.host_id)).join()?;
 
         info!("Making sure cobbler config is done");
 
@@ -775,7 +731,7 @@ impl DeployHost {
         )
         .await;
 
-        retry_for(SetPower::on(self.host_id), context, 5, 10)?;
+        context.spawn(SetPower::on(self.host_id)).join()?;
 
         info!(
             "set power on, now adding pxe nets so host can pxe (in time it takes for host to post)"
@@ -789,7 +745,7 @@ impl DeployHost {
             Distro::Eve => {}
             _ => {
                 warn!("Setting host {} power off", host_name);
-                retry_for(SetPower::off(self.host_id), context, 5, 10)?;
+                context.spawn(SetPower::off(self.host_id)).join()?;
                 warn!("Set host {} power off", host_name);
             }
         }
@@ -811,35 +767,19 @@ impl DeployHost {
         let workflow_distro = self.get_distro().await?;
 
         warn!("Booting host {} from disk", host_name);
-        let result = retry_for(
-            SetBoot {
+        context
+            .spawn(SetBoot {
                 host_id: self.host_id,
                 persistent: true,
                 boot_to: match workflow_distro {
                     Distro::Eve => BootTo::SpecificDisk,
                     _ => BootTo::Disk,
                 },
-            },
-            context,
-            5,
-            10,
-        );
-
-        match result {
-            Ok(_) => {
-                warn!("Set host {} to boot from disk", host_name);
-            }
-            Err(e) => {
-                error!(
-                    "Failed to set host {} to boot from disk: {:?}",
-                    host_name, e
-                );
-                TaskError::Reason(format!("Failed to set host to boot from disk {:?}", e));
-            }
-        }
+            })
+            .join()?;
 
         warn!("Powering host {} on", host_name);
-        retry_for(SetPower::on(self.host_id), context, 5, 10)?;
+        context.spawn(SetPower::on(self.host_id)).join()?;
         warn!("Successfully set host {} power on", host_name);
 
         Ok(())
@@ -927,44 +867,8 @@ impl DeployHost {
                 .unwrap();
             }
             _ => {
-                let inst_id = self.using_instance;
-                let finished_imaging = Arc::new(AtomicBool::new(false));
-                let fcopy = finished_imaging.clone();
-                std::thread::spawn(move || {
-                    let mb_return = preimage_waiter.wait_next(Duration::from_secs(60 * 35));
-                    match (fcopy.load(std::sync::atomic::Ordering::SeqCst), mb_return) {
-                        (true, _) => {
-                            // don't report anything, skip
-                            warn!("Host didn't phone home before imaging!");
-                        }
-                        (false, Ok(_)) => {
-                            tascii::executors::spawn_on_tascii_tokio(
-                                "laas_notifications",
-                                async move {
-                                    inst_id.log("Installing OS", "host has booted into the installer, and is now installing the base OS", StatusSentiment::InProgress).await;
-                                },
-                            );
-                        }
-                        (false, Err(_e)) => {
-                            tascii::executors::spawn_on_tascii_tokio(
-                                "laas_notifications",
-                                async move {
-                                    inst_id
-                                        .log(
-                                            "Failed to Boot",
-                                            "host failed to reach the installer",
-                                            StatusSentiment::Degraded,
-                                        )
-                                        .await;
-                                },
-                            );
-                        }
-                    }
-                });
 
                 match imaging_waiter.wait_next(Duration::from_secs(60 * 35)) {
-                    // give the host 20 minutes to boot
-                    // and provision
                     Ok(_) => {
                         // TODO: allow host to post a *failure* message, so we can detect that and save
                         // those logs and force it to reboot and retry (and detect this all early)
@@ -982,9 +886,6 @@ impl DeployHost {
                         return Err(TaskError::Reason("Mailbox error".to_owned()));
                     }
                 }
-
-                finished_imaging.store(true, std::sync::atomic::Ordering::SeqCst);
-
                 self.log(
                     "OS Installed",
                     "the unconfigured operating system has been installed onto the host",
@@ -1115,17 +1016,22 @@ impl DeployHost {
             }
         }
 
+        let mut client = new_client().await.unwrap();
+        let mut transaction = client.easy_transaction().await.unwrap();
+
+        let host_public_fqdn = &self.host_id.get(&mut transaction).await.unwrap().fqdn;
+        transaction.commit().await.unwrap();
+
         self.log(
             "Verify Host Provisioned",
-            &format!("check that host is reachable at {}", host_name),
+            &format!("check that host is reachable at {}", host_public_fqdn),
             StatusSentiment::InProgress,
         )
         .await;
 
         context
-            .spawn(WaitHostOSReachable {
-                timeout: Duration::from_secs(60 * 15),
-                host_id: self.host_id,
+            .spawn(WaitReachable {
+                endpoint: host_public_fqdn.clone(),
             })
             .join()?;
 
@@ -1147,17 +1053,14 @@ impl DeployHost {
         )
         .await;
 
-        let ipmi_res = retry_for(
-            CreateIPMIAccount {
+        let ipmi_res = context
+            .spawn(CreateIPMIAccount {
                 host: self.host_id,
                 password: aggregate.configuration.ipmi_password,
                 username: aggregate.configuration.ipmi_username,
                 userid: "4".to_string(), // TODO: look into generating this later on
-            },
-            context,
-            5,
-            30,
-        );
+            })
+            .join();
 
         if let Err(e) = ipmi_res {
             send_to_admins(format!(
@@ -1191,46 +1094,5 @@ impl DeployHost {
     }
     async fn log(&mut self, msg: &str, desc: &str, sentiment: StatusSentiment) {
         self.using_instance.log(msg, desc, sentiment).await;
-    }
-
-    async fn send_provision_metric(
-        &mut self,
-        host_name: &str,
-        aggregate: &Aggregate,
-        duration: u64,
-        success: bool,
-    ) {
-        let mut client = new_client().await.unwrap();
-        let mut transaction = client.easy_transaction().await.unwrap();
-
-        let provision_metric = ProvisionMetric {
-            hostname: host_name.to_string(),
-            owner: aggregate
-                .metadata
-                .owner
-                .clone()
-                .unwrap_or_else(|| "None".to_string()),
-            lab: aggregate
-                .lab
-                .get(&mut transaction)
-                .await
-                .map_or_else(|_| "None".to_string(), |v| v.name.clone()),
-            project: aggregate
-                .metadata
-                .project
-                .clone()
-                .unwrap_or_else(|| "None".to_string()),
-            provisioning_time_seconds: duration,
-            success,
-            ..Default::default()
-        };
-
-        transaction.commit().await.unwrap();
-
-        if let Err(e) = MetricHandler::send(provision_metric) {
-            error!("Failed to send provision metric: {:?}", e);
-        } else {
-            trace!("Provision metric sent successfully");
-        }
     }
 }

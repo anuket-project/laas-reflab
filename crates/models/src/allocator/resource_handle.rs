@@ -209,8 +209,6 @@ impl ResourceHandle {
         let a_tn = Allocation::table_name();
         let handles_tn = ResourceHandle::table_name();
 
-        tracing::info!("Lab param: {}", lab_param_idx);
-
         // if ended is null, then it has not yet ended
         // select handles where no allocation exists that hasn't yet ended
         let available_handles = format!("SELECT * FROM {handles_tn}
@@ -235,7 +233,6 @@ impl ResourceHandle {
             )"
         );
 
-        tracing::info!(g);
         g
     }
 
@@ -271,15 +268,12 @@ impl ResourceHandle {
         except_for: &[FKey<ResourceHandle>],
     ) -> Result<Vec<(FKey<T>, FKey<ResourceHandle>)>, anyhow::Error> {
         let tn = T::table_name();
-        tracing::info!("Querying for free {tn}");
 
         let mut params: Vec<&(dyn ToSql + Sync)> = Vec::from_iter(params.iter().copied());
 
         params.push(&lab);
 
         let query = Self::make_query::<T>(free, params.len(), filter);
-
-        tracing::info!("Query that is getting run is\n{query}");
 
         let v = t.query(&query, params.as_slice()).await?;
 
@@ -331,13 +325,7 @@ impl ResourceHandle {
                             EXCEPT (SELECT for_resource FROM {allocation_tn} WHERE ended IS NULL);
                 ");*/
 
-                tracing::info!("Got to host alloc");
-
-                tracing::info!("Selecting hosts using query:");
-                tracing::info!("{free_hosts:?}");
-
-                tracing::info!("With flavor {flavor:?}");
-                tracing::info!("With except_for {except_for:?}");
+                tracing::info!("Free hosts of flavor {flavor:?} found by allocator: {free_hosts:?}");
 
                 //let handle_ids = transaction.query(&free_hosts, &[&flavor]).await.anyway()?;
 
@@ -347,7 +335,6 @@ impl ResourceHandle {
                 let mut handle_ids = free_hosts
                     .into_iter()
                     .filter(|(hfk, rhfk)| {
-                        tracing::info!("Looking at host {:?} for potential filtering", hfk);
                         !except_for.contains(rhfk)
                     })
                     .collect_vec();
@@ -412,8 +399,6 @@ impl ResourceHandle {
                     except_for,
                 )
                 .await?;
-
-                tracing::info!("Returned set is {set:?}");
 
                 let (_free_vlan, rhfk) = set
                     .first()

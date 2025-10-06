@@ -45,12 +45,6 @@ pub(crate) trait DynRunnable: Send + std::fmt::Debug + Sync {
     /// Provided with the id of the wrapping task
     fn summarize(&self, id: ID) -> String;
 
-    /// The duration from task start until the runtime should declare
-    /// it as "hung" if it has not yet finished
-    ///
-    /// Runtime will terminate the task and do retry/failure next action
-    fn timeout(&self) -> Duration;
-
     fn oneshot(&self) -> Result<StrongUntypedOneshotHandle, anyhow::Error>;
 
     fn unmarshal(&self, h: SimpleOneshotHandle) -> StrongUntypedOneshotHandle;
@@ -102,13 +96,6 @@ where
 
         context.reset();
 
-        // force timeout to happen here,
-        // when we have the context of what the result type is
-        let timeout_oneshot = oneshot.clone();
-        let timeout = self.timeout();
-
-        debug!("Got timeout and oneshot, going to spawn the timeout task into the runtime, task {run_id}");
-
         let summary = self.summarize(run_id);
         let th = oneshot.clone();
         // make it so we get a feedback print when this task finishes
@@ -117,29 +104,8 @@ where
 
             let res = th.wait().unwrap();
 
-            info!("Task {summary} completed, result was {res:?}");
+            debug!("Task {summary} completed, result was {res:?}");
         });
-
-        // set a timeout for the task so we don't continue blocking forever, and
-        // we get isolated and cut off if we run too long
-        executors::spawn_on_tascii_tokio("oneshot", async move {
-            tokio::spawn(async move {
-                tokio::time::sleep(timeout).await;
-                let oneshot = timeout_oneshot;
-                let typed: &OneShot<Result<R::Output, TaskError>> = oneshot
-                    .to_typed()
-                    .expect("TASCII violated an invariant, gave us a oneshot we didn't give it");
-
-                let timeout_res = typed.complete_with(Err(TaskError::Timeout())).await;
-
-                if timeout_res {
-                    rt.send(scheduler::TaskMessage::Timeout(run_id))
-                        .expect("couldn't time out a task")
-                }
-            });
-        });
-
-        debug!("Set the timeout, about to block on finishing the task by id {run_id}");
 
         let slef: &'static mut Self = unsafe { std::mem::transmute(self) };
 
@@ -259,10 +225,6 @@ where
         let task_ty_name = type_name::<R>();
 
         format!("Task {task_ty_name} with content {:#?}", self.v)
-    }
-
-    fn timeout(&self) -> Duration {
-        self.v.variable_timeout()
     }
 
     fn identifier(&self) -> TaskIdentifier {

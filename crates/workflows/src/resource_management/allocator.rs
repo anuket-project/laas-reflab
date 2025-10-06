@@ -265,9 +265,7 @@ impl Allocator {
             Err(_e) => return Err(anyhow::Error::msg("Error getting aggregate: {e}")),
         };
 
-        tracing::warn!("Lab is {:?}", lab);
         let mut map = within.get(&mut t).await?;
-        tracing::warn!("Map is {:?}", map);
         let is_dynamic = lab
             .get(&mut t)
             .await

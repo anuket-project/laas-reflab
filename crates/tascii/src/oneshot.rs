@@ -245,6 +245,7 @@ impl<T: TaskSafe + Send + Sync + RefUnwindSafe> OneShot<T> {
             // since they read without having to hold the lock and the only
             // thing the critical section conflicts with is completion-contention,
             // which is only between the current task instance and the timeout thread
+            // NOTE: timeout thread no longer exists. Unclear if it safe to remove this line
             self.announce.wake(i32::MAX); //.expect("couldn't wake waiters on a futex");
 
             *g = true; // mark complete

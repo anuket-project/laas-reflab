@@ -1,16 +1,16 @@
 use clap::{Parser, Subcommand};
 use client::remote::{cli_client_entry, cli_server_entry};
 use common::prelude::{
-    axum::{extract::Path, Json},
+    axum::{Json, extract::Path},
     chrono::{Days, Utc},
     tokio::{self, sync::mpsc, task::LocalSet},
     tracing,
 };
 use config::settings;
 use core::panic;
-use dal::{new_client, web::ResultWithCode, AsEasyTransaction, DBTable, FKey, NewRow};
+use dal::{AsEasyTransaction, DBTable, FKey, NewRow, new_client, web::ResultWithCode};
 use inventory_cli::prelude::{
-    import_inventory, match_and_print, validate_inventory, InventoryCommand,
+    InventoryCommand, import_inventory, match_and_print, validate_inventory,
 };
 use liblaas::{
     self,
@@ -72,13 +72,19 @@ pub async fn allocate_unreserved_hosts() {
                     location: "".to_string(),
                     email: "".to_string(),
                     phone: "".to_string(),
-                    is_dynamic: true
-                }).insert(&mut t).await.unwrap();
+                    is_dynamic: true,
+                })
+                .insert(&mut t)
+                .await
+                .unwrap();
                 t.commit().await.unwrap();
                 l
-            },
+            }
         },
-        Err(e) => panic!("Failed to find reserved lab, unable to reserve hosts that may be in production until this is fixed, error: {}", e.to_string()),
+        Err(e) => panic!(
+            "Failed to find reserved lab, unable to reserve hosts that may be in production until this is fixed, error: {}",
+            e.to_string()
+        ),
     };
     println!("Labs: {:?}", Lab::select().run(&mut transaction).await);
     transaction.commit().await.unwrap();
@@ -305,12 +311,11 @@ async fn main() {
         loop {
             let msg = liblaas_rx.recv().await;
             match msg {
-                Some(client::LiblaasStateInstruction::ShutDown) => break,
-                Some(client::LiblaasStateInstruction::ExitCLI) => {
+                Some(client::LiblaasStateInstruction::Exit) => {
                     tracing::info!("Client exited CLI cleanly");
                     continue;
                 }
-                Some(client::LiblaasStateInstruction::DoNothing) => {
+                Some(client::LiblaasStateInstruction::Continue) => {
                     tracing::info!("NOOP CLI msg");
                     continue;
                 }

@@ -1,11 +1,9 @@
-use super::{areyousure, select_aggregate, select_host, select_instance, select_lifecyclestate};
+use super::{areyousure, select_aggregate, select_host, select_instance};
+
 use crate::mgmt_workflows::BootToDev;
 use crate::remote::{Select, Server, Text};
-use common::prelude::{
-    anyhow,
-    config::{settings, Situation},
-    tracing,
-};
+
+use common::prelude::{anyhow, config::Situation, tracing};
 use dal::{new_client, AsEasyTransaction, ExistingRow, FKey, ID};
 
 use models::{
@@ -13,16 +11,21 @@ use models::{
     dashboard::{Aggregate, LifeCycleState},
     inventory::{BootTo, Host},
 };
-use notifications::{
-    email::{send_to_admins_email, send_to_admins_gchat},
-    send_test_email,
+
+use dal::NewRow;
+use models::{
+    allocator::{AllocationReason, ResourceHandle, ResourceHandleInner},
+    dashboard::{AggregateConfiguration, BookingMetadata, NetworkAssignmentMap, Template},
+    inventory::Lab,
 };
+
 use std::io::Write;
 use std::str::FromStr;
 use strum::IntoEnumIterator;
 use strum_macros::{Display, EnumIter, EnumString};
 use tascii::prelude::Runtime;
 use tracing::info;
+use workflows::resource_management::allocator::Allocator;
 use workflows::{
     deploy_booking::{
         deploy_host::DeployHost,
@@ -30,89 +33,51 @@ use workflows::{
         set_host_power_state::{PowerState, SetPower},
     },
     entry::DISPATCH,
-    resource_management::{allocator, mailbox::Mailbox},
+    resource_management::allocator,
 };
 
 #[derive(Display, Clone, EnumString, EnumIter, Debug)]
-pub enum Overrides {
-    #[strum(serialize = "Override Aggregate")]
-    Aggregate,
+pub enum AggregateActions {
+    #[strum(serialize = "Set Aggregate Lifecycle State")]
+    AggregateLifecycleState,
     #[strum(serialize = "Force Release Aggregate")]
     ReleaseAggregate,
-    #[strum(serialize = "Reset Aggregate")]
-    ResetAggregate,
+    #[strum(serialize = "ReallocateAggregate")]
+    ReallocateAggregate,
     #[strum(serialize = "Boot Host")]
     BootHost,
     #[strum(serialize = "Redeploy Host")]
     Redeploy,
-    #[strum(serialize = "Send Notification")]
-    SendNotification,
-    #[strum(serialize = "Send Email to Admins")]
-    SendAdminEmail,
-    #[strum(serialize = "Test Email Template")]
-    TestEmailTemplate,
-    #[strum(serialize = "Send Google Chat Notification")]
-    SendAdminChat,
+    #[strum(serialize = "Send Notification for Aggregate")]
+    SendNotificationForAggregate,
+    #[strum(serialize = "Mark Host Not Working")]
+    MarkHostNotWorking,
     #[strum(serialize = "Override Host Power State")]
     SetHostPowerState,
-    #[strum(serialize = "Override Endpoint Hook")]
-    EndpointHook,
 }
 
 pub async fn overrides(session: &Server, tascii_rt: &'static Runtime) -> Result<(), anyhow::Error> {
-    let override_choice = Select::new("Select an override to apply:", Overrides::iter().collect())
-        .prompt(session)
-        .unwrap();
-
-    match override_choice {
-        Overrides::EndpointHook => handle_endpoint_hook(session).await,
-        Overrides::SetHostPowerState => handle_set_host_power_state(session, tascii_rt).await,
-        Overrides::SendAdminEmail => handle_send_admin_email(session).await,
-        Overrides::TestEmailTemplate => handle_test_email_template(session).await,
-        Overrides::SendAdminChat => handle_send_admin_chat(session).await,
-        Overrides::Redeploy => handle_redeploy(session, tascii_rt).await,
-        Overrides::Aggregate => handle_aggregate(session).await,
-        Overrides::ResetAggregate => handle_reset_aggregate(session).await,
-        Overrides::ReleaseAggregate => handle_release_aggregate(session).await,
-        Overrides::BootHost => handle_boot_host(session, tascii_rt).await,
-        Overrides::SendNotification => handle_send_notification(session, tascii_rt).await,
-    }
-}
-
-async fn handle_endpoint_hook(session: &Server) -> Result<(), anyhow::Error> {
-    let mut client = new_client().await.expect("Expected to connect to db");
-    let mut transaction = client
-        .easy_transaction()
-        .await
-        .expect("Transaction creation error");
-
-    let lcs = select_lifecyclestate(session).unwrap();
-    let agg = select_aggregate(session, lcs, &mut transaction)
-        .await
-        .unwrap();
-    let inst = select_instance(session, agg, &mut transaction)
-        .await
-        .unwrap();
-    let hook = Select::new(
-        "enter hook name: ",
-        Mailbox::live_hooks(inst).await.unwrap(),
+    let override_choice = Select::new(
+        "Select an override to apply:",
+        AggregateActions::iter().collect(),
     )
     .prompt(session)
     .unwrap();
-    let hook = Mailbox::get_endpoint_hook(inst, &hook).await.unwrap();
-    let msg = Text::new("Enter message for hook: ")
-        .prompt(session)
-        .unwrap();
 
-    Mailbox::push(
-        common::prelude::axum::extract::Path((hook.for_instance, hook.unique)),
-        msg,
-    )
-    .await;
-    println!("Pushed to the hook an override");
-
-    transaction.commit().await?;
-    Ok(())
+    match override_choice {
+        AggregateActions::SetHostPowerState => {
+            handle_set_host_power_state(session, tascii_rt).await
+        }
+        AggregateActions::Redeploy => handle_redeploy(session, tascii_rt).await,
+        AggregateActions::AggregateLifecycleState => handle_aggregate_state_override(session).await,
+        AggregateActions::ReallocateAggregate => handle_reallocate_aggregate(session).await,
+        AggregateActions::ReleaseAggregate => handle_release_aggregate(session).await,
+        AggregateActions::BootHost => handle_boot_host(session, tascii_rt).await,
+        AggregateActions::SendNotificationForAggregate => {
+            handle_send_notification(session, tascii_rt).await
+        }
+        AggregateActions::MarkHostNotWorking => handle_mark_host_not_working(session).await,
+    }
 }
 
 async fn handle_set_host_power_state(
@@ -137,57 +102,6 @@ async fn handle_set_host_power_state(
     tascii_rt.set_target(id);
 
     transaction.commit().await?;
-    Ok(())
-}
-
-async fn handle_send_admin_email(session: &Server) -> Result<(), anyhow::Error> {
-    let email = Text::new("Message: ").prompt(session).unwrap();
-    send_to_admins_email(email).await;
-    Ok(())
-}
-
-async fn handle_test_email_template(session: &Server) -> Result<(), anyhow::Error> {
-    let status = Select::new(
-        "Select a Status: ",
-        vec![
-            Situation::BookingCreated,
-            Situation::BookingExpiring,
-            Situation::BookingExpired,
-            Situation::RequestBookingExtension,
-        ],
-    )
-    .prompt(session)
-    .unwrap();
-    let project_type = Select::new(
-        "Select a Project: ",
-        settings()
-            .projects
-            .keys()
-            .map(String::as_str)
-            .collect::<Vec<&str>>(),
-    )
-    .prompt(session)
-    .unwrap();
-    let dest_user = Text::new("Destination Username: ").prompt(session).unwrap();
-
-    let result = send_test_email(
-        status,
-        project_type.to_owned(),
-        dest_user.clone(),
-        Some(vec![dest_user.clone()]),
-    )
-    .await;
-
-    match result {
-        Ok(_) => tracing::info!("Successfully sent email to {:?}", &dest_user),
-        Err(e) => tracing::error!("Failed to send email to {:?}: {:?}", &dest_user, e),
-    }
-    Ok(())
-}
-
-async fn handle_send_admin_chat(session: &Server) -> Result<(), anyhow::Error> {
-    let gchat = Text::new("Message: ").prompt(session).unwrap();
-    send_to_admins_gchat(gchat).await;
     Ok(())
 }
 
@@ -264,7 +178,7 @@ async fn handle_redeploy(
     Ok(())
 }
 
-async fn handle_aggregate(mut session: &Server) -> Result<(), anyhow::Error> {
+async fn handle_aggregate_state_override(mut session: &Server) -> Result<(), anyhow::Error> {
     let mut client = new_client().await.expect("Expected to connect to db");
     let mut transaction = client
         .easy_transaction()
@@ -302,7 +216,7 @@ async fn handle_aggregate(mut session: &Server) -> Result<(), anyhow::Error> {
     Ok(())
 }
 
-async fn handle_reset_aggregate(mut session: &Server) -> Result<(), anyhow::Error> {
+async fn handle_reallocate_aggregate(mut session: &Server) -> Result<(), anyhow::Error> {
     let mut client = new_client().await.expect("Expected to connect to db");
     let mut transaction = client
         .easy_transaction()
@@ -450,5 +364,89 @@ async fn handle_send_notification(
     let _ = writeln!(session, "Started notify task");
 
     transaction.commit().await?;
+    Ok(())
+}
+
+async fn handle_mark_host_not_working(session: &Server) -> Result<(), anyhow::Error> {
+    let hostname = Text::new("Enter the hostname to mark as not working:")
+        .prompt(session)
+        .unwrap();
+    let reason = Text::new("Enter reason:").prompt(session).unwrap();
+
+    mark_host_not_working(hostname, reason).await
+}
+
+pub async fn mark_host_not_working(hostname: String, reason: String) -> Result<(), anyhow::Error> {
+    let mut client = new_client().await?;
+    let mut transaction = client.easy_transaction().await?;
+
+    let allocator = Allocator::instance();
+
+    let host = Host::get_by_name(&mut transaction, hostname.clone()).await?;
+
+    let handle = ResourceHandle::handle_for_host(&mut transaction, host.id).await?;
+
+    let lab = Lab::default().id;
+
+    let agg = Aggregate {
+        id: FKey::new_id_dangling(),
+        deleted: false,
+        users: vec![],
+        vlans: NewRow::new(NetworkAssignmentMap::empty())
+            .insert(&mut transaction)
+            .await?,
+        template: NewRow::new(Template {
+            id: FKey::new_id_dangling(),
+            name: format!("maintenance-{}", hostname),
+            deleted: false,
+            description: reason.clone(),
+            owner: None,
+            public: false,
+            networks: vec![],
+            hosts: vec![],
+            lab,
+        })
+        .insert(&mut transaction)
+        .await?,
+        metadata: BookingMetadata {
+            booking_id: None,
+            owner: None,
+            lab: None,
+            purpose: Some("Maintenance".to_string()),
+            project: None,
+            details: Some(reason.clone()),
+            start: None,
+            end: None,
+        },
+        state: LifeCycleState::Active,
+        configuration: AggregateConfiguration {
+            ipmi_username: String::new(),
+            ipmi_password: String::new(),
+        },
+        lab,
+    };
+
+    let agg_id = NewRow::new(agg.clone()).insert(&mut transaction).await?;
+
+    if let ResourceHandleInner::Host(h) = handle.tracks {
+        allocator
+            .allocate_specific_host(
+                &mut transaction,
+                h,
+                agg_id,
+                AllocationReason::ForMaintenance,
+            )
+            .await?;
+    } else {
+        anyhow::bail!("ResourceHandle did not point to a Host");
+    }
+
+    transaction.commit().await?;
+    tracing::info!(
+        "Host {} marked not working → Aggregate {:?}",
+        hostname,
+        agg_id
+    );
+
     Ok(())
 }

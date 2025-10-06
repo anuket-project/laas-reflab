@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use common::prelude::tracing;
 use dal::{new_client, AsEasyTransaction, FKey};
 use maplit::hashmap;
@@ -31,7 +33,7 @@ tascii::mark_task!(CobblerSetConfiguration);
 impl AsyncRunnable for CobblerSetConfiguration {
     type Output = ();
 
-    async fn run(&mut self, _context: &Context) -> Result<Self::Output, TaskError> {
+    async fn execute_task(&mut self, _context: &Context) -> Result<Self::Output, TaskError> {
         tracing::info!(
             "setting cobbler configuration for host {:?}, config is: {:#?}",
             self.host_id,
@@ -114,5 +116,13 @@ else:
 
     fn identifier() -> TaskIdentifier {
         TaskIdentifier::named("CobblerSetConfigurationTask").versioned(1)
+    }
+    
+    fn timeout() -> std::time::Duration {
+        Duration::from_secs(5 * 60)
+    }
+    
+    fn retry_count() -> usize {
+        0
     }
 }

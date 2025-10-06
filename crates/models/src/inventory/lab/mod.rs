@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use dal::{web::*, *};
 
-#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Default)]
 pub struct Lab {
     pub id: FKey<Lab>,
     pub name: String,

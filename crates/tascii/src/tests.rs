@@ -93,10 +93,10 @@ impl Runnable for Waiter {
             for jh in jhs {
                 let val = jh.join()?;
 
-                tracing::info!("finished join task, printer returned to us {val}");
+                tracing::debug!("finished join task, printer returned to us {val}");
             }
 
-            tracing::info!("did {} tasks", i * 500);
+            tracing::debug!("did {} tasks", i * 500);
         }
 
         debug!("finished run for waiter");
@@ -135,7 +135,7 @@ impl Runnable for Printer {
 
         std::thread::sleep(Duration::from_secs_f64(0.5));
 
-        tracing::info!("printer has {}", self.print);
+        tracing::debug!("printer has {}", self.print);
 
         std::thread::sleep(Duration::from_secs_f64(0.5));
 

@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use anyhow::{Context, Result};
 use chrono::Utc;
 use dal::{new_client, AsEasyTransaction, FKey};
@@ -13,8 +15,7 @@ use tascii::prelude::*;
 use crate::{
     configure_networking::{empty_network_config, ConfigureNetworking},
     deploy_booking::set_host_power_state::SetPower,
-    resource_management::ipmi_accounts::DeleteIPMIAccount,
-    retry_for,
+    resource_management::ipmi_accounts::DeleteIPMIAccount
 };
 
 tascii::mark_task!(CleanupHost);
@@ -28,7 +29,7 @@ pub struct CleanupHost {
 impl AsyncRunnable for CleanupHost {
     type Output = ();
 
-    async fn run(
+    async fn execute_task(
         &mut self,
         context: &tascii::prelude::Context,
     ) -> Result<Self::Output, tascii::prelude::TaskError> {
@@ -45,7 +46,7 @@ impl AsyncRunnable for CleanupHost {
             )
             .await;
 
-        retry_for(SetPower::off(self.host_id), context, 10, 10).expect("couldn't power down host");
+        context.spawn(SetPower::off(self.host_id)).join()?;
 
         self.instance
             .log(
@@ -82,6 +83,15 @@ impl AsyncRunnable for CleanupHost {
 
     fn identifier() -> tascii::task_trait::TaskIdentifier {
         TaskIdentifier::named("CleanHostTask").versioned(1)
+    }
+
+    fn timeout() -> std::time::Duration {
+        let estimated_overhead_time = Duration::from_secs(30);
+        SetPower::overall_timeout() + DeleteIPMIAccount::overall_timeout() + ConfigureNetworking::overall_timeout()  + estimated_overhead_time
+    }
+
+    fn retry_count() -> usize {
+        0
     }
 }
 

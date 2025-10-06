@@ -66,7 +66,7 @@ tascii::mark_task!(SetBoot);
 impl AsyncRunnable for SetBoot {
     type Output = ();
 
-    async fn run(
+    async fn execute_task(
         &mut self,
         context: &tascii::prelude::Context,
     ) -> Result<Self::Output, tascii::prelude::TaskError> {
@@ -88,7 +88,6 @@ impl AsyncRunnable for SetBoot {
         let host_url = context
             .spawn(WaitReachable {
                 endpoint: host.ipmi_fqdn.clone(),
-                timeout: Duration::from_secs(120),
             })
             .join()?;
 
@@ -117,10 +116,11 @@ impl AsyncRunnable for SetBoot {
     }
 
     fn timeout() -> std::time::Duration {
-        std::time::Duration::from_secs_f64(600.0)
+        let estimated_overhead_time = Duration::from_secs(2 * 60);
+        WaitReachable::overall_timeout() + estimated_overhead_time
     }
 
-    fn retry_count(&self) -> usize {
+    fn retry_count() -> usize {
         0
     }
 }

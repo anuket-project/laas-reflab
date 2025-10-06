@@ -73,38 +73,6 @@ impl Endpoint {
         Self::from_parts(for_instance, ID::new())
     }
 }
-#[derive(Serialize, Deserialize, Clone, Debug, Hash)]
-pub struct WaitMailbox {
-    pub endpoint: Endpoint,
-}
-
-tascii::mark_task!(WaitMailbox);
-impl AsyncRunnable for WaitMailbox {
-    type Output = Message;
-
-    async fn run(&mut self, _context: &Context) -> Result<Self::Output, TaskError> {
-        let res = Mailbox::waiter_for(self.endpoint).wait_next(Duration::MAX);
-
-        match res {
-            Ok(v) => Ok(v.msg),
-            Err(e) => {
-                let fr = e.failure_reason;
-
-                Err(TaskError::Reason(format!(
-                    "Mailbox wait failed, reason: {fr}"
-                )))
-            }
-        }
-    }
-
-    fn summarize(&self, id: ID) -> String {
-        format!("WaitMailbox with id {id}")
-    }
-
-    fn identifier() -> TaskIdentifier {
-        TaskIdentifier::named("WaitMailboxTask").versioned(1)
-    }
-}
 
 pub type MailboxResult = Result<MailboxOk, MailboxErr>;
 
