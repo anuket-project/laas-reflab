@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM image_kernel_args WHERE for_image = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ca7fd307d82207020ee8aa011d706f0d1406020d6f94cda18c345ca30a589408"
+}

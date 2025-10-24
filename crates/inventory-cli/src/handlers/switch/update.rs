@@ -1,4 +1,4 @@
-use sqlx::PgPool;
+use sqlx::{Postgres, Transaction};
 
 use crate::prelude::{InventoryError, Switch, SwitchYaml};
 
@@ -7,30 +7,37 @@ use dal::FKey;
 /// Update an existing [`Switch`] by its name.
 /// Returns the updated [`Switch`].
 pub async fn update_switch_by_name(
-    pool: &PgPool,
+    transaction: &mut Transaction<'_, Postgres>,
     yaml: &SwitchYaml,
 ) -> Result<Switch, InventoryError> {
-    let os_id = sqlx::query_scalar!(
-        r#"
-        SELECT id FROM switch_os WHERE os_type = $1
-        "#,
-        yaml.switch_os
-    )
-    .fetch_one(pool)
-    .await
-    .map_err(|e| InventoryError::Sqlx {
-        context: format!("Fetching switch OS `{}`", yaml.switch_os),
-        source: e,
-    })?;
+    // handle switch_os
+    let os_id = if yaml.switch_os.is_empty() {
+        None
+    } else {
+        Some(
+            sqlx::query_scalar!(
+                r#"
+                SELECT id FROM switch_os WHERE os_type = $1
+                "#,
+                yaml.switch_os
+            )
+            .fetch_one(&mut **transaction)
+            .await
+            .map_err(|e| InventoryError::Sqlx {
+                context: format!("Fetching switch OS `{}`", yaml.switch_os),
+                source: e,
+            })?,
+        )
+    };
 
     let row = sqlx::query!(
         r#"
         UPDATE switches
            SET
-             ip        = $2,
+             ip          = $2,
              switch_user = $3,
              switch_pass = $4,
-             switch_os = (SELECT id FROM switch_os WHERE name = $5)
+             switch_os   = $5
          WHERE name = $1
         RETURNING
           id,
@@ -44,9 +51,9 @@ pub async fn update_switch_by_name(
         yaml.ip.to_string(), // $2
         yaml.username,       // $3
         yaml.password,       // $4
-        yaml.switch_os,      // $5
+        os_id,               // $5
     )
-    .fetch_one(pool)
+    .fetch_one(&mut **transaction)
     .await
     .map_err(|e| InventoryError::Sqlx {
         context: format!("Updating switch `{}`", yaml.name),
@@ -59,6 +66,6 @@ pub async fn update_switch_by_name(
         ip: row.ip.to_string(),
         user: row.user,
         pass: row.pass,
-        switch_os: Some(FKey::from_id(os_id.into())),
+        switch_os: os_id.map(|id| FKey::from_id(id.into())),
     })
 }

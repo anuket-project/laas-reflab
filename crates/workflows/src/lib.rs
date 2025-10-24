@@ -1,5 +1,5 @@
 #![doc = include_str!("../README.md")]
-#![feature(result_flattening, iter_intersperse, if_let_guard)]
+#![feature(iter_intersperse, if_let_guard)]
 
 pub mod cleanup_booking;
 pub mod configure_networking;

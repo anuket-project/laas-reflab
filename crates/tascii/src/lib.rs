@@ -3,14 +3,11 @@
 #![allow(dead_code, clippy::await_holding_lock, async_fn_in_trait)]
 #![feature(
     async_iterator,
-    result_flattening,
     ptr_metadata,
     unboxed_closures,
     panic_backtrace_config,
     update_panic_count,
-    panic_can_unwind,
-    let_chains,
-    generic_arg_infer
+    panic_can_unwind
 )]
 
 pub mod executors;

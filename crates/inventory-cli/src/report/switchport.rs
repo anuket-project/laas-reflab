@@ -1,7 +1,9 @@
-use crate::prelude::{InventoryError, Reportable, Switch, SwitchPort, SwitchYaml, switchport};
+use crate::prelude::{
+    InventoryError, Reportable, SortOrder, Switch, SwitchPort, SwitchYaml, switchport,
+};
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::{Postgres, Transaction};
 use std::fmt;
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
@@ -42,15 +44,16 @@ impl SwitchportReport {
         }
     }
 
-    pub async fn execute_created(&self, pool: &PgPool) -> Result<(), InventoryError> {
+    pub async fn execute_created(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+    ) -> Result<(), InventoryError> {
         if let SwitchportReport::Created {
             switch_yaml,
             switchport_name,
         } = self
         {
-            println!("Creating switchport... {}", switch_yaml.name);
-            switchport::create_switchport(pool, &switch_yaml.name, switchport_name).await?;
-
+            switchport::create_switchport(transaction, &switch_yaml.name, switchport_name).await?;
             Ok(())
         } else {
             Err(InventoryError::InvalidReportType {
@@ -60,15 +63,16 @@ impl SwitchportReport {
         }
     }
 
-    pub async fn execute_removed(&self, pool: &PgPool) -> Result<(), InventoryError> {
+    pub async fn execute_removed(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+    ) -> Result<(), InventoryError> {
         if let SwitchportReport::Removed {
             db_switch,
             db_switchport,
         } = self
         {
-            println!("Removing switch... {}", db_switch.name);
-
-            switchport::delete_switchport(pool, &db_switch.name, &db_switchport.name).await
+            switchport::delete_switchport(transaction, &db_switch.name, &db_switchport.name).await
         } else {
             Err(InventoryError::InvalidReportType {
                 expected: "Removed",
@@ -97,24 +101,26 @@ impl Reportable for SwitchportReport {
         matches!(self, SwitchportReport::Created { .. })
     }
     fn is_modified(&self) -> bool {
-        // does not exist
-        false
+        false // DNE
     }
     fn is_removed(&self) -> bool {
         matches!(self, SwitchportReport::Removed { .. })
     }
     fn sort_order(&self) -> u8 {
         match self {
-            SwitchportReport::Created { .. } => 0,
-            SwitchportReport::Removed { .. } => 1,
-            SwitchportReport::Unchanged { .. } => 2,
+            SwitchportReport::Created { .. } => SortOrder::Switchport as u8,
+            SwitchportReport::Removed { .. } => SortOrder::Switchport as u8 + 1,
+            SwitchportReport::Unchanged { .. } => SortOrder::Switchport as u8 + 2,
         }
     }
 
-    async fn execute(&self, pool: &PgPool) -> Result<(), InventoryError> {
+    async fn execute(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+    ) -> Result<(), InventoryError> {
         match self {
-            SwitchportReport::Created { .. } => self.execute_created(pool).await,
-            SwitchportReport::Removed { .. } => self.execute_removed(pool).await,
+            SwitchportReport::Created { .. } => self.execute_created(transaction).await,
+            SwitchportReport::Removed { .. } => self.execute_removed(transaction).await,
             SwitchportReport::Unchanged { .. } => self.execute_unchanged(),
         }
     }
@@ -126,25 +132,11 @@ impl fmt::Display for SwitchportReport {
             SwitchportReport::Created {
                 switch_yaml: _,
                 switchport_name,
-            } => {
-                write!(
-                    f,
-                    " {} {}",
-                    "Created Switchport:".green().bold(),
-                    switchport_name.green(),
-                )
-            }
+            } => write!(f, "{}{}", "+".green(), switchport_name),
             SwitchportReport::Removed {
                 db_switch: _,
                 db_switchport,
-            } => {
-                write!(
-                    f,
-                    " {} {}",
-                    "Removed Switchport:".red().bold(),
-                    db_switchport.name.red()
-                )
-            }
+            } => write!(f, "{}{}", "-".red(), db_switchport.name),
 
             // ignore unchanged
             _ => Ok(()),

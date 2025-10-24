@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc bb2219bce5554118c3a4e547ff74727690fb4b90ad81d7dd9f7b03b40f78b702 # shrinks to interface_flavor = InterfaceFlavor { id: [Fk<models::inventory::flavor::interface::InterfaceFlavor> -> 1b09a5a8-24af-4052-a213-602d4ff57969], on_flavor: [Fk<models::inventory::flavor::Flavor> -> 3d1cf6f2-9b36-488e-8c73-6d95d98084f3], name: "", speed: DataValue { value: 0, unit: Unknown }, cardtype: PCIeOnboard }

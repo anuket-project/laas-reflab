@@ -1,0 +1,56 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE switches\n           SET\n             ip          = $2,\n             switch_user = $3,\n             switch_pass = $4,\n             switch_os   = $5\n         WHERE name = $1\n        RETURNING\n          id,\n          name,\n          ip,\n          switch_user AS user,\n          switch_pass AS pass,\n          switch_os\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "ip",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "user",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "pass",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "switch_os",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "65ad4711a7278a25d34db51a73677a3e337f624567e832f9dcfb056be64b247d"
+}

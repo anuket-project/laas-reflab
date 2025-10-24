@@ -4,7 +4,7 @@ use common::prelude::{chrono, serde_json::json, tracing};
 use config::{settings, Situation};
 use dal::{new_client, AsEasyTransaction, DBTable, FKey};
 
-use models::dashboard::{Aggregate, Instance};
+use models::dashboard::{image::Distro, Aggregate, Instance};
 use notifications::{
     booking_ended, booking_ending, booking_started, collaborator_added, request_booking_extension,
     BookingInfo, Env,
@@ -121,7 +121,7 @@ impl AsyncRunnable for Notify {
                 for host in hosts {
                     if !sent {
                         if let Ok(i) = host.config.image.clone().get(&mut transaction).await {
-                            if i.cobbler_name.to_lowercase().contains("eve") {
+                            if i.distro == Distro::Eve {
                                 booking_started(&env, &info, Some(json!({"eve": true})))
                                     .await
                                     .expect("couldn't notify users");
@@ -171,7 +171,7 @@ impl AsyncRunnable for Notify {
     fn retry_count() -> usize {
         0
     }
-    
+
     fn timeout() -> std::time::Duration {
         Duration::from_secs(5 * 60)
     }

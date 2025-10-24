@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc f12e8af44e93577c83200d4b8b6a9a59a5cc02db6c9889944b659bed637c0b76 # shrinks to flavor = Flavor { id: [Fk<models::inventory::flavor::Flavor> -> 21805452-d53e-4389-aaff-379ef0c5b615], name: "a", description: None, arch: X86_64, cpu_count: None, cpu_frequency_mhz: None, cpu_model: None, ram_bytes: None, root_size_bytes: None, disk_size_bytes: None, storage_type: None, network_speed_mbps: None, network_interfaces: Some(0), brand: None, model: None }
+cc b2c812d937863cab6ed7b85c7b172455746eac1c177fd26e0f2db1d6b09bc7f6 # shrinks to flavor = Flavor { id: [Fk<models::inventory::flavor::Flavor> -> 88bdbc7b-5818-4063-9bfa-f4003c13b45f], name: "A", description: None, arch: X86_64, cpu_count: None, cpu_frequency_mhz: None, cpu_model: None, ram_bytes: None, root_size_bytes: None, disk_size_bytes: None, storage_type: None, network_speed_mbps: None, network_interfaces: None, brand: None, model: None }

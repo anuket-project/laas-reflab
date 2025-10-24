@@ -867,7 +867,6 @@ impl DeployHost {
                 .unwrap();
             }
             _ => {
-
                 match imaging_waiter.wait_next(Duration::from_secs(60 * 35)) {
                     Ok(_) => {
                         // TODO: allow host to post a *failure* message, so we can detect that and save

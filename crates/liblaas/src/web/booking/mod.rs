@@ -245,8 +245,8 @@ async fn booking_status(Path(agg_id): Path<Uuid>) -> Result<Json<BookingStatus>,
                 hostname: host.server_name.clone(),
                 ipmi_fqdn: host.ipmi_fqdn,
                 serial: host.serial.clone(),
-                brand: flavor.brand.clone(),
-                model: flavor.model.clone(),
+                brand: flavor.brand.clone().unwrap_or_default(),
+                model: flavor.model.clone().unwrap_or_default(),
             };
 
             let pool = get_db_pool().await.unwrap();

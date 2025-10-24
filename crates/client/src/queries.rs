@@ -324,8 +324,8 @@ async fn handle_config_query(mut session: &Server) -> Result<(), anyhow::Error> 
             writeln!(session, "Hostname {hostname}")?;
             writeln!(
                 session,
-                "Assigned image: {}, cobbler id {}, id {:?}",
-                image.name, image.cobbler_name, image.id
+                "Assigned image: {}, id {:?}",
+                image.name, image.id
             )?;
             let generated = workflows::deploy_booking::generate_cloud_config(
                 conf.clone(),
@@ -581,10 +581,9 @@ async fn summarize_aggregate(
         let config = {
             let hn = config.hostname;
             let img = config.image.get(transaction).await.unwrap().into_inner();
-            let img_name = img.name;
-            let img_cname = img.cobbler_name;
+            let img_name = img.name.clone();
 
-            format!("{{ hostname {hn}, image {img_name} which in cobbler is {img_cname} }}")
+            format!("{{ hostname {hn}, image {img_name} }}")
         };
 
         writeln!(session, "- Host {host} with config {config}")?;

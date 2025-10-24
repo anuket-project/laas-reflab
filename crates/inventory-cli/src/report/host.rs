@@ -1,31 +1,24 @@
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::{Postgres, Transaction};
 use std::fmt;
 
-use crate::prelude::{Host, HostYaml, InterfaceReport, InventoryError, ModifiedFields, host};
+use crate::prelude::{
+    Host, HostYaml, InterfaceReport, InventoryError, ModifiedFields, Reportable, SortOrder, host,
+};
 
-use super::Reportable;
-
-/// Represents a constructed diff between the inventory and the database state for a host.
-/// Each variant wraps its own data needed to both display the report and to write it the changes
-/// to the database.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub enum HostReport {
     Created {
-        // we want `HostYaml` because it's what we need to write to DB
         host_yaml: HostYaml,
         interface_reports: Vec<InterfaceReport>,
     },
     Modified {
-        // we want `HostYaml` because it's what we need to write to DB
         host_yaml: HostYaml,
         fields: ModifiedFields,
         interface_reports: Vec<InterfaceReport>,
     },
     Removed {
-        // we don't need `HostYaml` here, we just need the server name and the ability to display
-        // the `Host` to be deleted
         db_host: Host,
         interface_reports: Vec<InterfaceReport>,
     },
@@ -37,10 +30,10 @@ pub enum HostReport {
 impl Reportable for HostReport {
     fn sort_order(&self) -> u8 {
         match self {
-            HostReport::Created { .. } => 4,
-            HostReport::Removed { .. } => 5,
-            HostReport::Modified { .. } => 6,
-            HostReport::Unchanged { .. } => 7,
+            HostReport::Created { .. } => SortOrder::Host as u8,
+            HostReport::Removed { .. } => SortOrder::Host as u8 + 1,
+            HostReport::Modified { .. } => SortOrder::Host as u8 + 2,
+            HostReport::Unchanged { .. } => SortOrder::Host as u8 + 3,
         }
     }
 
@@ -57,15 +50,19 @@ impl Reportable for HostReport {
         matches!(self, HostReport::Removed { .. })
     }
 
-    async fn execute(&self, pool: &PgPool) -> Result<(), InventoryError> {
+    async fn execute(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+    ) -> Result<(), InventoryError> {
         match self {
-            HostReport::Created { .. } => self.execute_created(pool).await,
-            HostReport::Modified { .. } => self.execute_modified(pool).await,
-            HostReport::Removed { .. } => self.execute_removed(pool).await,
+            HostReport::Created { .. } => self.execute_created(transaction).await,
+            HostReport::Modified { .. } => self.execute_modified(transaction).await,
+            HostReport::Removed { .. } => self.execute_removed(transaction).await,
             HostReport::Unchanged { .. } => self.execute_unchanged(),
         }
     }
 }
+
 impl HostReport {
     pub fn new_created(host_yaml: HostYaml, interface_reports: Vec<InterfaceReport>) -> Self {
         HostReport::Created {
@@ -106,10 +103,17 @@ impl HostReport {
         }
     }
 
-    /// No‑op for unchanged hosts.
+    pub fn item_name(&self) -> Option<&str> {
+        match self {
+            HostReport::Created { host_yaml, .. } => Some(&host_yaml.server_name),
+            HostReport::Modified { host_yaml, .. } => Some(&host_yaml.server_name),
+            HostReport::Removed { db_host, .. } => Some(&db_host.server_name),
+            HostReport::Unchanged { host_yaml } => Some(&host_yaml.server_name),
+        }
+    }
+
     pub fn execute_unchanged(&self) -> Result<(), InventoryError> {
         if let HostReport::Unchanged { .. } = self {
-            // nothing to do!
             Ok(())
         } else {
             Err(InventoryError::InvalidReportType {
@@ -120,18 +124,21 @@ impl HostReport {
     }
 
     /// Insert a new host based on the YAML.
-    pub async fn execute_created(&self, pool: &PgPool) -> Result<(), InventoryError> {
+    pub async fn execute_created(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+    ) -> Result<(), InventoryError> {
         if let HostReport::Created {
             host_yaml,
             interface_reports,
         } = self
         {
             // insert the host row
-            host::create_host(pool, host_yaml).await?;
+            host::create_host(transaction, host_yaml).await?;
 
             // let interfaces handle themselves
             for iface_r in interface_reports {
-                iface_r.execute(pool).await?;
+                iface_r.execute(transaction).await?;
             }
 
             Ok(())
@@ -144,7 +151,10 @@ impl HostReport {
     }
 
     /// Apply an update to an existing host.
-    pub async fn execute_modified(&self, pool: &PgPool) -> Result<(), InventoryError> {
+    pub async fn execute_modified(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+    ) -> Result<(), InventoryError> {
         if let HostReport::Modified {
             host_yaml,
             fields: _,
@@ -152,14 +162,12 @@ impl HostReport {
         } = self
         {
             // update the host in the database
-            host::update_host(pool, host_yaml).await?;
+            host::update_host(transaction, host_yaml).await?;
 
             // let interfaces handle themselves
             for iface_r in interface_reports {
-                iface_r.execute(pool).await?;
+                iface_r.execute(transaction).await?;
             }
-
-            println!("Updating host {}...", host_yaml.server_name);
 
             Ok(())
         } else {
@@ -171,28 +179,22 @@ impl HostReport {
     }
 
     /// Delete a host and its interfaces.
-    pub async fn execute_removed(&self, pool: &PgPool) -> Result<(), InventoryError> {
+    pub async fn execute_removed(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+    ) -> Result<(), InventoryError> {
         if let HostReport::Removed {
             db_host,
             interface_reports,
         } = self
         {
-            println!(
-                "Removing host {} with {} interfaces...",
-                db_host.server_name,
-                interface_reports.len()
-            );
-
             for iface_r in interface_reports {
-                iface_r.execute(pool).await?;
+                iface_r.execute(transaction).await?;
             }
 
-            println!("Removing host {}...", db_host.server_name);
-
             // delete the host after its interfaces are taken care of
-            host::delete_host_by_name(pool, &db_host.server_name).await?;
+            host::delete_host_by_name(transaction, &db_host.server_name).await?;
 
-            // TODO: finish
             Ok(())
         } else {
             Err(InventoryError::InvalidReportType {
@@ -238,12 +240,25 @@ impl fmt::Display for HostReport {
             } => {
                 writeln!(
                     f,
-                    " {} {}",
-                    "Created Host:".green().bold(),
-                    host_yaml.server_name.green()
+                    "  {} {} [{}: {}]",
+                    "+".green().bold(),
+                    host_yaml.server_name.bright_white().bold(),
+                    "interfaces".dimmed(),
+                    interface_reports
+                        .iter()
+                        .filter(|r| !r.is_unchanged())
+                        .count()
                 )?;
-                for interface_report in interface_reports {
-                    writeln!(f, "  - {}", interface_report)?;
+
+                let active_interfaces: Vec<String> = interface_reports
+                    .iter()
+                    .filter(|r| !r.is_unchanged())
+                    .map(|r| format!("{}", r))
+                    .collect();
+
+                if !active_interfaces.is_empty() {
+                    write!(f, "      ")?;
+                    writeln!(f, "{}", active_interfaces.join(" "))?;
                 }
                 Ok(())
             }
@@ -253,12 +268,14 @@ impl fmt::Display for HostReport {
             } => {
                 writeln!(
                     f,
-                    " {} {}",
-                    "Removed Host:".red().bold(),
-                    db_host.server_name.red()
+                    "  {} {}",
+                    "-".red().bold(),
+                    db_host.server_name.bright_white().bold()
                 )?;
                 for interface_report in interface_reports {
-                    writeln!(f, "  - {}", interface_report)?;
+                    if !interface_report.is_unchanged() {
+                        writeln!(f, "      {}: {}", "interface".dimmed(), interface_report)?;
+                    }
                 }
                 Ok(())
             }
@@ -267,12 +284,11 @@ impl fmt::Display for HostReport {
                 fields,
                 interface_reports: interfaces,
             } => {
-                // header
                 writeln!(
                     f,
-                    " {} {}",
-                    "Modified:".yellow().bold(),
-                    host_yaml.server_name.yellow()
+                    "  {} {}",
+                    "~".yellow().bold(),
+                    host_yaml.server_name.bright_white().bold()
                 )?;
 
                 let db_report = fields.to_string();
@@ -281,7 +297,7 @@ impl fmt::Display for HostReport {
                 }
                 for interface_report in interfaces {
                     if !interface_report.is_unchanged() {
-                        writeln!(f, "  - {}", interface_report)?;
+                        writeln!(f, "      {}: {}", "interface".dimmed(), interface_report)?;
                     }
                 }
 

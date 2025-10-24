@@ -1,16 +1,15 @@
 #[allow(unused_imports)]
 use crate::prelude::{HostPort, InterfaceYaml, InventoryError};
 
-use sqlx::PgPool;
+use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
 /// Delete a single [`HostPort`] by host_name + port name.
 pub async fn delete_hostport_by_name(
-    pool: &PgPool,
+    transaction: &mut Transaction<'_, Postgres>,
     server_name: &str,
     db_interface: &HostPort,
 ) -> Result<(), InventoryError> {
-    // look up the port’s UUID
     let port_id: Uuid = sqlx::query_scalar!(
         r#"
         SELECT hp.id
@@ -22,7 +21,7 @@ pub async fn delete_hostport_by_name(
         server_name,
         db_interface.name
     )
-    .fetch_one(pool)
+    .fetch_one(&mut **transaction)
     .await
     .map_err(|e| InventoryError::Sqlx {
         context: format!(
@@ -32,9 +31,8 @@ pub async fn delete_hostport_by_name(
         source: e,
     })?;
 
-    // delete the row
     sqlx::query!(r#"DELETE FROM host_ports WHERE id = $1"#, port_id)
-        .execute(pool)
+        .execute(&mut **transaction)
         .await
         .map_err(|e| InventoryError::Sqlx {
             context: format!("Deleting hostport `{}`", port_id),

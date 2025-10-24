@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 92e9eb4abbaf2017e21d1a12f1d6d399fd5d87edc3c39997f6d5eb6aa2559a0f # shrinks to host = Host { id: [Fk<models::inventory::host::Host> -> de60d7f7-9ef7-4604-b9aa-b50f5c1d185e], server_name: "0", flavor: [Fk<models::inventory::flavor::Flavor> -> 8e0c5fc9-c0e1-46ce-b442-a2df745c6465], serial: "A", ipmi_fqdn: "A", iol_id: "A", ipmi_mac: MacAddress("00:00:00:00:00:00"), ipmi_user: "0", ipmi_pass: "0", fqdn: "A", projects: [], sda_uefi_device: None }

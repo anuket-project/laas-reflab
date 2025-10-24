@@ -10,11 +10,14 @@ pretty_assertions = { workspace = true }
 
 [dependencies]
 anyhow = { workspace = true }
+http = { workspace = true }
+http-serde = { workspace = true }
 sqlx = { workspace = true, features = [
   "mac_address",
   "macros",
   "postgres",
   "json",
+  "uuid",
 ] }
 mac_address = { workspace = true, features = ["serde"] }
 eui48 = { workspace = true }
@@ -36,10 +39,13 @@ tokio-postgres = { workspace = true, features = [
 ] }
 tokio = { workspace = true }
 tracing = { workspace = true }
+url = { workspace = true, features = ["serde"] }
+uuid = { workspace = true, features = ["serde", "v4"] }
 
 common = { path = "../common" }
 dal = { path = "../dal" }
 testing_utils = { path = "../testing_utils" }
+
 
 [package.metadata.cargo-machete]
 ignored = ["strum", "tokio"]

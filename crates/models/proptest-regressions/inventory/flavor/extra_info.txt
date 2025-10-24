@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 7ee4f4e25489bb1d1c40a2255e238e38108fc7a8f54f567327a0a4ce34b44584 # shrinks to extra_flavor_info = ExtraFlavorInfo { id: [Fk<models::inventory::flavor::extra_info::ExtraFlavorInfo> -> 17786a59-082d-4fad-8779-594c0109daaa], for_flavor: [Fk<models::inventory::flavor::Flavor> -> 78208191-f9a1-47af-a765-f9ff06b864c0], extra_trait: "", key: "", value: "" }

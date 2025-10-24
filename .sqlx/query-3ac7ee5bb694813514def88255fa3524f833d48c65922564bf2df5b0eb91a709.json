@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    INSERT INTO image_kernel_args (for_image, _key, _value)\n                    VALUES ($1, $2, NULL)\n                    ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3ac7ee5bb694813514def88255fa3524f833d48c65922564bf2df5b0eb91a709"
+}

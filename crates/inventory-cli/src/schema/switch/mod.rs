@@ -59,7 +59,6 @@ impl SwitchYaml {
             fields.modified("password", self.password.clone(), db_switch.pass.clone())?;
         }
 
-        // TODO: Switch OS name comparison (not in MVP 1.1)
         let switchport_reports = self.generate_switchport_reports(&db_switch, &db_switchports)?;
 
         if fields.is_empty() {
@@ -82,7 +81,7 @@ impl SwitchYaml {
     ) -> Result<Vec<SwitchportReport>, InventoryError> {
         let mut reports = Vec::new();
 
-        // Created
+        // created
         for yaml_name in &self.switchports {
             if !db_switchports.iter().any(|db_sp| &db_sp.name == yaml_name) {
                 reports.push(SwitchportReport::new_created(
@@ -92,7 +91,7 @@ impl SwitchYaml {
             }
         }
 
-        // Removed
+        // cemoved
         for db_sp in db_switchports {
             if !self
                 .switchports
@@ -107,7 +106,7 @@ impl SwitchYaml {
             }
         }
 
-        // Unchanged
+        // unchanged
         for _ in self
             .switchports
             .iter()

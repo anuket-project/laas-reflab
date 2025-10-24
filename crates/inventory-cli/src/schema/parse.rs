@@ -4,10 +4,13 @@ use glob::glob;
 use std::path::Path;
 
 /// Loads all YAML inventory files under the given directory and
-/// returns a single `InventoryYaml` containing all switches and hosts.
+/// returns a single `InventoryYaml` containing all switches, hosts, images, flavors, and labs.
 pub(crate) fn load_inventory(dir: &Path) -> Result<InventoryYaml, Vec<InventoryError>> {
     let mut all_switches = Vec::new();
     let mut all_hosts = Vec::new();
+    let mut all_images = Vec::new();
+    let mut all_flavors = Vec::new();
+    let mut all_labs = Vec::new();
     let mut errors = Vec::new();
 
     if !dir.exists() {
@@ -55,6 +58,9 @@ pub(crate) fn load_inventory(dir: &Path) -> Result<InventoryYaml, Vec<InventoryE
                     Ok(inv) => {
                         all_switches.extend(inv.switches);
                         all_hosts.extend(inv.hosts);
+                        all_images.extend(inv.images);
+                        all_flavors.extend(inv.flavors);
+                        all_labs.extend(inv.labs);
                     }
                     Err(e) => errors.push(InventoryError::Yaml {
                         path: path_str,
@@ -72,6 +78,9 @@ pub(crate) fn load_inventory(dir: &Path) -> Result<InventoryYaml, Vec<InventoryE
         Ok(InventoryYaml {
             switches: all_switches,
             hosts: all_hosts,
+            images: all_images,
+            flavors: all_flavors,
+            labs: all_labs,
         })
     } else {
         Err(errors)

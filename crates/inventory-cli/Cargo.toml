@@ -7,10 +7,6 @@ edition = "2024"
 name = "inventory_cli"
 path = "src/lib.rs"
 
-[[bin]]
-name = "inventory-cli"
-path = "src/main.rs"
-
 
 [dependencies]
 anyhow = { workspace = true }
@@ -30,6 +26,9 @@ eui48 = { workspace = true }
 thiserror = { workspace = true }
 colored = { workspace = true }
 futures = { workspace = true }
+http = { workspace = true }
+http-serde = { workspace = true }
+indicatif = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

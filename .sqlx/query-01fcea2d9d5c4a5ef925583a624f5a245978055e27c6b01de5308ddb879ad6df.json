@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE labs\n        SET\n            location = $2,\n            email = $3,\n            phone = $4,\n            is_dynamic = $5\n        WHERE name = $1;\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "01fcea2d9d5c4a5ef925583a624f5a245978055e27c6b01de5308ddb879ad6df"
+}

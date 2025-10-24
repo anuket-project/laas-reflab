@@ -1,21 +1,15 @@
-use sqlx::PgPool;
+use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
-#[allow(unused_imports)]
-use crate::prelude::{InventoryError, SwitchPort, hostport};
+use crate::prelude::InventoryError;
 
 /// Insert a new [`SwitchPort`] given a `switch_name` and `switchport_name`.
 pub async fn create_switchport(
-    pool: &PgPool,
+    transaction: &mut Transaction<'_, Postgres>,
     switch_name: &str,
     switchport_name: &str,
 ) -> Result<(), InventoryError> {
     let new_id = Uuid::new_v4();
-
-    println!(
-        "Creating switchport '{}' on switch '{}'.",
-        switchport_name, switch_name
-    );
 
     let result = sqlx::query!(
         r#"
@@ -30,7 +24,7 @@ pub async fn create_switchport(
         switch_name,     // $2 → switch name to look up
         switchport_name  // $3 → port name
     )
-    .execute(pool)
+    .execute(&mut **transaction)
     .await
     .map_err(|e| InventoryError::Sqlx {
         context: "While inserting SwitchPort".to_string(),

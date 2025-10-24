@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 51e6a4870a64afa8175cd41fe70128e7a621e6584c5607e6c2926e4c28d79f21 # shrinks to switch_os = SwitchOS { id: [Fk<models::inventory::switch::os::SwitchOS> -> 52d8b195-c15a-4c22-8e77-a14d68b2856d], os_type: "" }

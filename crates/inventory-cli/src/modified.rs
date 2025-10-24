@@ -1,15 +1,30 @@
+//! Tracking and displaying modified fields in inventory items
+//!
+//! This module provides the `ModifiedFields` type for tracking which fields
+//! have changed between YAML definitions and database records, along with
+//! their old and new values.
+
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     fmt,
 };
 
 use crate::prelude::InventoryError;
 
+/// Tracks modified fields in an inventory item
+///
+/// This structure maintains three synchronized collections:
+/// - `fields`: Ordered list of field names that have been modified (preserves insertion order)
+/// - `old`: Map of field names to their old (database) values
+/// - `new`: Map of field names to their new (YAML) values
+///
+/// The Display implementation provides color-coded output showing
+/// old values in red, new values in green, with a yellow arrow between them.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Default, Clone)]
 pub struct ModifiedFields {
-    fields: HashSet<String>,
+    fields: Vec<String>,
     old: HashMap<String, String>,
     new: HashMap<String, String>,
 }
@@ -22,8 +37,8 @@ impl ModifiedFields {
     /// If `field_name` was modified, returns `Some((&old_value, &new_value))`,
     /// otherwise `None`.
     pub fn get(&self, field_name: &str) -> Option<(&String, &String)> {
-        if self.fields.contains(field_name) {
-            // both maps must have the key if it’s in `fields`
+        if self.fields.iter().any(|f| f == field_name) {
+            // both maps must have the key if it's in `fields`
             let old = self.old.get(field_name)?;
             let new = self.new.get(field_name)?;
             Some((old, new))
@@ -44,11 +59,11 @@ impl ModifiedFields {
         U: Into<String>,
     {
         let field_name = field_name.into();
-        if self.fields.contains(&field_name) {
+        if self.fields.iter().any(|f| f == &field_name) {
             return Err(InventoryError::FieldAlreadyModified(field_name));
         }
 
-        self.fields.insert(field_name.clone());
+        self.fields.push(field_name.clone());
         self.old.insert(field_name.clone(), old.into());
         self.new.insert(field_name.clone(), new.into());
 
@@ -70,17 +85,17 @@ impl ModifiedFields {
         other: ModifiedFields,
     ) -> Result<(), InventoryError> {
         let prefix = prefix.as_ref();
-        for original in other.fields {
+        for original in &other.fields {
             let merged_name = format!("{}.{}", prefix, original);
-            if self.fields.contains(&merged_name) {
+            if self.fields.iter().any(|f| f == &merged_name) {
                 return Err(InventoryError::FieldAlreadyModified(merged_name));
             }
             // unwraps here are safe because `other` guaranteed to
             // have those keys in its `old` and `new` maps
-            let old_val = other.old.get(&original).unwrap().clone();
-            let new_val = other.new.get(&original).unwrap().clone();
+            let old_val = other.old.get(original).unwrap().clone();
+            let new_val = other.new.get(original).unwrap().clone();
 
-            self.fields.insert(merged_name.clone());
+            self.fields.push(merged_name.clone());
             self.old.insert(merged_name.clone(), old_val);
             self.new.insert(merged_name.clone(), new_val);
         }
@@ -90,9 +105,10 @@ impl ModifiedFields {
 
 impl fmt::Display for ModifiedFields {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // split into top-level vs nested
+        // split into top-level vs nested, preserving insertion order
         let mut top = Vec::new();
         let mut nested: HashMap<String, Vec<(String, String, String)>> = HashMap::new();
+        let mut prefix_order = Vec::new();
 
         for key in &self.fields {
             let (prefix, name) = if let Some(idx) = key.find('.') {
@@ -106,42 +122,28 @@ impl fmt::Display for ModifiedFields {
             if prefix.is_empty() {
                 top.push((name.to_string(), old, new));
             } else {
+                let prefix_string = prefix.to_string();
+                if !prefix_order.contains(&prefix_string) {
+                    prefix_order.push(prefix_string.clone());
+                }
                 nested
-                    .entry(prefix.to_string())
+                    .entry(prefix_string)
                     .or_default()
                     .push((name.to_string(), old, new));
             }
         }
 
-        // sort top-level fields
-        top.sort_by(|a, b| a.0.cmp(&b.0));
+        // Display top-level fields in insertion order (no sorting)
         for (name, old, new) in top {
-            writeln!(
-                f,
-                "    {}: {} {} {}",
-                name,
-                old.red(),
-                "→".yellow(),
-                new.green()
-            )?;
+            writeln!(f, "      {}: {} {} {}", name.dimmed(), old.red(), "->".dimmed(), new.green())?;
         }
 
-        // sort prefixes and their entries
-        let mut prefixes: Vec<_> = nested.keys().cloned().collect();
-        prefixes.sort();
-        for prefix in prefixes {
-            writeln!(f, "    {}:", prefix)?;
-            let mut items = nested.remove(&prefix).unwrap();
-            items.sort_by(|a, b| a.0.cmp(&b.0));
+        // Display nested fields in insertion order (no sorting)
+        for prefix in prefix_order {
+            writeln!(f, "      {}:", prefix.dimmed())?;
+            let items = nested.get(&prefix).unwrap();
             for (name, old, new) in items {
-                writeln!(
-                    f,
-                    "      {}: {} {} {}",
-                    name,
-                    old.red(),
-                    "→".yellow(),
-                    new.green()
-                )?;
+                writeln!(f, "        {}: {} {} {}", name.dimmed(), old.red(), "->".dimmed(), new.green())?;
             }
         }
 
