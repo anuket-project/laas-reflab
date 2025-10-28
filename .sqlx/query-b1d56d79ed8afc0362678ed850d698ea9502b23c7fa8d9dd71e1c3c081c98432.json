@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO images (\n                id,\n                name,\n                cobbler_name,\n                deleted,\n                flavors,\n                distro,\n                version,\n                arch,\n                http_unattended_install_config_path,\n                http_iso_path,\n                tftp_kernel_path,\n                tftp_initrd_paths\n        )\n        VALUES (\n            $1, $2, $3, $4, $5, $6::text::distro, $7, $8::text::arch, $9, $10, $11, $12\n        )\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Varchar",
+        "Varchar",
+        "Bool",
+        "UuidArray",
+        "Text",
+        "Varchar",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b1d56d79ed8afc0362678ed850d698ea9502b23c7fa8d9dd71e1c3c081c98432"
+}

@@ -5,12 +5,15 @@
 //! They are fundamentally ephemeral, and describe the shape of the API
 
 use dal::*;
-use models::{allocator::AllocationReason, dashboard::NetworkBlob, inventory::Arch};
+use models::{
+    allocator::AllocationReason,
+    dashboard::NetworkBlob,
+    inventory::{Arch, StorageType},
+};
 use models::{
     dashboard::{image::Distro, Image, Template},
     inventory::{self, CardType, DataValue, Flavor},
 };
-use std::str::FromStr;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -73,7 +76,7 @@ impl HostBlob {
             SELECT
                 hosts.id,
                 hosts.server_name,
-                flavors.arch AS arch,
+                flavors.arch AS "arch: Arch",
                 hosts.flavor AS flavor,
                 hosts.ipmi_fqdn AS ipmi_fqdn,
                 resource_handles.id AS resource_handle_id,
@@ -112,7 +115,7 @@ impl HostBlob {
             blobs.push(HostBlob {
                 id: Some(FKey::from_id(ID::from(row.id))),
                 name: row.server_name,
-                arch: Arch::from_str(&row.arch)?,
+                arch: row.arch,
                 flavor: FKey::from_id(ID::from(row.flavor)),
                 ipmi_fqdn: row.ipmi_fqdn,
                 allocation: match row.allocation_ended {
@@ -122,8 +125,8 @@ impl HostBlob {
                     }
                     None => {
                         // If ended is null it means one of two things
-                        row.reason_started.map(|reason| {
-                            serde_json::from_str(&reason)
+                        row.reason_started.as_ref().map(|reason| {
+                            serde_json::from_str(reason)
                                 .unwrap_or(AllocationReason::ForMaintenance)
                         })
                     }
@@ -175,11 +178,15 @@ pub struct FlavorBlob {
     pub interfaces: Vec<InterfaceBlob>,
     pub images: Vec<ImageBlob>,
     pub available_count: usize,
-    pub cpu_count: usize,     // Max 4.294967295 Billion
-    pub ram: DataValue,       // Max 4.294 Petabytes in gig
-    pub root_size: DataValue, // Max 4.294 Exabytes in gig
-    pub disk_size: DataValue, // Max 4.294 Exabytes in gig
-    pub swap_size: DataValue, // Max 9.223372036854775807 Exabytes in gig
+    pub cpu_count: Option<i32>,
+    pub cpu_frequency_mhz: Option<i32>,
+    pub cpu_model: Option<String>,
+    pub ram_bytes: Option<i64>,
+    pub root_size_bytes: Option<i64>,
+    pub disk_size_bytes: Option<i64>,
+    pub storage_type: Option<StorageType>,
+    pub network_speed_mbps: Option<i32>,
+    pub network_interfaces: Option<i32>,
 }
 
 /// Full details of an interface on a given Flavor

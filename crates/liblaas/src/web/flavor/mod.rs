@@ -163,10 +163,14 @@ async fn build_flavor_blobs(
                 images,
                 available_count: available_count.get(&f.id).copied().unwrap_or(0),
                 cpu_count: f.cpu_count,
-                ram: f.ram,
-                root_size: f.root_size,
-                disk_size: f.disk_size,
-                swap_size: f.swap_size,
+                cpu_frequency_mhz: f.cpu_frequency_mhz,
+                cpu_model: f.cpu_model,
+                ram_bytes: f.ram_bytes,
+                root_size_bytes: f.root_size_bytes,
+                disk_size_bytes: f.disk_size_bytes,
+                storage_type: f.storage_type,
+                network_speed_mbps: f.network_speed_mbps,
+                network_interfaces: f.network_interfaces,
             });
         }
     }
@@ -256,7 +260,8 @@ pub async fn list_images() -> Result<Json<Vec<ImageBlob>>, WebError> {
 
     let mut image_blobs: Vec<ImageBlob> = vec![];
 
-    for image in image_row {
+    for image_row in image_row {
+        let image = image_row.into_inner();
         image_blobs.push(ImageBlob {
             image_id: image.id,
             name: image.name.clone(),
@@ -273,7 +278,7 @@ pub async fn list_images() -> Result<Json<Vec<ImageBlob>>, WebError> {
 
 pub fn routes(_state: AppState) -> ApiRouter {
     ApiRouter::new()
-        .api_route("/:lab_name", get(list_flavors))
-        .api_route("/:lab_name/hosts", get(list_hosts))
         .api_route("/images", get(list_images))
+        .api_route("/:lab_name/hosts", get(list_hosts))
+        .api_route("/:lab_name", get(list_flavors))
 }

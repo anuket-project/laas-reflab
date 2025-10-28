@@ -1,24 +1,34 @@
 use crate::prelude::{InventoryError, SwitchYaml};
 use models::inventory::Switch;
-use sqlx::PgPool;
+use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
 use dal::FKey;
 
 /// Insert a new [`Switch`] from a [`SwitchYaml`].
-pub async fn create_switch(pool: &PgPool, yaml: &SwitchYaml) -> Result<Switch, InventoryError> {
-    let os_id = sqlx::query_scalar!(
-        r#"
-        SELECT id FROM switch_os WHERE os_type = $1
-        "#,
-        yaml.switch_os
-    )
-    .fetch_one(pool)
-    .await
-    .map_err(|e| InventoryError::Sqlx {
-        context: format!("Fetching switch OS `{}`", yaml.switch_os),
-        source: e,
-    })?;
+pub async fn create_switch(
+    transaction: &mut Transaction<'_, Postgres>,
+    yaml: &SwitchYaml,
+) -> Result<Switch, InventoryError> {
+    // handle switch_os
+    let os_id = if yaml.switch_os.is_empty() {
+        None
+    } else {
+        Some(
+            sqlx::query_scalar!(
+                r#"
+                SELECT id FROM switch_os WHERE os_type = $1
+                "#,
+                yaml.switch_os
+            )
+            .fetch_one(&mut **transaction)
+            .await
+            .map_err(|e| InventoryError::Sqlx {
+                context: format!("Fetching switch OS `{}`", yaml.switch_os),
+                source: e,
+            })?,
+        )
+    };
 
     let row = sqlx::query!(
         r#"
@@ -30,8 +40,7 @@ pub async fn create_switch(pool: &PgPool, yaml: &SwitchYaml) -> Result<Switch, I
           switch_pass,
           switch_os
         ) VALUES (
-          $1, $2, $3, $4, $5,
-          (SELECT id FROM switch_os WHERE os_type = $6)
+          $1, $2, $3, $4, $5, $6
         )
         RETURNING
           id,
@@ -46,9 +55,9 @@ pub async fn create_switch(pool: &PgPool, yaml: &SwitchYaml) -> Result<Switch, I
         yaml.ip.to_string(), // $3
         yaml.username,       // $4
         yaml.password,       // $5
-        yaml.switch_os       // $6
+        os_id                // $6
     )
-    .fetch_one(pool)
+    .fetch_one(&mut **transaction)
     .await
     .map_err(|e| InventoryError::Sqlx {
         context: format!("Creating switch `{}`", yaml.name),
@@ -61,6 +70,6 @@ pub async fn create_switch(pool: &PgPool, yaml: &SwitchYaml) -> Result<Switch, I
         ip: row.ip.to_string(),
         user: row.user,
         pass: row.pass,
-        switch_os: Some(FKey::from_id(os_id.into())),
+        switch_os: os_id.map(|id| FKey::from_id(id.into())),
     })
 }

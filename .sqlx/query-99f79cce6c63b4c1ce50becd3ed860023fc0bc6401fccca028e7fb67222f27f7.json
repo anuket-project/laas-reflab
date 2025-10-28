@@ -1,0 +1,57 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO switches (\n          id,\n          name,\n          ip,\n          switch_user,\n          switch_pass,\n          switch_os\n        ) VALUES (\n          $1, $2, $3, $4, $5, $6\n        )\n        RETURNING\n          id,\n          name,\n          ip,\n          switch_user AS user,\n          switch_pass AS pass,\n          switch_os\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "ip",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "user",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "pass",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "switch_os",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "99f79cce6c63b4c1ce50becd3ed860023fc0bc6401fccca028e7fb67222f27f7"
+}

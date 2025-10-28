@@ -103,6 +103,10 @@ backtrace = "*"
 thiserror = "1.0.32"
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
+
+# types
+http = { version = "1.3.1" }
+http-serde = { version = "2.1.1" }
 base64 = "0.22.1"
 chrono = { version = "0.4", features = ["serde", "clock"] }
 dashmap = "5.4.0"
@@ -116,7 +120,6 @@ uuid = { version = "*", features = [
 macaddr = { version = "1.0", features = ["serde_std"] }
 mac_address = { version = "1.1.8", features = ["serde"] }
 http-body = "*"
-
 # misc utils
 dotenv = "0.15.0"                                    # environment variables
 derive_more = "0.99.11"                              # useful derive macros
@@ -142,6 +145,7 @@ tempdir = "0.3.7"                                    # temporary directories
 ureq = { version = "2.6", features = ["json"] }      # HTTP client
 url = "*"                                            # URL parsing
 colored = { version = "3.0" }                        # colored output
+indicatif = { version = "0.17" }                     # progress bars
 
 # testing
 proptest = { version = "1.6.0" }

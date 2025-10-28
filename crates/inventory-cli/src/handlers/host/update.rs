@@ -1,9 +1,12 @@
 use crate::prelude::{HostYaml, InventoryError};
 
 use serde_json::json;
-use sqlx::PgPool;
+use sqlx::{Postgres, Transaction};
 
-pub async fn update_host(pool: &PgPool, yaml: &HostYaml) -> Result<(), InventoryError> {
+pub async fn update_host(
+    transaction: &mut Transaction<'_, Postgres>,
+    yaml: &HostYaml,
+) -> Result<(), InventoryError> {
     sqlx::query!(
         r#"
     UPDATE hosts
@@ -30,14 +33,12 @@ pub async fn update_host(pool: &PgPool, yaml: &HostYaml) -> Result<(), Inventory
         yaml.ipmi_yaml.pass,                             // $9: VARCHAR → String
         json!([yaml.project]),                           // $10: JSONB []   → String
     )
-    .execute(pool)
+    .execute(&mut **transaction)
     .await
     .map_err(|e| InventoryError::Sqlx {
         context: "While updating host record".into(),
         source: e,
     })?;
-
-    // there will be a seperate function to handle interfaces
 
     Ok(())
 }

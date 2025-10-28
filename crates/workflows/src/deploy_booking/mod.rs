@@ -1247,7 +1247,7 @@ async fn ci_serialize_runcmds(
         .get(transaction)
         .await
         .unwrap()
-        .cobbler_name
+        .name
         .clone()
         .to_lowercase();
 

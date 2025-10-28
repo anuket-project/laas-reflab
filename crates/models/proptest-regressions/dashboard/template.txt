@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc e1582f02f77b57e281fbe3fb647bb3bfc4aaec42dec14098081ba9d2ad91f35b # shrinks to template = Template { id: [Fk<models::dashboard::template::Template> -> 526eb7b8-6586-4ddb-979c-33642e03a25a], name: "", deleted: false, description: "", owner: None, public: false, networks: [], hosts: [], lab: [Fk<models::inventory::lab::Lab> -> 6b9bffeb-5af6-4a34-9dde-8d1866ae7cc7] }

@@ -3,11 +3,10 @@ use serde::{Deserialize, Serialize};
 use sqlx;
 use sqlx::PgPool;
 use std::collections::HashMap;
-use std::str::FromStr;
 
 use crate::{
     dashboard::{image::Distro, Image},
-    inventory::{Arch, DataValue},
+    inventory::{Arch, StorageType},
 };
 
 mod extra_info;
@@ -17,20 +16,23 @@ pub use extra_info::ExtraFlavorInfo;
 pub use interface::{CardType, InterfaceFlavor};
 
 // Flavor io used to create an instance
-#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Default, sqlx::FromRow)]
 pub struct Flavor {
     pub id: FKey<Flavor>,
-
-    pub arch: Arch,
     pub name: String,
-    pub public: bool,
-    pub cpu_count: usize,
-    pub ram: DataValue,
-    pub root_size: DataValue,
-    pub disk_size: DataValue,
-    pub swap_size: DataValue,
-    pub brand: String,
-    pub model: String,
+    pub description: Option<String>,
+    pub arch: Arch,
+    pub cpu_count: Option<i32>,
+    pub cpu_frequency_mhz: Option<i32>,
+    pub cpu_model: Option<String>,
+    pub ram_bytes: Option<i64>,
+    pub root_size_bytes: Option<i64>,
+    pub disk_size_bytes: Option<i64>,
+    pub storage_type: Option<StorageType>,
+    pub network_speed_mbps: Option<i32>,
+    pub network_interfaces: Option<i32>,
+    pub brand: Option<String>,
+    pub model: Option<String>,
 }
 
 impl DBTable for Flavor {
@@ -49,17 +51,18 @@ impl DBTable for Flavor {
     fn to_rowlike(&self) -> Result<HashMap<&str, Box<dyn ToSqlObject>>, anyhow::Error> {
         let c: [(&str, Box<dyn ToSqlObject>); _] = [
             ("id", Box::new(self.id)),
-            ("arch", Box::new(self.arch.to_string())),
             ("name", Box::new(self.name.clone())),
-            ("public", Box::new(self.public)),
-            (
-                "cpu_count",
-                Box::new(serde_json::to_value(self.cpu_count as i64)?),
-            ),
-            ("ram", self.ram.to_sqlval()?),
-            ("root_size", self.root_size.to_sqlval()?),
-            ("disk_size", self.disk_size.to_sqlval()?),
-            ("swap_size", self.swap_size.to_sqlval()?),
+            ("description", Box::new(self.description.clone())),
+            ("arch", Box::new(self.arch)),
+            ("cpu_count", Box::new(self.cpu_count)),
+            ("cpu_frequency_mhz", Box::new(self.cpu_frequency_mhz)),
+            ("cpu_model", Box::new(self.cpu_model.clone())),
+            ("ram_bytes", Box::new(self.ram_bytes)),
+            ("root_size_bytes", Box::new(self.root_size_bytes)),
+            ("disk_size_bytes", Box::new(self.disk_size_bytes)),
+            ("storage_type", Box::new(self.storage_type)),
+            ("network_speed_mbps", Box::new(self.network_speed_mbps)),
+            ("network_interfaces", Box::new(self.network_interfaces)),
             ("brand", Box::new(self.brand.clone())),
             ("model", Box::new(self.model.clone())),
         ];
@@ -69,14 +72,18 @@ impl DBTable for Flavor {
     fn from_row(row: tokio_postgres::Row) -> Result<ExistingRow<Self>, anyhow::Error> {
         Ok(ExistingRow::from_existing(Self {
             id: row.try_get("id")?,
-            arch: Arch::from_str(row.try_get("arch")?)?,
             name: row.try_get("name")?,
-            public: row.try_get("public")?,
-            cpu_count: serde_json::from_value::<i64>(row.try_get("cpu_count")?)? as usize,
-            ram: DataValue::from_sqlval(row.try_get("ram")?)?,
-            root_size: DataValue::from_sqlval(row.try_get("root_size")?)?,
-            disk_size: DataValue::from_sqlval(row.try_get("disk_size")?)?,
-            swap_size: DataValue::from_sqlval(row.try_get("swap_size")?)?,
+            description: row.try_get("description")?,
+            arch: row.try_get::<_, Arch>("arch")?,
+            cpu_count: row.try_get("cpu_count")?,
+            cpu_frequency_mhz: row.try_get("cpu_frequency_mhz")?,
+            cpu_model: row.try_get("cpu_model")?,
+            ram_bytes: row.try_get("ram_bytes")?,
+            root_size_bytes: row.try_get("root_size_bytes")?,
+            disk_size_bytes: row.try_get("disk_size_bytes")?,
+            storage_type: row.try_get("storage_type")?,
+            network_speed_mbps: row.try_get("network_speed_mbps")?,
+            network_interfaces: row.try_get("network_interfaces")?,
             brand: row.try_get("brand")?,
             model: row.try_get("model")?,
         }))
@@ -93,7 +100,7 @@ impl Flavor {
 
     pub async fn get_images(&self, pool: &PgPool) -> Vec<Image> {
         let image_records = sqlx::query!(
-            "SELECT * FROM images where $1=ANY(flavors)",
+            r#"SELECT id, name, deleted, flavors, distro as "distro: Distro", cobbler_name, version, arch as "arch: Arch", http_unattended_install_config_path, http_iso_path, tftp_kernel_path, tftp_initrd_paths FROM images where $1=ANY(flavors)"#,
             self.id().into_uuid()
         )
         .fetch_all(pool)
@@ -111,17 +118,34 @@ impl Flavor {
                 flavors.push(FKey::from_id(ID::from(flavor_uuid)));
             }
 
+            let tftp_initrd_paths: Vec<http::Uri> = image_record
+                .tftp_initrd_paths
+                .into_iter()
+                .filter_map(|s| s.parse().ok())
+                .collect();
+
             let image: Image = Image {
                 id: FKey::from_id(ID::from(image_record.id)),
-                owner: image_record.owner,
                 name: image_record.name,
                 deleted: image_record.deleted,
-                cobbler_name: image_record.cobbler_name,
-                public: image_record.public,
                 flavors,
-                distro: Distro::from_str(image_record.distro.as_str()).unwrap(),
+                distro: image_record.distro,
                 version: image_record.version,
-                arch: Arch::from_str(image_record.arch.as_str()).unwrap(),
+                arch: image_record.arch,
+                cobbler_name: image_record.cobbler_name,
+                http_unattended_install_config_path: image_record
+                    .http_unattended_install_config_path
+                    .parse()
+                    .unwrap_or_else(|_| "/".parse().unwrap()),
+                http_iso_path: image_record
+                    .http_iso_path
+                    .parse()
+                    .unwrap_or_else(|_| "/".parse().unwrap()),
+                tftp_kernel_path: image_record
+                    .tftp_kernel_path
+                    .parse()
+                    .unwrap_or_else(|_| "/".parse().unwrap()),
+                tftp_initrd_paths,
             };
 
             ret_image_vec.push(image);
@@ -154,42 +178,59 @@ mod tests {
         type Strategy = BoxedStrategy<Self>;
 
         fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-            (
-                any::<FKey<Flavor>>(), // id
-                any::<Arch>(),         // arch
-                any::<String>(),       // name
-                any::<bool>(),         // public
-                (1..=128usize),        // cpu_count
-                any::<DataValue>(),    // ram
-                any::<DataValue>(),    // root_size
-                any::<DataValue>(),    // disk_size
-                any::<DataValue>(),    // swap_size
-                any::<String>(),       // brand
-                any::<String>(),       // model
-            )
+            // WARNING: proptest only works with tuples of 16 elements or less, this must be broken
+            // into two parts.
+            let first = (
+                any::<FKey<Flavor>>(),   // id
+                "[a-zA-Z]{1,20}",        // name
+                any::<Option<String>>(), // description
+                any::<Arch>(),           // arch
+                any::<Option<i32>>(),    // cpu_count
+                any::<Option<i32>>(),    // cpu_frequency_mhz
+                any::<Option<String>>(), // cpu_model
+                any::<Option<i64>>(),    // ram_bytes
+                any::<Option<i64>>(),    // root_size_bytes
+                any::<Option<i64>>(),    // disk_size_bytes
+            );
+
+            let second = (
+                prop_oneof![Just(None), any::<StorageType>().prop_map(Some)].boxed(), // storage_type
+                any::<Option<i32>>(),    // network_speed_mbps
+                any::<Option<i32>>(),    // network_interfaces
+                any::<Option<String>>(), // brand
+                any::<Option<String>>(), // model
+            );
+
+            (first, second)
                 .prop_map(
                     |(
-                        id,
-                        arch,
-                        name,
-                        public,
-                        cpu_count,
-                        ram,
-                        root_size,
-                        disk_size,
-                        swap_size,
-                        brand,
-                        model,
+                        (
+                            id,
+                            name,
+                            description,
+                            arch,
+                            cpu_count,
+                            cpu_frequency_mhz,
+                            cpu_model,
+                            ram_bytes,
+                            root_size_bytes,
+                            disk_size_bytes,
+                        ),
+                        (storage_type, network_speed_mbps, network_interfaces, brand, model),
                     )| Flavor {
                         id,
-                        arch,
                         name,
-                        public,
+                        description,
+                        arch,
                         cpu_count,
-                        ram,
-                        root_size,
-                        disk_size,
-                        swap_size,
+                        cpu_frequency_mhz,
+                        cpu_model,
+                        ram_bytes,
+                        root_size_bytes,
+                        disk_size_bytes,
+                        storage_type,
+                        network_speed_mbps,
+                        network_interfaces,
                         brand,
                         model,
                     },

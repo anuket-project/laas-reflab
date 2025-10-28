@@ -1,12 +1,33 @@
 use crate::prelude::{HostYaml, InventoryError};
 
 use serde_json::json;
-use sqlx::PgPool;
+use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
-/// Insert a brand-new host row into `hosts`.
-pub async fn create_host(pool: &PgPool, yaml: &HostYaml) -> Result<(), InventoryError> {
+/// Insert a new host row into `hosts`.
+pub async fn create_host(transaction: &mut Transaction<'_, Postgres>, yaml: &HostYaml) -> Result<(), InventoryError> {
     let id = Uuid::new_v4();
+
+    // make sure the flavor exists
+    let flavor_id = sqlx::query_scalar!(
+        "SELECT id FROM flavors WHERE name = $1 AND deleted = false",
+        yaml.flavor_name
+    )
+    .fetch_optional(&mut **transaction)
+    .await
+    .map_err(|e| InventoryError::Sqlx {
+        context: format!(
+            "While looking up flavor '{}' for host '{}'",
+            yaml.flavor_name, yaml.server_name
+        ),
+        source: e,
+    })?
+    .ok_or_else(|| {
+        InventoryError::NotFound(format!(
+            "Flavor '{}' not found for host '{}'. Make sure the flavor is defined in flavors.yaml",
+            yaml.flavor_name, yaml.server_name
+        ))
+    })?;
 
     sqlx::query!(
         r#"
@@ -23,15 +44,13 @@ pub async fn create_host(pool: &PgPool, yaml: &HostYaml) -> Result<(), Inventory
               ipmi_pass,
               projects
             ) VALUES (
-              $1, $2, $3,
-              (SELECT id FROM flavors WHERE name = $4),
-              $5, $6, $7, $8, $9, $10, $11
+              $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
             )
             "#,
         id,                                                               // $1: UUID
         yaml.server_name,                                                 // $2: VARCHAR
         format!("{}.{}", yaml.server_name, yaml.domain),                  // $3: VARCHAR
-        yaml.flavor_name,                                                 // $4: VARCHAR → flavor fk
+        flavor_id,                                                        // $4: UUID → flavor fk
         yaml.iol_id,                                                      // $5: VARCHAR
         yaml.serial_number,                                               // $6: VARCHAR
         format!("{}.{}", yaml.ipmi_yaml.hostname, yaml.ipmi_yaml.domain), // $7: VARCHAR
@@ -40,10 +59,10 @@ pub async fn create_host(pool: &PgPool, yaml: &HostYaml) -> Result<(), Inventory
         yaml.ipmi_yaml.pass,                                              // $10: VARCHAR
         json!([yaml.project]),                                            // $11: [JSONB]
     )
-    .execute(pool)
+    .execute(&mut **transaction)
     .await
     .map_err(|e| InventoryError::Sqlx {
-        context: "While inserting new host".into(),
+        context: format!("While inserting host '{}'", yaml.server_name),
         source: e,
     })?;
 

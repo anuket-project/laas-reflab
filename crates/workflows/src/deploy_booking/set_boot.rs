@@ -97,7 +97,6 @@ impl AsyncRunnable for SetBoot {
 
         let result = match arch {
             Arch::Aarch64 => set_ipmi_boot(&host_url, host, self.persistent, self.boot_to).await,
-            Arch::X86 => set_hpe_boot(&host_url, host, self.persistent, self.boot_to).await,
             Arch::X86_64 => set_hpe_boot(&host_url, host, self.persistent, self.boot_to).await,
         };
 

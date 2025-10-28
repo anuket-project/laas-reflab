@@ -1,8 +1,11 @@
 use crate::prelude::InventoryError;
 
-use sqlx::PgPool;
+use sqlx::{Postgres, Transaction};
 
-pub async fn delete_host_by_name(pool: &PgPool, server_name: &str) -> Result<(), InventoryError> {
+pub async fn delete_host_by_name(
+    transaction: &mut Transaction<'_, Postgres>,
+    server_name: &str,
+) -> Result<(), InventoryError> {
     let host = sqlx::query!(
         r#"
         SELECT id
@@ -12,7 +15,7 @@ pub async fn delete_host_by_name(pool: &PgPool, server_name: &str) -> Result<(),
         "#,
         server_name
     )
-    .fetch_optional(pool)
+    .fetch_optional(&mut **transaction)
     .await
     .map_err(|e| InventoryError::Sqlx {
         context: format!("While fetching host `{}`", server_name),
@@ -33,7 +36,7 @@ pub async fn delete_host_by_name(pool: &PgPool, server_name: &str) -> Result<(),
         "#,
         host.id
     )
-    .execute(pool)
+    .execute(&mut **transaction)
     .await
     .map_err(|e| InventoryError::Sqlx {
         context: "While soft‐deleting host".into(),

@@ -1,0 +1,27 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE flavors\n        SET\n            arch = $2::text::arch,\n            brand = $3,\n            model = $4,\n            cpu_count = $5,\n            description = $6,\n            cpu_frequency_mhz = $7,\n            cpu_model = $8,\n            ram_bytes = $9,\n            root_size_bytes = $10,\n            disk_size_bytes = $11,\n            storage_type = $12::text::storage_type,\n            network_speed_mbps = $13,\n            network_interfaces = $14,\n            deleted = false\n        WHERE name = $1;\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Varchar",
+        "Varchar",
+        "Int4",
+        "Text",
+        "Int4",
+        "Text",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Text",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0d1b112444605912382af86248853bc31150bfac3dd9d5c1360d1f4d490c9a44"
+}

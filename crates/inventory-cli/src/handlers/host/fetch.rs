@@ -22,11 +22,10 @@ pub async fn fetch_host_map(pool: &PgPool) -> Result<HashMap<String, Host>, Inve
         source: e,
     })?;
 
-    // map of server_name -> Host
+    // server_name to `Host`
     let mut map = HashMap::new();
 
     for r in rows {
-        // convert the row
         let ipmi_mac = MacAddress::from_bytes(&r.ipmi_mac.bytes()).map_err(|e| {
             InventoryError::InvalidMac {
                 server_name: r.server_name.clone(),
@@ -49,73 +48,10 @@ pub async fn fetch_host_map(pool: &PgPool) -> Result<HashMap<String, Host>, Inve
             sda_uefi_device: r.sda_uefi_device,
         };
 
-        // insert into the map, error if there is a duplicate
         if map.insert(host.server_name.clone(), host).is_some() {
             return Err(InventoryError::DuplicateHost(r.server_name));
         }
     }
 
     Ok(map)
-}
-
-#[allow(dead_code)]
-pub async fn fetch_host_by_name(pool: &PgPool, server_name: &str) -> Result<Host, InventoryError> {
-    let row = sqlx::query!(
-        r#"
-        SELECT
-            id,
-            server_name,
-            flavor,
-            serial,
-            ipmi_fqdn,
-            iol_id,
-            ipmi_mac,
-            ipmi_user,
-            ipmi_pass,
-            projects,
-            fqdn,
-            sda_uefi_device
-        FROM hosts
-        WHERE server_name = $1 AND DELETED = false
-        "#,
-        server_name,
-    )
-    .fetch_one(pool)
-    .await
-    .map_err(|e| InventoryError::Sqlx {
-        context: format!("While fetching host `{}`", server_name),
-        source: e,
-    })?;
-
-    // convert `macaddr` → `mac_address::MacAddress`
-    let ipmi_mac =
-        MacAddress::from_bytes(&row.ipmi_mac.bytes()).map_err(|e| InventoryError::InvalidMac {
-            server_name: row.server_name.clone(),
-            raw: row.ipmi_mac.to_string(),
-            source: e,
-        })?;
-
-    // convert JSONB → Vec<String>
-    let projects: Vec<String> =
-        serde_json::from_value(row.projects).map_err(|e| InventoryError::InvalidProjects {
-            server_name: row.server_name.clone(),
-            source: e,
-        })?;
-
-    let host = Host {
-        id: FKey::from_id(ID::from(row.id)),
-        server_name: row.server_name.clone(),
-        flavor: FKey::from_id(ID::from(row.flavor)),
-        serial: row.serial,
-        ipmi_fqdn: row.ipmi_fqdn,
-        iol_id: row.iol_id,
-        ipmi_mac,
-        ipmi_user: row.ipmi_user,
-        ipmi_pass: row.ipmi_pass,
-        fqdn: row.fqdn,
-        projects,
-        sda_uefi_device: row.sda_uefi_device,
-    };
-
-    Ok(host)
 }

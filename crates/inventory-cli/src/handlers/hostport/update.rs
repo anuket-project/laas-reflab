@@ -1,15 +1,14 @@
-use sqlx::PgPool;
+use sqlx::{Postgres, Transaction};
 
 use dal::FKey;
 use models::inventory::DataValue;
-use uuid::Uuid;
 
 use crate::prelude::{HostPort, InterfaceYaml, InventoryError};
 
 /// Update all columns of a [`HostPort`] identified by host.server_name + hostport.name
 /// Returns the fully updated [`HostPort`].
 pub async fn update_hostport_by_name(
-    pool: &PgPool,
+    transaction: &mut Transaction<'_, Postgres>,
     yaml: &InterfaceYaml,
     server_name: &str,
     _flavor_name: &str,
@@ -52,7 +51,7 @@ pub async fn update_hostport_by_name(
         yaml.bmc_vlan_id,                // $8: bmc_vlan_id
         yaml.management_vlan_id,         // $9 management_vlan_id
     )
-    .fetch_one(pool)
+    .fetch_one(&mut **transaction)
     .await
     .map_err(|e| InventoryError::Sqlx {
         context: format!("Updating hostport `{}` on `{}`", yaml.name, server_name),
@@ -70,12 +69,23 @@ pub async fn update_hostport_by_name(
         .switchport
         .map(|switchport| FKey::from_id(switchport.into()));
 
+    // safely handle serde_json::NULL
+    let speed = if row.speed.is_null() {
+        DataValue::default()
+    } else {
+        DataValue::from_sqlval(row.speed).map_err(|e| InventoryError::DataValueDeserialization {
+            context: format!("hostport '{}' on host '{}'", row.name, server_name),
+            column: "speed".to_string(),
+            source: e,
+        })?
+    };
+
     let hp = HostPort {
         id: FKey::from_id(row.id.into()),
         on_host: FKey::from_id(row.on_host.into()),
         switchport: switchport_opt,
-        name: row.name,
-        speed: DataValue::from_sqlval(row.speed).map_err(InventoryError::Anyhow)?,
+        name: row.name.clone(),
+        speed,
         mac,
         switch: row.switch,
         bus_addr: row.bus_addr,
@@ -84,99 +94,4 @@ pub async fn update_hostport_by_name(
     };
 
     Ok(hp)
-}
-
-/// Set all `HostPort.switchports` to NULL
-pub async fn clear_switchport_foreignkeys(pool: &PgPool) -> Result<(), InventoryError> {
-    println!("Clearing switchport foreign keys in host_ports...");
-    let query = sqlx::query!(
-        r#"
-        UPDATE host_ports
-           SET switchport = NULL
-         WHERE switchport IS NOT NULL
-        "#
-    )
-    .execute(pool)
-    .await
-    .map_err(|e| InventoryError::Sqlx {
-        context: "Clearing switchport foreign keys".to_string(),
-        source: e,
-    })?;
-
-    println!(
-        "Cleared {} switchport foreign keys in host_ports.",
-        query.rows_affected()
-    );
-
-    Ok(())
-}
-
-/// Set a specific `HostPort.switchport` to NULL
-#[allow(dead_code)]
-pub async fn clear_switchport_for_hostport(
-    pool: &PgPool,
-    hostport_id: &Uuid,
-) -> Result<(), InventoryError> {
-    println!(
-        "Clearing switchport foreign key for hostport {}...",
-        hostport_id
-    );
-    let query = sqlx::query!(
-        r#"
-        UPDATE host_ports
-           SET switchport = NULL
-         WHERE id = $1
-        "#,
-        hostport_id
-    )
-    .execute(pool)
-    .await
-    .map_err(|e| InventoryError::Sqlx {
-        context: format!(
-            "Clearing switchport foreign key for hostport {}",
-            hostport_id
-        ),
-        source: e,
-    })?;
-
-    if query.rows_affected() == 0 {
-        return Err(InventoryError::NotFound(format!(
-            "No HostPort found with ID {}",
-            hostport_id
-        )));
-    }
-
-    println!(
-        "Cleared switchport foreign key for hostport {}.",
-        hostport_id
-    );
-    Ok(())
-}
-
-/// Set hostport foreign key
-#[allow(dead_code)]
-pub async fn set_hostport_foreignkey(
-    pool: &PgPool,
-    interface_yaml: InterfaceYaml,
-    switchport_name: &str,
-    switch_name: &str,
-) -> Result<(), InventoryError> {
-    sqlx::query!(
-        r#"
-        UPDATE host_ports
-           SET switchport = (SELECT id FROM switchports WHERE name = $1 AND for_switch = (SELECT id FROM switches WHERE name = $3))
-           WHERE mac = $2
-        "#,
-        switchport_name, // $1: switchport name
-        interface_yaml.mac, // $2: hostport name
-        switch_name, // $3: switch name
-    ).execute(pool).await.map_err(|e| InventoryError::Sqlx {
-        context: format!(
-            "Setting switchport foreign key for hostport with mac {}",
-            interface_yaml.mac
-        ),
-        source: e,
-    })?;
-
-    Ok(())
 }

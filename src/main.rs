@@ -199,18 +199,13 @@ async fn main() {
             println!("Starting in Server Mode");
         }
         Some(Command::Inventory { action }) => match action {
-            InventoryCommand::Validate { path, detailed } => {
+            InventoryCommand::Validate { path, verbose } => {
                 println!("Validating inventory");
-                match_and_print(validate_inventory(&path, detailed).await);
+                match_and_print(validate_inventory(&path, verbose).await);
             }
-            InventoryCommand::Import {
-                path,
-                detailed,
-                yes,
-                ignore_errors,
-            } => {
+            InventoryCommand::Import { path, verbose, yes } => {
                 println!("Importing inventory");
-                match_and_print(import_inventory(&path, yes, detailed, ignore_errors).await);
+                match_and_print(import_inventory(&path, yes, verbose).await);
             }
         },
         None => {

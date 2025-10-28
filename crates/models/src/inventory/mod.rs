@@ -9,5 +9,5 @@ pub use flavor::{CardType, ExtraFlavorInfo, Flavor, InterfaceFlavor};
 pub use host::{Host, HostPort};
 pub use lab::Lab;
 pub use switch::{Switch, SwitchOS, SwitchPort};
-pub use types::{Arch, BootTo, DataUnit, DataValue, IPInfo, IPNetwork};
+pub use types::{Arch, BootTo, DataUnit, DataValue, IPInfo, IPNetwork, StorageType};
 pub use vlan::Vlan;

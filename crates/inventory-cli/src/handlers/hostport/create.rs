@@ -1,18 +1,18 @@
-use crate::prelude::{HostPort, InterfaceYaml, InventoryError};
-use sqlx::PgPool;
+use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
 use dal::FKey;
 use models::inventory::DataValue;
 
-/// Create a single [`HostPort`] for one InterfaceYaml
+use crate::prelude::{HostPort, InterfaceYaml, InventoryError};
+
+/// Create a single [`HostPort`] for one [`InterfaceYaml`]
 pub async fn create_hostport_from_iface(
-    pool: &PgPool,
+    transaction: &mut Transaction<'_, Postgres>,
     yaml: &InterfaceYaml,
     server_name: &str,
     _flavor_name: &str,
 ) -> Result<HostPort, InventoryError> {
-    // perform the insert
     let row = sqlx::query!(
         r#"
         INSERT INTO host_ports (
@@ -61,7 +61,7 @@ pub async fn create_hostport_from_iface(
         yaml.bmc_vlan_id,                   // $9: bmc_vlan_id
         yaml.management_vlan_id,            // $10: management_vlan_id
     )
-    .fetch_one(pool)
+    .fetch_one(&mut **transaction)
     .await
     .map_err(|e| InventoryError::Sqlx {
         context: format!("Inserting hostport `{}`", yaml.name),
@@ -76,15 +76,23 @@ pub async fn create_hostport_from_iface(
         .switchport
         .map(|switchport| FKey::from_id(switchport.into()));
 
+    // safely handle serde_json::NULL
+    let speed = if row.speed.is_null() {
+        DataValue::default()
+    } else {
+        DataValue::from_sqlval(row.speed).map_err(|e| InventoryError::DataValueDeserialization {
+            context: format!("hostport '{}' on host '{}'", row.name, server_name),
+            column: "speed".to_string(),
+            source: e,
+        })?
+    };
+
     let hp = HostPort {
         id: FKey::from_id(row.id.into()),
         on_host: FKey::from_id(row.on_host.into()),
         switchport: switchport_opt,
-        name: row.name,
-        // TODO: This should not really be able to fail
-        speed: Result::map_err(DataValue::from_sqlval(row.speed), |e| {
-            InventoryError::Anyhow(e)
-        })?,
+        name: row.name.clone(),
+        speed,
         mac,
         switch: row.switch,
         bus_addr: row.bus_addr,

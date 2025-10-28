@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 5ef3cf219a1195f239e4ef4cc361f968a32aee72e47c242ef4c1bbdb7f8bb4db # shrinks to lab = Lab { id: [Fk<models::inventory::lab::Lab> -> 0aaa3a24-0586-485e-9cf2-f77fc81c213f], name: "A", location: "A", email: "_@0.AA", phone: "𑯰𑛐꯰𞗱੦0໐᧐𑥐𑄶", is_dynamic: false }

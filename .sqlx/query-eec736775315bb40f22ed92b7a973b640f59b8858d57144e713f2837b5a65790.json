@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT ika.id, ika.for_image, ika._key, ika._value\n        FROM image_kernel_args ika\n        INNER JOIN images i ON ika.for_image = i.id\n        WHERE i.deleted = false\n        ORDER BY i.name, ika._key\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "for_image",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "_value",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "eec736775315bb40f22ed92b7a973b640f59b8858d57144e713f2837b5a65790"
+}

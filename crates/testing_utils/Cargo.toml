@@ -7,7 +7,7 @@ edition = "2021"
 anyhow = { workspace = true }
 sqlx = { workspace = true }
 once_cell = { workspace = true }
-ctor = "0.4.2"
+ctor = "0.5.0"
 mac_address = { workspace = true }
 color-eyre = { workspace = true }
 proptest = { workspace = true }
@@ -15,5 +15,6 @@ chrono = { workspace = true }
 eui48 = { workspace = true }
 macaddr = { workspace = true }
 serde_json = { workspace = true }
+http = { workspace = true }
 
 dal = { path = "../dal" }

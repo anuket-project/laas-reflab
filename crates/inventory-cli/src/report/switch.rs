@@ -1,10 +1,10 @@
 use crate::prelude::{
-    InventoryError, ModifiedFields, Reportable, Switch, SwitchPort, SwitchYaml, SwitchportReport,
-    switch, switchport,
+    InventoryError, ModifiedFields, Reportable, SortOrder, Switch, SwitchPort, SwitchYaml,
+    SwitchportReport, switch, switchport,
 };
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::{Postgres, Transaction};
 use std::fmt;
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
@@ -64,17 +64,29 @@ impl SwitchReport {
         }
     }
 
-    pub async fn execute_modified(&self, pool: &PgPool) -> Result<(), InventoryError> {
+    pub fn item_name(&self) -> Option<&str> {
+        match self {
+            SwitchReport::Created { switch_yaml } => Some(&switch_yaml.name),
+            SwitchReport::Modified { switch_yaml, .. } => Some(&switch_yaml.name),
+            SwitchReport::Removed { db_switch, .. } => Some(&db_switch.name),
+            SwitchReport::Unchanged => None,
+        }
+    }
+
+    pub async fn execute_modified(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+    ) -> Result<(), InventoryError> {
         if let SwitchReport::Modified {
             switch_yaml,
             switchport_reports,
             ..
         } = self
         {
-            switch::update_switch_by_name(pool, switch_yaml).await?;
+            switch::update_switch_by_name(transaction, switch_yaml).await?;
 
             for switchport_report in switchport_reports {
-                switchport_report.execute(pool).await?;
+                switchport_report.execute(transaction).await?;
             }
 
             Ok(())
@@ -86,15 +98,16 @@ impl SwitchReport {
         }
     }
 
-    pub async fn execute_created(&self, pool: &PgPool) -> Result<(), InventoryError> {
+    pub async fn execute_created(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+    ) -> Result<(), InventoryError> {
         if let SwitchReport::Created { switch_yaml } = self {
-            println!("Creating switch... {}", switch_yaml.name);
-            switch::create_switch(pool, switch_yaml).await?;
+            switch::create_switch(transaction, switch_yaml).await?;
 
-            println!("Creating switchports for switch... {}", switch_yaml.name);
             for switchport_name in &switch_yaml.switchports {
-                println!("Creating switchport... {}", switchport_name);
-                switchport::create_switchport(pool, &switch_yaml.name, switchport_name).await?;
+                switchport::create_switchport(transaction, &switch_yaml.name, switchport_name)
+                    .await?;
             }
 
             Ok(())
@@ -106,21 +119,21 @@ impl SwitchReport {
         }
     }
 
-    pub async fn execute_removed(&self, pool: &PgPool) -> Result<(), InventoryError> {
+    pub async fn execute_removed(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+    ) -> Result<(), InventoryError> {
         if let SwitchReport::Removed {
             db_switch,
             removed_switchports,
         } = self
         {
-            println!("Removing switchports from switch... {}", db_switch.name);
-
             for switchport in removed_switchports {
-                println!("Removing switchport... {}", switchport.name);
-                switchport::delete_switchport(pool, &db_switch.name, &switchport.name).await?;
+                switchport::delete_switchport(transaction, &db_switch.name, &switchport.name)
+                    .await?;
             }
-            println!("Removing switch... {}", db_switch.name);
 
-            switch::delete_switch_by_name(pool, db_switch).await
+            switch::delete_switch_by_name(transaction, db_switch).await
         } else {
             Err(InventoryError::InvalidReportType {
                 expected: "Removed",
@@ -156,18 +169,21 @@ impl Reportable for SwitchReport {
     }
     fn sort_order(&self) -> u8 {
         match self {
-            SwitchReport::Created { .. } => 0,
-            SwitchReport::Modified { .. } => 1,
-            SwitchReport::Removed { .. } => 2,
-            SwitchReport::Unchanged => 3,
+            SwitchReport::Created { .. } => SortOrder::Switch as u8,
+            SwitchReport::Modified { .. } => SortOrder::Switch as u8 + 1,
+            SwitchReport::Removed { .. } => SortOrder::Switch as u8 + 2,
+            SwitchReport::Unchanged => SortOrder::Switch as u8 + 3,
         }
     }
 
-    async fn execute(&self, pool: &PgPool) -> Result<(), InventoryError> {
+    async fn execute(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+    ) -> Result<(), InventoryError> {
         match self {
-            SwitchReport::Created { .. } => self.execute_created(pool).await,
-            SwitchReport::Modified { .. } => self.execute_modified(pool).await,
-            SwitchReport::Removed { .. } => self.execute_removed(pool).await,
+            SwitchReport::Created { .. } => self.execute_created(transaction).await,
+            SwitchReport::Modified { .. } => self.execute_modified(transaction).await,
+            SwitchReport::Removed { .. } => self.execute_removed(transaction).await,
             SwitchReport::Unchanged => self.execute_unchanged(),
         }
     }
@@ -177,34 +193,40 @@ impl fmt::Display for SwitchReport {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             SwitchReport::Created { switch_yaml } => {
-                write!(
+                writeln!(
                     f,
-                    " {} {}",
-                    "Created Switch:".green().bold(),
-                    switch_yaml.name.green(),
+                    "  {} {} [{}: {}]",
+                    "+".green().bold(),
+                    switch_yaml.name.bright_white().bold(),
+                    "ports".dimmed(),
+                    switch_yaml.switchports.len()
                 )?;
 
-                for switchport in &switch_yaml.switchports {
-                    writeln!(f, "  - {}", switchport.green())?;
+                // Display ports in compact multi-column format (10 per line)
+                if !switch_yaml.switchports.is_empty() {
+                    for chunk in switch_yaml.switchports.chunks(10) {
+                        write!(f, "      ")?;
+                        writeln!(f, "{}", chunk.join(", "))?;
+                    }
                 }
-
                 Ok(())
             }
             SwitchReport::Removed {
                 db_switch,
                 removed_switchports,
             } => {
-                write!(
+                writeln!(
                     f,
-                    " {} {}",
-                    "Removed Switch:".red().bold(),
-                    db_switch.name.red()
+                    "  {} {}",
+                    "-".red().bold(),
+                    db_switch.name.bright_white().bold()
                 )?;
-
-                for switchport in removed_switchports {
-                    writeln!(f, "  - {}", switchport.name.red())?;
-                }
-
+                writeln!(
+                    f,
+                    "      {} {} ports",
+                    "removing".dimmed(),
+                    removed_switchports.len()
+                )?;
                 Ok(())
             }
             SwitchReport::Modified {
@@ -214,9 +236,9 @@ impl fmt::Display for SwitchReport {
             } => {
                 writeln!(
                     f,
-                    " {} {}",
-                    "Modified Switch:".yellow().bold(),
-                    switch_yaml.name.yellow()
+                    "  {} {}",
+                    "~".yellow().bold(),
+                    switch_yaml.name.bright_white().bold()
                 )?;
 
                 let db_report = fields.to_string();
@@ -225,7 +247,9 @@ impl fmt::Display for SwitchReport {
                 }
 
                 for switchport_report in switchport_reports {
-                    writeln!(f, "{}", switchport_report)?;
+                    if !switchport_report.is_unchanged() {
+                        writeln!(f, "      {}: {}", "port".dimmed(), switchport_report)?;
+                    }
                 }
 
                 Ok(())

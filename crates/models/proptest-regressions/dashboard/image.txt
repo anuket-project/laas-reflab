@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc db91b9db556b73dc12abf70e2bfee376a7e31b226fde3038634d1af154c8855e # shrinks to image = Image { id: [Fk<models::dashboard::image::Image> -> 050254c2-214d-47fa-a995-f499e3917cde], name: "A", deleted: false, flavors: [], distro: Ubuntu, version: "A", arch: X86_64, http_unattended_install_config_path: /, http_iso_path: /, tftp_kernel_path: /, tftp_initrd_paths: [] }

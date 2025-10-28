@@ -10,7 +10,6 @@ use crate::prelude::{HostPort, InventoryError, SwitchPort};
 pub async fn fetch_hostport_map(
     pool: &PgPool,
 ) -> Result<HashMap<String, Vec<HostPort>>, InventoryError> {
-    // 1) Do a compile‑time‑checked query
     let rows = sqlx::query!(
         r#"
         SELECT
@@ -36,7 +35,6 @@ pub async fn fetch_hostport_map(
         source: e,
     })?;
 
-    // 2) Rebuild your HostPort structs and group by server_name
     let mut map: HashMap<String, Vec<HostPort>> = HashMap::new();
     for row in rows {
         let switchport_opt: Option<FKey<SwitchPort>> = row

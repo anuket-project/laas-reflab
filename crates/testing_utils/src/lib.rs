@@ -1,6 +1,7 @@
 use chrono::{DateTime, NaiveDateTime, Utc};
 use dal::{DBTable, EasyTransaction, FKey, SchrodingerRow};
 use eui48::MacAddress;
+use http::Uri;
 use macaddr::MacAddr6;
 use once_cell::sync::Lazy;
 use prop::collection::{hash_map, vec};
@@ -107,6 +108,16 @@ pub fn arb_json_value() -> impl Strategy<Value = Value> {
                 }
             )
         ]
+    })
+}
+
+/// Generates valid [`Uri`] values representing server paths like `/autoinstall/`
+pub fn arb_uri() -> impl Strategy<Value = Uri> {
+    // segments: letters, digits, underscores, slashes
+    // starts with '/'
+    "[/][a-z0-9_/]{0,20}".prop_map(|path| {
+        // SAFETY: regex should guarantee valid `Uri` syntax
+        path.parse::<Uri>().unwrap()
     })
 }
 

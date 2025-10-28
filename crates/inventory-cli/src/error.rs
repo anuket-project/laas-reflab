@@ -27,11 +27,34 @@ pub enum InventoryError {
         source: serde_yaml::Error,
     },
 
-    #[error("{0}")]
+    #[error("deserializing DataValue from database column '{column}' for {context}: {source}")]
+    DataValueDeserialization {
+        context: String,
+        column: String,
+        #[source]
+        source: anyhow::Error,
+    },
+
+    #[error("deserializing JSON: {0}")]
     Json(#[from] serde_json::Error),
 
-    #[error("{0}")]
-    Anyhow(#[from] anyhow::Error),
+    #[error("pending database migrations: {count} migration(s) not yet applied. Run migrations first")]
+    PendingMigrations { count: usize },
+
+    #[error("database not initialized: missing migrations table")]
+    DatabaseNotInitialized,
+
+    #[error("failed to flush stdout: {0}")]
+    StdoutFlush(#[source] std::io::Error),
+
+    #[error("failed to read user input from stdin: {0}")]
+    StdinRead(#[source] std::io::Error),
+
+    #[error("failed to rollback transaction after error: {rollback_error}. Original error: {original_error}")]
+    TransactionRollback {
+        rollback_error: String,
+        original_error: String,
+    },
 
     #[error("SQLX error: {context}: {source}")]
     Sqlx {

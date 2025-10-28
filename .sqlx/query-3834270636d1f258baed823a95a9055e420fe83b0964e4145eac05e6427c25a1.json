@@ -1,0 +1,125 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            id as \"id: dal::FKey<Flavor>\",\n            name,\n            description,\n            arch as \"arch: Arch\",\n            cpu_count,\n            cpu_frequency_mhz,\n            cpu_model,\n            ram_bytes,\n            root_size_bytes,\n            disk_size_bytes,\n            storage_type as \"storage_type: StorageType\",\n            network_speed_mbps,\n            network_interfaces,\n            brand,\n            model\n        FROM flavors\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id: dal::FKey<Flavor>",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "arch: Arch",
+        "type_info": {
+          "Custom": {
+            "name": "arch",
+            "kind": {
+              "Enum": [
+                "x86_64",
+                "aarch64"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "cpu_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "cpu_frequency_mhz",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "cpu_model",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "ram_bytes",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 8,
+        "name": "root_size_bytes",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 9,
+        "name": "disk_size_bytes",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 10,
+        "name": "storage_type: StorageType",
+        "type_info": {
+          "Custom": {
+            "name": "storage_type",
+            "kind": {
+              "Enum": [
+                "ssd",
+                "hdd",
+                "hybrid"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "network_speed_mbps",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 12,
+        "name": "network_interfaces",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 13,
+        "name": "brand",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 14,
+        "name": "model",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "3834270636d1f258baed823a95a9055e420fe83b0964e4145eac05e6427c25a1"
+}

@@ -1,10 +1,10 @@
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::{Postgres, Transaction};
 use std::fmt;
 
 use crate::prelude::{
-    HostPort, InterfaceYaml, InventoryError, ModifiedFields, Reportable, hostport,
+    HostPort, InterfaceYaml, InventoryError, ModifiedFields, Reportable, SortOrder, hostport,
 };
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
@@ -74,16 +74,24 @@ impl InterfaceReport {
         }
     }
 
-    /// Insert an Interface (HostPort) into the database from yaml.
-    pub async fn execute_created(&self, pool: &PgPool) -> Result<(), InventoryError> {
+    /// Execute a created interface report
+    pub async fn execute_created(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+    ) -> Result<(), InventoryError> {
         if let InterfaceReport::Created {
             server_name,
             flavor_name,
             interface_yaml,
         } = self
         {
-            hostport::create_hostport_from_iface(pool, interface_yaml, server_name, flavor_name)
-                .await?;
+            hostport::create_hostport_from_iface(
+                transaction,
+                interface_yaml,
+                server_name,
+                flavor_name,
+            )
+            .await?;
 
             Ok(())
         } else {
@@ -94,8 +102,11 @@ impl InterfaceReport {
         }
     }
 
-    /// Update an existing Interface (HostPort) in the database.
-    pub async fn execute_modified(&self, pool: &PgPool) -> Result<(), InventoryError> {
+    /// Execute a modified interface report
+    pub async fn execute_modified(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+    ) -> Result<(), InventoryError> {
         if let InterfaceReport::Modified {
             server_name,
             flavor_name,
@@ -103,8 +114,13 @@ impl InterfaceReport {
             interface_yaml,
         } = self
         {
-            hostport::update_hostport_by_name(pool, interface_yaml, server_name, flavor_name)
-                .await?;
+            hostport::update_hostport_by_name(
+                transaction,
+                interface_yaml,
+                server_name,
+                flavor_name,
+            )
+            .await?;
 
             Ok(())
         } else {
@@ -115,14 +131,17 @@ impl InterfaceReport {
         }
     }
 
-    /// Remove an Interface (HostPort) from the database.
-    pub async fn execute_removed(&self, pool: &PgPool) -> Result<(), InventoryError> {
+    /// Execute a removed interface report
+    pub async fn execute_removed(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+    ) -> Result<(), InventoryError> {
         if let InterfaceReport::Removed {
             server_name,
             db_interface,
         } = self
         {
-            hostport::delete_hostport_by_name(pool, server_name, db_interface).await?;
+            hostport::delete_hostport_by_name(transaction, server_name, db_interface).await?;
 
             Ok(())
         } else {
@@ -133,10 +152,9 @@ impl InterfaceReport {
         }
     }
 
-    /// Execute a no-op for an unchanged Interface (HostPort).
+    /// Execute a an unchanged interface report
     pub fn execute_unchanged(&self) -> Result<(), InventoryError> {
         if let InterfaceReport::Unchanged = self {
-            // nothing to do.
             Ok(())
         } else {
             Err(InventoryError::InvalidReportType {
@@ -150,10 +168,10 @@ impl InterfaceReport {
 impl Reportable for InterfaceReport {
     fn sort_order(&self) -> u8 {
         match self {
-            InterfaceReport::Created { .. } => 0,
-            InterfaceReport::Modified { .. } => 1,
-            InterfaceReport::Removed { .. } => 2,
-            InterfaceReport::Unchanged => 3,
+            InterfaceReport::Created { .. } => SortOrder::HostPort as u8,
+            InterfaceReport::Modified { .. } => SortOrder::HostPort as u8 + 1,
+            InterfaceReport::Removed { .. } => SortOrder::HostPort as u8 + 2,
+            InterfaceReport::Unchanged => SortOrder::HostPort as u8 + 3,
         }
     }
 
@@ -170,11 +188,14 @@ impl Reportable for InterfaceReport {
         matches!(self, InterfaceReport::Removed { .. })
     }
 
-    async fn execute(&self, pool: &PgPool) -> Result<(), InventoryError> {
+    async fn execute(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+    ) -> Result<(), InventoryError> {
         match self {
-            InterfaceReport::Created { .. } => self.execute_created(pool).await,
-            InterfaceReport::Modified { .. } => self.execute_modified(pool).await,
-            InterfaceReport::Removed { .. } => self.execute_removed(pool).await,
+            InterfaceReport::Created { .. } => self.execute_created(transaction).await,
+            InterfaceReport::Modified { .. } => self.execute_modified(transaction).await,
+            InterfaceReport::Removed { .. } => self.execute_removed(transaction).await,
             InterfaceReport::Unchanged => self.execute_unchanged(),
         }
     }
@@ -184,34 +205,25 @@ impl fmt::Display for InterfaceReport {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             InterfaceReport::Created {
-                server_name,
+                server_name: _,
                 flavor_name: _,
                 interface_yaml,
-            } => write!(
-                f,
-                " {} - {}",
-                server_name.green(),
-                interface_yaml.name.to_string().green()
-            ),
+            } => write!(f, "{}{}", "+".green(), interface_yaml.name),
             InterfaceReport::Removed {
-                server_name,
+                server_name: _,
                 db_interface,
-            } => {
-                write!(f, " {} - {}", server_name.red(), db_interface.name.red())
-            }
+            } => write!(f, "{}{}", "-".red(), db_interface.name),
             InterfaceReport::Modified {
                 flavor_name: _,
                 fields,
                 server_name: _,
                 interface_yaml,
             } => {
-                write!(f, " {}", interface_yaml.name.yellow())?;
-
+                write!(f, "{}{}", "~".yellow(), interface_yaml.name)?;
                 let db_report = fields.to_string();
                 for line in db_report.lines() {
-                    write!(f, "{}", line)?;
+                    write!(f, " {}", line)?;
                 }
-
                 Ok(())
             }
 

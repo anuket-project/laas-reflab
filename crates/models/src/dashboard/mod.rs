@@ -10,7 +10,7 @@ pub mod types;
 
 pub use aggregate::{Aggregate, AggregateConfiguration, BookingMetadata, LifeCycleState};
 pub use ci_file::Cifile;
-pub use image::Image;
+pub use image::{uri_vec_serde, Image, ImageKernelArg};
 pub use instance::Instance;
 pub use network::{import_net, Network, NetworkBlob};
 pub use network_assignment_map::NetworkAssignmentMap;

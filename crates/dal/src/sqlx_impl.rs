@@ -2,7 +2,7 @@
 //!
 //! Since normally SQLx would allow us to just use the Uuid type directly on the `id` field in our structs,
 //! this would be unnecessary if we didn't rely on our current custom ORM and DBTable trait in workflows
-//! and other various places. If we ever fully migrate to SQLx this can be removed.
+//! and various other places. If we ever fully migrate to SQLx this can be removed.
 
 use sqlx::encode::IsNull;
 use sqlx::postgres::{PgTypeInfo, PgValueRef};
