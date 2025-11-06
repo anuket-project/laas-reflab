@@ -1,11 +1,4 @@
 #![doc = include_str!("../README.md")]
-#![feature(
-    min_specialization,
-    associated_type_defaults,
-    never_type,
-    negative_impls,
-    trait_alias
-)]
 
 mod sqlx_impl;
 pub mod web;
@@ -25,7 +18,9 @@ use tokio_postgres::{types::ToSql, Client, NoTls, Transaction};
 use crate::web::{AnyWay, AnyWaySpecStr};
 use sqlx::{postgres::PgPoolOptions, PgPool};
 
-pub trait ToSqlObject = ToSql + Send + Sync + 'static;
+// stable alternative
+pub trait ToSqlObject: ToSql + Send + Sync + 'static {}
+impl<T: ToSql + Send + Sync + 'static> ToSqlObject for T {}
 
 pub async fn get_db_pool() -> Result<PgPool, sqlx::Error> {
     let connection_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");

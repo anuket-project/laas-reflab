@@ -2,7 +2,6 @@ use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tokio_postgres::types::ToSql;
 
 use dal::{web::*, *};
 
@@ -81,8 +80,8 @@ impl DBTable for Allocation {
         }))
     }
 
-    fn to_rowlike(&self) -> Result<HashMap<&str, Box<dyn ToSql + Sync + Send>>, anyhow::Error> {
-        let c: [(&str, Box<dyn tokio_postgres::types::ToSql + Sync + Send>); _] = [
+    fn to_rowlike(&self) -> Result<HashMap<&str, Box<dyn ToSqlObject>>, anyhow::Error> {
+        let c: [(&str, Box<dyn ToSqlObject>); _] = [
             ("id", Box::new(self.id)),
             ("for_resource", Box::new(self.for_resource)),
             ("for_aggregate", Box::new(self.for_aggregate)),

@@ -1,14 +1,6 @@
 // Copyright (c) 2023 University of New Hampshire
 // SPDX-License-Identifier: MIT
 #![allow(dead_code, clippy::await_holding_lock, async_fn_in_trait)]
-#![feature(
-    async_iterator,
-    ptr_metadata,
-    unboxed_closures,
-    panic_backtrace_config,
-    update_panic_count,
-    panic_can_unwind
-)]
 
 pub mod executors;
 pub mod task_trait;
@@ -22,10 +14,7 @@ mod task_runtime;
 mod task_shim;
 
 #[allow(deprecated)]
-use std::{
-    cell::RefCell,
-    panic::{BacktraceStyle, PanicInfo},
-};
+use std::{cell::RefCell, panic::PanicInfo};
 
 pub mod prelude {
     pub use crate::task_trait::{AsyncRunnable, Runnable, TaskIdentifier};
@@ -66,13 +55,6 @@ fn panic_hook(info: &PanicInfo<'_>) {
         {
             hook(info)
         } else {
-            let style = if !info.can_unwind() {
-                Some(BacktraceStyle::Full)
-            } else {
-                std::panic::get_backtrace_style()
-            };
-
-            // The current implementation always returns `Some`.
             let location = info.location();
             if let Some(location) = location {
                 let msg = match info.payload().downcast_ref::<&'static str>() {
@@ -94,16 +76,9 @@ fn panic_hook(info: &PanicInfo<'_>) {
                     "thread '{name}' panicked at '{msg}', {location}"
                 );
 
-                match style {
-                    Some(BacktraceStyle::Short)
-                    | Some(BacktraceStyle::Full)
-                    | Some(BacktraceStyle::Off) => {
-                        let bt = std::backtrace::Backtrace::force_capture().to_string();
-
-                        let _ = writeln!(output, "{bt}");
-                    }
-                    Some(_) => {}
-                    None => {}
+                let bt = std::backtrace::Backtrace::force_capture().to_string();
+                if !bt.is_empty() {
+                    let _ = writeln!(output, "{bt}");
                 }
 
                 tracing::error!("Panic within runtime:\n{output}");

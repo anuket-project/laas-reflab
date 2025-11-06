@@ -20,7 +20,7 @@ impl AsyncRunnable for WaitReachable {
     async fn execute_task(&mut self, _context: &Context) -> Result<Self::Output, TaskError> {
         let hostname = self.endpoint.clone();
 
-        while true {
+        loop {
             let res = common::prelude::tokio::process::Command::new("ping")
                 .args(["-c", "1", "-n", "-q", hostname.as_str()])
                 .output()
@@ -45,8 +45,6 @@ impl AsyncRunnable for WaitReachable {
             tracing::info!("Endpoint {hostname} wasn't reachable yet, retrying...");
             tokio::time::sleep(Duration::from_secs(2)).await;
         }
-
-        unreachable!()
     }
 
     fn identifier() -> TaskIdentifier {

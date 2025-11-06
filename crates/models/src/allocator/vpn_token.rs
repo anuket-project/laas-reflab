@@ -1,5 +1,4 @@
 use dal::{web::*, *};
-use tokio_postgres::types::ToSql;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -39,13 +38,13 @@ impl DBTable for VPNToken {
         }))
     }
 
-    fn to_rowlike(&self) -> Result<HashMap<&str, Box<dyn ToSql + Sync + Send>>, anyhow::Error> {
+    fn to_rowlike(&self) -> Result<HashMap<&str, Box<dyn ToSqlObject>>, anyhow::Error> {
         let Self {
             id,
             username,
             project,
         } = self.clone();
-        let c: [(&str, Box<dyn tokio_postgres::types::ToSql + Sync + Send>); _] = [
+        let c: [(&str, Box<dyn ToSqlObject>); _] = [
             ("id", Box::new(id)),
             ("username", Box::new(username)),
             ("project", Box::new(project)),

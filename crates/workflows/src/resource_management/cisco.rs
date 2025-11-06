@@ -2,6 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use anyhow::{anyhow, Result};
 use common::prelude::{dashmap::DashMap, lazy_static, parking_lot, tracing};
+use itertools::Itertools;
 use lazy_static::lazy_static;
 use models::inventory::{HostPort, Switch};
 
@@ -75,10 +76,10 @@ impl NXCommand {
 
         let g = lock.lock();
 
-        let concat_input = self
-            .inputs
-            .into_iter()
-            .intersperse(" ; ".to_string())
+        let concat_input = Itertools::intersperse(
+            self.inputs.into_iter(),
+            " ; ".to_string()
+        )
             .reduce(|acc, e| acc + e.as_str());
 
         let j = ureq::json!({

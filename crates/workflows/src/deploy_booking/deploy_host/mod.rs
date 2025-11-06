@@ -1,7 +1,7 @@
 use common::prelude::{
     anyhow,
     tokio::time::{sleep, Duration},
-    tracing::{error, info, trace, warn},
+    tracing::{error, info, warn},
 };
 
 use config::settings;
@@ -828,7 +828,7 @@ impl DeployHost {
 
     async fn install_os(
         &mut self,
-        mut preimage_waiter: MailboxMessageReceiver,
+        _preimage_waiter: MailboxMessageReceiver,
         mut imaging_waiter: MailboxMessageReceiver,
     ) -> Result<(), TaskError> {
         self.log(
@@ -973,7 +973,7 @@ impl DeployHost {
     async fn verify_host_provisioned(
         &mut self,
         context: &Context,
-        host_name: &str,
+        _host_name: &str,
         post_provision_waiter: &mut MailboxMessageReceiver,
     ) -> Result<(), TaskError> {
         let workflow_distro = self.get_distro().await?;

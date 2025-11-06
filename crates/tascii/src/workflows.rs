@@ -12,8 +12,8 @@ use std::{
 
 use dal::ID;
 use parking_lot::Mutex;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use tracing::{debug, info};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use tracing::debug;
 
 use crate::{runtime::Runtime, task_trait::AsyncRunnable};
 
@@ -203,7 +203,9 @@ impl Context {
                 // of an error, and continue with newly created tasks
                 // (we have broken from our prior execution flow--eek!)
                 LogEnt::Spawn { hash, tid } => {
-                    tracing::error!("Hash was {hash} but ghash was {ghash}, task is {tid}, so log was misaligned. Truncating log and starting back");
+                    tracing::error!(
+                        "Hash was {hash} but ghash was {ghash}, task is {tid}, so log was misaligned. Truncating log and starting back"
+                    );
                     let ci = inner.current_index;
                     inner.log.truncate(ci);
                 }
@@ -393,16 +395,16 @@ pub struct CtxJoinHandle<D> {
 }
 
 impl<
-        D: Sized
-            + Send
-            + Sync
-            + Clone
-            + RefUnwindSafe
-            + Serialize
-            + DeserializeOwned
-            + 'static
-            + std::fmt::Debug,
-    > CtxJoinHandle<D>
+    D: Sized
+        + Send
+        + Sync
+        + Clone
+        + RefUnwindSafe
+        + Serialize
+        + DeserializeOwned
+        + 'static
+        + std::fmt::Debug,
+> CtxJoinHandle<D>
 {
     pub fn join(&self) -> Result<D, TaskError> {
         self.ctx.join::<D>(self.tid)

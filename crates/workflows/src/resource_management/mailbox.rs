@@ -27,10 +27,7 @@ use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
-use tascii::{
-    prelude::{Runtime, *},
-    task_trait::AsyncRunnable,
-};
+use tascii::prelude::Runtime;
 use tracing::{error, info, warn};
 
 // const MESSAGE_EXPIRY_TIME_MINUTES: f32 = 5.0;

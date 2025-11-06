@@ -1,11 +1,4 @@
 #![doc = include_str!("../README.md")]
-#![feature(
-    result_flattening,
-    let_chains,
-    panic_backtrace_config,
-    update_panic_count,
-    panic_can_unwind
-)]
 
 pub mod mgmt_workflows;
 pub mod remote;
@@ -16,7 +9,7 @@ mod overrides;
 mod queries;
 
 use common::prelude::{anyhow, itertools::Itertools};
-use dal::{new_client, AsEasyTransaction, DBTable, EasyTransaction, FKey, ID};
+use dal::{AsEasyTransaction, DBTable, EasyTransaction, FKey, ID, new_client};
 use mgmt_workflows::BootBookedHosts;
 
 use models::{

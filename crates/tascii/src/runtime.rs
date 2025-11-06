@@ -13,7 +13,7 @@ use dal::{AsEasyTransaction, DBTable, ID};
 use dashmap::DashSet;
 use futures_util::future::BoxFuture;
 use parking_lot::{Mutex, RwLock, RwLockWriteGuard};
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 use write_to_file::WriteToFile;
 
 use crate::{
@@ -48,7 +48,9 @@ impl Runtime {
         let res = self.tx.send(TaskMessage::Depend(a, b));
 
         if let Err(e) = res {
-            tracing::error!("Couldn't send a depends message for {a} and {b}, error was {e:?} as channel closed");
+            tracing::error!(
+                "Couldn't send a depends message for {a} and {b}, error was {e:?} as channel closed"
+            );
         }
     }
 

@@ -165,7 +165,7 @@ impl<T, E> AnyWay<T> for Result<T, E>
 where
     E: std::error::Error + Sync + Send + 'static,
 {
-    default fn anyway(self) -> Result<T, anyhow::Error> {
+    fn anyway(self) -> Result<T, anyhow::Error> {
         self.map_err(|e| anyhow::Error::new(e))
     }
 }

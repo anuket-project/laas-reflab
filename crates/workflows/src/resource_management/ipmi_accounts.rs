@@ -1,5 +1,5 @@
 use common::prelude::rand::{self, seq::SliceRandom, Rng};
-use dal::{new_client, AsEasyTransaction, FKey, ID};
+use dal::{new_client, AsEasyTransaction, FKey};
 use models::inventory::Host;
 use tascii::prelude::*;
 
@@ -71,12 +71,12 @@ impl AsyncRunnable for DeleteIPMIAccount {
     fn identifier() -> TaskIdentifier {
         TaskIdentifier::named("CreateIPMIAccount").versioned(1)
     }
-    
+
     fn timeout() -> Duration {
         let estimated_overhead_time = Duration::from_secs(30);
         WaitReachable::overall_timeout() + estimated_overhead_time
     }
-    
+
     fn retry_count() -> usize {
         0
     }
@@ -152,12 +152,12 @@ impl AsyncRunnable for CreateIPMIAccount {
     fn identifier() -> TaskIdentifier {
         TaskIdentifier::named("CreateIPMIAccount").versioned(1)
     }
-    
+
     fn timeout() -> Duration {
         let estimated_overhead_time = Duration::from_secs(30);
         WaitReachable::overall_timeout() + estimated_overhead_time
     }
-    
+
     fn retry_count() -> usize {
         0
     }

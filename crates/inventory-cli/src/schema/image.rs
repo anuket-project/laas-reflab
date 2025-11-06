@@ -39,7 +39,7 @@ pub enum KernelArg {
 impl KernelArg {
     pub fn generate_created_kernel_arg_reports(
         image_name: &str,
-        kernel_args: &Vec<KernelArg>,
+        kernel_args: &[KernelArg],
     ) -> Vec<KernelArgReport> {
         kernel_args
             .iter()
@@ -153,11 +153,7 @@ impl ImageYaml {
             } else {
                 format!("\n        - {}", yaml_flavors.join("\n        - "))
             };
-            changes.modified(
-                "flavors",
-                &db_display,
-                &yaml_display,
-            )?;
+            changes.modified("flavors", &db_display, &yaml_display)?;
         }
 
         // distro

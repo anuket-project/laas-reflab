@@ -12,7 +12,7 @@ use dal::ID;
 
 use crossbeam_channel::{Receiver, Sender};
 
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, trace, warn};
 
 use crate::{
     executors,
@@ -153,9 +153,9 @@ impl Orchestrator {
                                     if t.waiting_for.is_empty() {
                                         debug!("Checking if t is complete...");
                                         let c = !t.is_complete(); // the task has not yet been
-                                                                  // run to completion, and we
-                                                                  // aren't currently running it,
-                                                                  // so we should start it
+                                        // run to completion, and we
+                                        // aren't currently running it,
+                                        // so we should start it
                                         debug!("Returned from is_complete(), value {c}");
                                         c
                                     } else {
@@ -194,7 +194,9 @@ impl Orchestrator {
                         .unwrap_or("couldn't fetch".to_owned());
 
                     if let Ok(_e) = stopped {
-                        warn!("STOPPED (canceled) task {summary}, with the reason {reason:?}. Intervention may be required");
+                        warn!(
+                            "STOPPED (canceled) task {summary}, with the reason {reason:?}. Intervention may be required"
+                        );
                     }
                 }
 
@@ -275,7 +277,9 @@ impl Orchestrator {
                     // this task is satisfied if everything is like this
                 } else if status == TaskState::Failed {
                     // a task we depend on is in the failed state, so we are unsatisfiable
-                    warn!("Can't finish target {target_task_id}, since task {dependency} (dependency of {task_id}) is in the failed state");
+                    warn!(
+                        "Can't finish target {target_task_id}, since task {dependency} (dependency of {task_id}) is in the failed state"
+                    );
 
                     r.waiting_for.insert(dependency);
                 } else if status == TaskState::Ready {
@@ -288,7 +292,9 @@ impl Orchestrator {
                     // if it was already included. We also need to check if we should queue this
                     // task
                 } else {
-                    error!("Task DAG was not actually an AG, loop was detected between task {task_id} and task {dependency}");
+                    error!(
+                        "Task DAG was not actually an AG, loop was detected between task {task_id} and task {dependency}"
+                    );
                     return;
                 }
             }
@@ -336,14 +342,16 @@ impl Orchestrator {
                 .expect("couldn't find task?");
 
         if shouldnt_run {
-            warn!("Not running task {task_id} because either it is currently running or is in a prior run state");
+            warn!(
+                "Not running task {task_id} because either it is currently running or is in a prior run state"
+            );
             return;
         }
 
         debug!("Starts run of task {task_id}");
 
         let rt = self.runtime(); // rearrange here to avoid reborrowing self and making bchecker
-                                 // unhappy
+        // unhappy
         self.running_tasks.insert(task_id);
 
         let _thread = std::thread::spawn(move || RuntimeTask::run(task_id, rt));
