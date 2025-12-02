@@ -60,8 +60,8 @@ pub async fn create_image(
         yaml.distro.to_string(),
         yaml.version,
         yaml.arch.to_string(),
-        yaml.http_unattended_install_config_path.to_string(),
-        yaml.http_iso_path.to_string(),
+        yaml.http_unattended_install_config_path.as_ref().map(|u| u.to_string()),
+        yaml.http_iso_path.as_ref().map(|u| u.to_string()),
         yaml.tftp_kernel_path.to_string(),
         &tftp_initrd_paths[..],
     )

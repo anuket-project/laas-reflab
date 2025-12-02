@@ -8,7 +8,7 @@ use config::settings;
 use dal::{new_client, AsEasyTransaction, FKey, ID};
 
 use models::{
-    dashboard::{image::Distro, Aggregate, Instance, NetworkAssignmentMap, StatusSentiment},
+    dashboard::{types::Distro, Aggregate, Instance, NetworkAssignmentMap, StatusSentiment},
     inventory::{BootTo, Host, Lab},
     EasyLog,
 };

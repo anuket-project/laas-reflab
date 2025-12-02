@@ -1,7 +1,7 @@
 use dal::*;
 use http::Uri;
 use models::dashboard::ImageKernelArg;
-use models::dashboard::image::Distro;
+use models::dashboard::types::Distro;
 use models::inventory::Arch;
 use sqlx::PgPool;
 use std::collections::HashMap;
@@ -21,8 +21,8 @@ pub async fn fetch_image_map(pool: &PgPool) -> Result<HashMap<String, Image>, In
             version,
             cobbler_name,
             arch as "arch: Arch",
-            http_unattended_install_config_path as "http_unattended_install_config_path!",
-            http_iso_path as "http_iso_path!",
+            http_unattended_install_config_path,
+            http_iso_path,
             tftp_kernel_path as "tftp_kernel_path!",
             tftp_initrd_paths as "tftp_initrd_paths!"
         FROM images
@@ -50,29 +50,34 @@ pub async fn fetch_image_map(pool: &PgPool) -> Result<HashMap<String, Image>, In
             .filter_map(|s| s.parse().ok())
             .collect();
 
-        let image = Image {
-            id: FKey::from_id(ID::from(row.id)),
-            name: row.name.clone(),
-            deleted: row.deleted,
-            flavors,
-            distro: row.distro,
-            version: row.version,
-            arch: row.arch,
-            cobbler_name: row.cobbler_name,
-            http_unattended_install_config_path: row
-                .http_unattended_install_config_path
-                .parse()
-                .unwrap_or_else(|_| "/".parse().unwrap()),
-            http_iso_path: row
-                .http_iso_path
-                .parse()
-                .unwrap_or_else(|_| "/".parse().unwrap()),
-            tftp_kernel_path: row
-                .tftp_kernel_path
+        let mut image = Image::new(
+            FKey::from_id(ID::from(row.id)),
+            row.name.clone(),
+            row.cobbler_name,
+            row.distro,
+            row.version,
+            row.arch,
+            row.tftp_kernel_path
                 .parse()
                 .unwrap_or_else(|_| "/".parse().unwrap()),
             tftp_initrd_paths,
-        };
+        );
+
+        image.set_deleted(row.deleted);
+        image.set_flavors(flavors);
+        image.set_http_unattended_install_config_path(
+            row.http_unattended_install_config_path
+                .map(|s| s.parse())
+                .transpose()
+                .unwrap_or(None),
+        );
+        image.set_http_iso_path(
+            row.http_iso_path
+                .map(|s| s.parse())
+                .transpose()
+                .unwrap_or(None),
+        );
+
         images.insert(row.name, image);
     }
 
@@ -99,11 +104,9 @@ pub async fn fetch_kernel_args_map(
         source: e,
     })?;
 
-    // Group by image name
     let mut kernel_args_map: HashMap<String, Vec<ImageKernelArg>> = HashMap::new();
 
     for row in rows {
-        // Need to fetch image name for this kernel arg
         let image_name =
             sqlx::query_scalar!("SELECT name FROM images WHERE id = $1", row.for_image)
                 .fetch_one(pool)

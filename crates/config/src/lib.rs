@@ -16,6 +16,7 @@ pub struct LibLaaSConfig {
     pub cli: CliConfig,
     pub notifications: NotificationConfig,
     pub cobbler: CobblerConfig,
+    pub pxe: PXEConfig,
     pub ipa: Vec<IPAConfig>,
     pub eve: EveConfig,
     pub projects: HashMap<String, ProjectConfig>,
@@ -155,6 +156,11 @@ pub struct CobblerSSHConfig {
 pub struct CobblerConfig {
     pub api: CobblerAPIConfig,
     pub ssh: CobblerSSHConfig,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct PXEConfig {
+    pub http_base_url: String, // e.g., http://10.13.0.3
 }
 
 #[derive(Debug, Deserialize, Clone)]

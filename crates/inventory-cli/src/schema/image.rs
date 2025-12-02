@@ -1,8 +1,10 @@
 use http::Uri;
+use models::dashboard::image::option_uri_serde;
 use models::dashboard::uri_vec_serde;
 use models::{
     dashboard::ImageKernelArg,
-    dashboard::image::{Distro, Image},
+    dashboard::types::Distro,
+    dashboard::Image,
     inventory::Arch,
 };
 use serde::{Deserialize, Serialize};
@@ -18,10 +20,10 @@ pub struct ImageYaml {
     pub distro: Distro,
     pub arch: Arch,
     pub version: String,
-    #[serde(with = "http_serde::uri")]
-    pub http_unattended_install_config_path: Uri,
-    #[serde(with = "http_serde::uri")]
-    pub http_iso_path: Uri,
+    #[serde(with = "option_uri_serde")]
+    pub http_unattended_install_config_path: Option<Uri>,
+    #[serde(with = "option_uri_serde")]
+    pub http_iso_path: Option<Uri>,
     #[serde(with = "http_serde::uri")]
     pub tftp_kernel_path: Uri,
     #[serde(with = "uri_vec_serde")]
@@ -54,7 +56,6 @@ impl KernelArg {
     ) -> Vec<KernelArgReport> {
         let mut reports = Vec::new();
 
-        // Convert YAML kernel args to comparable strings
         let yaml_args: HashSet<String> = yaml_kernel_args
             .iter()
             .map(|arg| match arg {
@@ -63,13 +64,11 @@ impl KernelArg {
             })
             .collect();
 
-        // Convert DB kernel args to comparable strings
         let db_args: HashSet<String> = db_kernel_args
             .iter()
             .map(|arg| arg.render_to_kernel_arg())
             .collect();
 
-        // Find created kernel args (in YAML but not in DB)
         for yaml_arg in yaml_kernel_args {
             let yaml_arg_str = match yaml_arg {
                 KernelArg::Flag(flag) => flag.clone(),
@@ -83,7 +82,6 @@ impl KernelArg {
             }
         }
 
-        // Find removed kernel args (in DB but not in YAML)
         for db_arg in db_kernel_args {
             let db_arg_str = db_arg.render_to_kernel_arg();
             if !yaml_args.contains(&db_arg_str) {
@@ -176,38 +174,46 @@ impl ImageYaml {
         }
 
         // http_unattended_install_config_path
-        if db_image.http_unattended_install_config_path != self.http_unattended_install_config_path
+        if db_image.http_unattended_install_config_path() != self.http_unattended_install_config_path.as_ref()
         {
             changes.modified(
                 "http_unattended_install_config_path",
-                db_image.http_unattended_install_config_path.to_string(),
-                self.http_unattended_install_config_path.to_string(),
+                db_image
+                    .http_unattended_install_config_path()
+                    .map_or("(none)".to_string(), |u| u.to_string()),
+                self.http_unattended_install_config_path
+                    .as_ref()
+                    .map_or("(none)".to_string(), |u| u.to_string()),
             )?;
         }
 
         // http_iso_path
-        if db_image.http_iso_path != self.http_iso_path {
+        if db_image.http_iso_path() != self.http_iso_path.as_ref() {
             changes.modified(
                 "http_iso_path",
-                db_image.http_iso_path.to_string(),
-                self.http_iso_path.to_string(),
+                db_image
+                    .http_iso_path()
+                    .map_or("(none)".to_string(), |u| u.to_string()),
+                self.http_iso_path
+                    .as_ref()
+                    .map_or("(none)".to_string(), |u| u.to_string()),
             )?;
         }
 
         // tftp_kernel_path
-        if db_image.tftp_kernel_path != self.tftp_kernel_path {
+        if db_image.tftp_kernel_path() != &self.tftp_kernel_path {
             changes.modified(
                 "tftp_kernel_path",
-                db_image.tftp_kernel_path.to_string(),
+                db_image.tftp_kernel_path().to_string(),
                 self.tftp_kernel_path.to_string(),
             )?;
         }
 
         // tftp_initrd_paths
-        if db_image.tftp_initrd_paths != self.tftp_initrd_paths {
+        if db_image.tftp_initrd_paths() != self.tftp_initrd_paths.as_slice() {
             changes.modified(
                 "tftp_initrd_paths",
-                format!("{} paths", db_image.tftp_initrd_paths.len()),
+                format!("{} paths", db_image.tftp_initrd_paths().len()),
                 format!("{} paths", self.tftp_initrd_paths.len()),
             )?;
         }

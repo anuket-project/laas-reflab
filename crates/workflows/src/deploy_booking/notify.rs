@@ -4,7 +4,7 @@ use common::prelude::{chrono, serde_json::json, tracing};
 use config::{settings, Situation};
 use dal::{new_client, AsEasyTransaction, DBTable, FKey};
 
-use models::dashboard::{image::Distro, Aggregate, Instance};
+use models::dashboard::{types::Distro, Aggregate, Instance};
 use notifications::{
     booking_ended, booking_ending, booking_started, collaborator_added, request_booking_extension,
     BookingInfo, Env,

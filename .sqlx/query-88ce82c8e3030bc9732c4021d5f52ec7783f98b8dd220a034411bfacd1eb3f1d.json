@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, name, deleted, flavors, distro as \"distro: Distro\", cobbler_name, version, arch as \"arch: Arch\", http_unattended_install_config_path, http_iso_path, tftp_kernel_path, tftp_initrd_paths FROM images where $1=ANY(flavors)",
+  "query": "\n        SELECT\n            id,\n            name,\n            deleted,\n            flavors,\n            distro as \"distro: Distro\",\n            version,\n            cobbler_name,\n            arch as \"arch: Arch\",\n            http_unattended_install_config_path,\n            http_iso_path,\n            tftp_kernel_path as \"tftp_kernel_path!\",\n            tftp_initrd_paths as \"tftp_initrd_paths!\"\n        FROM images\n        WHERE deleted = false\n        ",
   "describe": {
     "columns": [
       {
@@ -42,12 +42,12 @@
       },
       {
         "ordinal": 5,
-        "name": "cobbler_name",
+        "name": "version",
         "type_info": "Varchar"
       },
       {
         "ordinal": 6,
-        "name": "version",
+        "name": "cobbler_name",
         "type_info": "Varchar"
       },
       {
@@ -77,19 +77,17 @@
       },
       {
         "ordinal": 10,
-        "name": "tftp_kernel_path",
+        "name": "tftp_kernel_path!",
         "type_info": "Text"
       },
       {
         "ordinal": 11,
-        "name": "tftp_initrd_paths",
+        "name": "tftp_initrd_paths!",
         "type_info": "TextArray"
       }
     ],
     "parameters": {
-      "Left": [
-        "Uuid"
-      ]
+      "Left": []
     },
     "nullable": [
       false,
@@ -100,11 +98,11 @@
       false,
       false,
       false,
-      false,
-      false,
+      true,
+      true,
       false,
       false
     ]
   },
-  "hash": "46b7f83e11409738322f4b9a55b358a87b57bcacda826ae3050473aac4e6bbdd"
+  "hash": "88ce82c8e3030bc9732c4021d5f52ec7783f98b8dd220a034411bfacd1eb3f1d"
 }
