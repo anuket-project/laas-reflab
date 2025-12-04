@@ -112,7 +112,7 @@ impl Image {
 
     /// Returns the full HTTP URL for unattended install config path
     pub fn http_unattended_install_config_url(&self) -> Option<Uri> {
-        let base_url = &settings().pxe.http_base_url;
+        let base_url = &settings().pxe.address;
         self.http_unattended_install_config_path
             .as_ref()
             .map(|uri| Self::construct_url(base_url, uri))
@@ -120,7 +120,7 @@ impl Image {
 
     /// Returns the full HTTP URL for ISO path
     pub fn http_iso_url(&self) -> Option<Uri> {
-        let base_url = &settings().pxe.http_base_url;
+        let base_url = &settings().pxe.address;
         self.http_iso_path
             .as_ref()
             .map(|uri| Self::construct_url(base_url, uri))
@@ -128,13 +128,13 @@ impl Image {
 
     /// Returns the full URL for kernel path
     pub fn tftp_kernel_url(&self) -> Uri {
-        let base_url = &settings().pxe.http_base_url;
+        let base_url = &settings().pxe.address;
         Self::construct_url(base_url, &self.tftp_kernel_path)
     }
 
     /// Returns the full URLs for all initrd paths
     pub fn tftp_initrd_urls(&self) -> Vec<Uri> {
-        let base_url = &settings().pxe.http_base_url;
+        let base_url = &settings().pxe.address;
         self.tftp_initrd_paths
             .iter()
             .map(|uri| Self::construct_url(base_url, uri))

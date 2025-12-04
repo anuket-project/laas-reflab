@@ -24,6 +24,7 @@ use maplit::hashmap;
 
 //Todo: Rewrite in rust
 
+#[deprecated(note="We are removing Cobbler")]
 #[derive(Debug, Clone, Hash, Serialize, Deserialize)]
 pub struct CobblerConfig {
     pub kernel_args: Vec<(String, String)>,
@@ -75,6 +76,7 @@ impl CobblerConfig {
     }
 }
 
+#[deprecated(note="We are removing Cobbler")]
 pub struct CobblerActions {}
 
 impl ModuleInitializer for CobblerActions {
@@ -98,6 +100,7 @@ impl ModuleInitializer for CobblerActions {
     }
 }
 
+#[deprecated(note="We are removing Cobbler")]
 #[derive(Debug, Clone, Hash, Serialize, Deserialize)]
 pub struct CobblerSync {
     hosts_to_skip: Vec<String>, // Hostnames
@@ -170,6 +173,7 @@ impl AsyncRunnable for CobblerSync {
     }
 }
 
+#[deprecated(note="MOVED to src/lib.rs ")]
 pub fn generate_soft_serial(length: usize) -> String {
     let mut rng = rand::thread_rng();
 
@@ -219,7 +223,7 @@ pub fn generate_soft_serial(length: usize) -> String {
 /// # Returns
 ///
 /// Returns [`Ok`] or [`anyhow::Error`]
-///
+#[deprecated(note="We are removing Cobbler")]
 pub async fn override_system_grub_config(
     host: &Host,
     config_content: &str,
@@ -289,7 +293,9 @@ pub async fn override_system_grub_config(
     Ok(())
 }
 
+
 // Uses SFTP and SSH to write a given file to Cobbler
+#[deprecated(note="We are removing Cobbler")]
 pub async fn write_file_to_cobbler(
     directory_path: String, // ex "/srv/www/laas_files/fedora-kickstarts/"
     file_name: String,      // ex "hpe1.ks"

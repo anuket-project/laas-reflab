@@ -1,0 +1,94 @@
+#cloud-config
+autoinstall:
+  version: 1
+  apt:
+    geoip: true
+    preserve_sources_list: false
+    primary:
+    - arches: [amd64, i386]
+      uri: http://us.archive.ubuntu.com/ubuntu
+    - arches: [default]
+      uri: http://ports.ubuntu.com/ubuntu-ports
+
+  user-data:
+    hostname: {{ hostname }}
+    users:
+    - default
+    {% for user in ipa_users %}
+    - name: {{ user["username"] }}
+      lock_passwd: false
+      groups: sudo
+      sudo: ALL=(ALL) NOPASSWD:ALL
+      shell: /bin/bash
+      ssh_authorized_keys:
+      {% for key in user["ssh_keys"] %}
+      - {{ key }}
+      {% endfor %}
+    {% endfor %}
+
+
+  network:
+    version: 2
+    ethernets:
+    {% for interface in ethernet_interfaces %}
+      {{ interface["device_name"] }}:
+        match:
+          macaddress: {{interface["mac_addr"] }}
+        dhcp4: true
+    {% endfor %}
+
+    vlans:
+      {% for vlan in vlans %}
+      {{ vlan["interface_name"] }}:
+        id: {{ vlan["vlan_id"] }}
+        link: {{ vlan["device_name"] }}
+        dhcp4: true
+      {% endfor %}
+
+  early-commands:
+    - "curl -X POST -H \"Content-Type: application/json\" {{mailbox_endpoint.preimage_waiter}}/push -d '{\"success\": true}'"
+    - "apt-get update"
+
+  late-commands:
+    - "curl -X POST -H \"Content-Type: application/json\" {{mailbox_endpoint.imaging_waiter}}/push -d '{\"success\": true}'"
+
+  ssh:
+    allow-pw: true
+    install-server: true
+ 
+  storage:
+    grub:
+      reorder_uefi: False
+    config:
+      - type: disk
+        id: disk0
+        ptable: gpt
+        grub_device: true
+        wipe: superblock
+        match:
+          size: largest
+      - type: partition
+        id: disk0-grub
+        grub_device: true
+        size: 1GB
+        device: disk0
+      - type: partition
+        id: disk0-part1
+        device: disk0
+        size: -1 # fill remaining space
+      - type: format
+        id: disk0-grub-fmt
+        fstype: fat32
+        volume: disk0-grub
+      - type: format
+        id: disk0-part1-fmt
+        fstype: ext4
+        volume: disk0-part1
+      - type: mount
+        path: "/boot/efi"
+        id: disk0-grub-mnt
+        device: disk0-grub-fmt
+      - type: mount
+        path: "/"
+        id: disk0-part1-mnt
+        device: disk0-part1-fmt

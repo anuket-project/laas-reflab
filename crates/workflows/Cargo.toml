@@ -36,6 +36,8 @@ config = { path = "../config/" }
 common = { path = "../common/" }
 metrics = { path = "../metrics/" }
 dal = { path = "../dal/" }
+http.workspace = true
+mac_address.workspace = true
 
 [package.metadata.cargo-machete]
 ignored = ["strum"]

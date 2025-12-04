@@ -52,6 +52,29 @@ cobbler:
     writable_directory: /tmp
     system_directory: /srv/tftpboot/grub/system
 
+pxe:
+  address: 10.13.0.8
+  ssh:  
+    port: 22
+    user: username 
+    password: password 
+    writable_directory: /tmp/ #To-do, remove dependency!
+
+  managed_directories:
+    ubuntu_cloudinit: /srv/tftp-http/config/ubuntu-cloudinit/
+    rhel_kickstart: /srv/tftp-http/config/rhel_kickstart/
+    grub_menuentry: /srv/tftp-http/grub/grub_menuentry/
+
+  http_tftp_uri:
+    ubuntu_cloudinit: /config/ubuntu-cloudinit/
+    rhel_kickstart: /config/rhel_kickstart/
+    iso_packed: /iso/packed/
+    iso_unpacked: /iso/unpacked/
+
+workflow_config:
+    cleanup_generated_files: true
+    generate_hostname_grub_file: true
+
 ipa:
   - url: https://ipa.example.com
     username: username
