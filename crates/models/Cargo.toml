@@ -43,6 +43,7 @@ url = { workspace = true, features = ["serde"] }
 uuid = { workspace = true, features = ["serde", "v4"] }
 
 common = { path = "../common" }
+config = { path = "../config" }
 dal = { path = "../dal" }
 testing_utils = { path = "../testing_utils" }
 

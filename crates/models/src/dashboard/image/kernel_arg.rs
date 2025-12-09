@@ -1,3 +1,4 @@
+use config::settings;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -11,9 +12,23 @@ pub struct ImageKernelArg {
 }
 
 impl ImageKernelArg {
+    /// Renders the kernel arg as it appears in the database (no replacements)
     pub fn render_to_kernel_arg(&self) -> String {
         match &self._value {
             Some(v) => format!("{}={}", self._key, v),
+            None => self._key.clone(),
+        }
+    }
+
+    /// Renders the kernel arg with {{PXE_SERVER}} placeholder replaced with actual PXE server address
+    pub fn render_to_kernel_arg_with_pxe_replacement(&self) -> String {
+        let pxe_server = &settings().pxe.address;
+
+        match &self._value {
+            Some(v) => {
+                let replaced_value = v.replace("{{PXE_SERVER}}", pxe_server);
+                format!("{}={}", self._key, replaced_value)
+            }
             None => self._key.clone(),
         }
     }
@@ -37,7 +52,7 @@ impl ImageKernelArg {
 
         Ok(kernel_args
             .into_iter()
-            .map(|arg| arg.render_to_kernel_arg())
+            .map(|arg| arg.render_to_kernel_arg_with_pxe_replacement())
             .collect())
     }
 }

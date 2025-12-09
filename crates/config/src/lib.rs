@@ -1,5 +1,3 @@
-// Copyright (c) 2023 University of New Hampshire
-// SPDX-License-Identifier: MIT
 #![doc = include_str!("../README.md")]
 
 use std::{collections::HashMap, fmt::Display, path::PathBuf};
@@ -135,14 +133,14 @@ pub struct NotificationConfig {
     pub templates_directory: String,
     pub vpn_config_path: PathBuf,
 }
-#[deprecated(note="We are removing Cobbler")]
+#[deprecated(note = "We are removing Cobbler")]
 #[derive(Debug, Deserialize, Clone)]
 pub struct CobblerAPIConfig {
     pub url: String,
     pub username: String,
     pub password: String,
 }
-#[deprecated(note="We are removing Cobbler")]
+#[deprecated(note = "We are removing Cobbler")]
 #[derive(Debug, Deserialize, Clone)]
 pub struct CobblerSSHConfig {
     pub address: String,
@@ -153,7 +151,7 @@ pub struct CobblerSSHConfig {
     pub system_directory: String,   // i.e. /srv/tftpboot/grub/system
     pub laas_files: String,         // ie. /srv/www/laas_files/
 }
-#[deprecated(note="We are removing Cobbler")]
+#[deprecated(note = "We are removing Cobbler")]
 #[derive(Debug, Deserialize, Clone)]
 pub struct CobblerConfig {
     pub api: CobblerAPIConfig,
@@ -193,7 +191,7 @@ pub struct PxeConfig {
 // Used to customize Workflow behavior for development purposes
 #[derive(Debug, Deserialize, Clone)]
 pub struct WorkflowConfig {
-    pub cleanup_generated_files: bool, 
+    pub cleanup_generated_files: bool,
     pub generate_hostname_grub_file: bool, // If liblaas should render a <hostname>.cfg grub config alongside the <MAC-addr> files
 }
 
@@ -205,7 +203,7 @@ pub struct IPAConfig {
     pub certificate_path: PathBuf,
 }
 
-#[deprecated(note="Removed as part of laas-pxe migration")]
+#[deprecated(note = "Removed as part of laas-pxe migration")]
 #[derive(Debug, Deserialize, Clone)]
 pub struct EveConfig {
     pub url: String,
