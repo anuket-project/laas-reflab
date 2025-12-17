@@ -19,6 +19,9 @@ cli:
   bind_addr: 0.0.0.0:3002
   external_url: 0.0.0.0:3002
 
+pxe:
+  http_base_url: http://10.13.0.3
+
 notifications:
   mail_server: mail.example.com:25
   admin_gchat_webhook: example.mail:12345
@@ -49,6 +52,29 @@ cobbler:
     writable_directory: /tmp
     system_directory: /srv/tftpboot/grub/system
 
+pxe:
+  address: 10.13.0.8
+  ssh:  
+    port: 22
+    user: username 
+    password: password 
+    writable_directory: /tmp/ #To-do, remove dependency!
+
+  managed_directories:
+    ubuntu_cloudinit: /srv/tftp-http/config/ubuntu-cloudinit/
+    rhel_kickstart: /srv/tftp-http/config/rhel_kickstart/
+    grub_menuentry: /srv/tftp-http/grub/grub_menuentry/
+
+  http_tftp_uri:
+    ubuntu_cloudinit: /config/ubuntu-cloudinit/
+    rhel_kickstart: /config/rhel_kickstart/
+    iso_packed: /iso/packed/
+    iso_unpacked: /iso/unpacked/
+
+workflow_config:
+    cleanup_generated_files: true
+    generate_hostname_grub_file: true
+
 ipa:
   - url: https://ipa.example.com
     username: username
@@ -66,42 +92,42 @@ eve:
   onboarding_key: example-onboarding-key
 
 projects:
-    project1:
-        vpn:
-            ipa_group: project1
-        notifications:
-            email:
-                booking_created: project1/booking_created.html
-                booking_expiring: generic/booking_expiring.html
-                booking_expired: generic/booking_expired.html
-                vpn_access_added: project1/vpn_access_added.html
-                account_created: generic/account_created.html
-                booking_extension_request: generic/booking_extension_request.html
-        styles_path: ./templates/generic/styles.json
-        search_domains: []
-        nameservers: []
-        location: ""
-        email: ""
-        phone: ""
-        is_dynamic: true
-        dashboard_url: https://example.iol.unh.edu/
+  project1:
+    vpn:
+      ipa_group: project1
+    notifications:
+      email:
+        booking_created: project1/booking_created.html
+        booking_expiring: generic/booking_expiring.html
+        booking_expired: generic/booking_expired.html
+        vpn_access_added: project1/vpn_access_added.html
+        account_created: generic/account_created.html
+        booking_extension_request: generic/booking_extension_request.html
+    styles_path: ./templates/generic/styles.json
+    search_domains: []
+    nameservers: []
+    location: ""
+    email: ""
+    phone: ""
+    is_dynamic: true
+    dashboard_url: https://example.iol.unh.edu/
 
-    project2:
-        vpn:
-            ipa_group: project2
-        notifications:
-            email:
-                booking_created: project2/booking_created.html
-                booking_expiring: generic/booking_expiring.html
-                booking_expired: generic/booking_expired.html
-                vpn_access_added: project2/vpn_access_added.html
-                account_created: generic/account_created.html
-                booking_extension_request: generic/booking_extension_request.html
-        styles_path: ./templates/generic/styles.json
-        search_domains: []
-        nameservers: []
-        location: ""
-        email: ""
-        phone: ""
-        is_dynamic: false
-        dashboard_url: https://example.iol.unh.edu/
+  project2:
+    vpn:
+      ipa_group: project2
+    notifications:
+      email:
+        booking_created: project2/booking_created.html
+        booking_expiring: generic/booking_expiring.html
+        booking_expired: generic/booking_expired.html
+        vpn_access_added: project2/vpn_access_added.html
+        account_created: generic/account_created.html
+        booking_extension_request: generic/booking_extension_request.html
+    styles_path: ./templates/generic/styles.json
+    search_domains: []
+    nameservers: []
+    location: ""
+    email: ""
+    phone: ""
+    is_dynamic: false
+    dashboard_url: https://example.iol.unh.edu/

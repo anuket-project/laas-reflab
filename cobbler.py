@@ -1,6 +1,11 @@
 #! Copyright (c) 2023 University of New Hampshire
 #! SPDX-License-Identifier: MIT
 
+############################################
+#               DEPRECATED
+############################################
+
+
 from xmlrpc.client import ServerProxy
 import json
 

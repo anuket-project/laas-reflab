@@ -13,6 +13,7 @@ use tascii::{prelude::*, task_trait::AsyncRunnable};
 
 use crate::resource_management::cobbler::CobblerConfig;
 
+#[deprecated(note="We are removing Cobbler")]
 #[derive(Debug, Hash, Clone, Serialize, Deserialize)]
 pub struct CobblerSetConfiguration {
     pub host_id: FKey<Host>,
@@ -28,6 +29,7 @@ impl StdoutToTracing {
         tracing::info!("Message from python: {data}")
     }
 }
+
 
 tascii::mark_task!(CobblerSetConfiguration);
 impl AsyncRunnable for CobblerSetConfiguration {

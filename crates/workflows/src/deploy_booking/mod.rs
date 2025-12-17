@@ -16,6 +16,7 @@ pub mod set_boot;
 pub mod set_host_power_state;
 pub mod sol;
 pub mod wait_host_os_reachable;
+pub mod grub;
 
 use config::Situation;
 

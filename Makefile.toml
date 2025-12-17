@@ -101,7 +101,7 @@ command = "cargo"
 args = ["nextest", "run"]
 dependencies = ["prepare"]
 
-# Generates local LCOV coverage report 
+# Generates local LCOV coverage report
 # Usage: cargo make test-local-coverage
 [tasks.test-local-coverage]
 workspace = false
@@ -114,7 +114,12 @@ args = [
   "nextest",
 ]
 command = "cargo"
-dependencies = ["prepare", "install-llvm-cov"]
+dependencies = [
+  "prepare",
+  "ensure-directories",
+  "install-rust-components",
+  "install-llvm-cov",
+]
 
 
 # == CI Pipeline Tasks ==
@@ -126,7 +131,12 @@ dependencies = ["prepare", "install-llvm-cov"]
 workspace = false
 args = ["llvm-cov", "--workspace", "--html", "nextest", "--profile", "ci"]
 command = "cargo"
-dependencies = ["prepare", "install-llvm-cov"]
+dependencies = [
+  "prepare",
+  "ensure-directories",
+  "install-rust-components",
+  "install-llvm-cov",
+]
 
 # Full CI pipeline entry point
 # Usage: cargo make ci --profile ci
@@ -209,6 +219,230 @@ dependencies = ["test-local-coverage", "fmt", "clippy", "audit", "machete"]
 # ========================
 # Dependency Management
 # ========================
+
+# detect Linux distribution
+[tasks.detect-distro]
+workspace = false
+private = true
+script = '''
+if [ -f /etc/os-release ]; then
+  . /etc/os-release
+  echo "Detected distro: $ID"
+  export DISTRO_ID=$ID
+else
+  echo "Warning: Cannot detect Linux distribution"
+  export DISTRO_ID=unknown
+fi
+'''
+
+# Install system dependencies based on distro
+[tasks.install-system-deps]
+workspace = false
+script = '''
+#!/bin/bash
+set -e
+
+echo ""
+echo "===================================================================="
+echo "System Dependencies Check"
+echo "===================================================================="
+
+# Detect distro
+if [ -f /etc/os-release ]; then
+  . /etc/os-release
+  DISTRO_ID=$ID
+  DISTRO_NAME="$NAME"
+  echo "Detected distribution: $DISTRO_NAME ($DISTRO_ID)"
+else
+  echo "WARNING: Cannot detect Linux distribution"
+  echo "Skipping system dependency checks"
+  echo ""
+  exit 0
+fi
+
+# Function to check if a command exists
+command_exists() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+# Check dependencies
+echo ""
+echo "Checking required packages:"
+MISSING=()
+INSTALLED=()
+
+if ! command_exists mold; then
+  MISSING+=("mold")
+else
+  INSTALLED+=("mold")
+fi
+
+if ! command_exists clang; then
+  MISSING+=("clang")
+else
+  INSTALLED+=("clang")
+fi
+
+if ! command_exists python3-config; then
+  MISSING+=("python3-devel")
+else
+  INSTALLED+=("python3-devel")
+fi
+
+# Display status
+for pkg in "${INSTALLED[@]}"; do
+  echo "  [OK] $pkg"
+done
+
+for pkg in "${MISSING[@]}"; do
+  echo "  [MISSING] $pkg"
+done
+
+if [ ${#MISSING[@]} -eq 0 ]; then
+  echo ""
+  echo "All system dependencies satisfied"
+  echo ""
+  exit 0
+fi
+
+echo ""
+echo "Installing ${#MISSING[@]} missing package(s)..."
+echo ""
+
+case "$DISTRO_ID" in
+  fedora|rhel|centos|rocky|almalinux)
+    PKG_MGR="dnf"
+    PKGS=""
+    for pkg in "${MISSING[@]}"; do
+      case "$pkg" in
+        python3-devel) PKGS="$PKGS python3-devel" ;;
+        *) PKGS="$PKGS $pkg" ;;
+      esac
+    done
+
+    echo "Executing: sudo $PKG_MGR install -y$PKGS"
+    sudo dnf install -y $PKGS
+    ;;
+
+  ubuntu|debian|pop|linuxmint)
+    PKG_MGR="apt"
+    PKGS=""
+    for pkg in "${MISSING[@]}"; do
+      case "$pkg" in
+        python3-devel) PKGS="$PKGS python3-dev" ;;
+        *) PKGS="$PKGS $pkg" ;;
+      esac
+    done
+
+    echo "Executing: sudo apt-get update && sudo apt-get install -y$PKGS"
+    sudo apt-get update -qq
+    sudo apt-get install -y $PKGS
+    ;;
+
+  arch|manjaro|endeavouros)
+    PKG_MGR="pacman"
+    PKGS=""
+    for pkg in "${MISSING[@]}"; do
+      case "$pkg" in
+        python3-devel) ;; # Included in python package
+        *) PKGS="$PKGS $pkg" ;;
+      esac
+    done
+
+    if [ -n "$PKGS" ]; then
+      echo "Executing: sudo pacman -S --noconfirm$PKGS"
+      sudo pacman -S --noconfirm $PKGS
+    fi
+    ;;
+
+  opensuse*|suse|sles)
+    PKG_MGR="zypper"
+    PKGS=""
+    for pkg in "${MISSING[@]}"; do
+      case "$pkg" in
+        python3-devel) PKGS="$PKGS python3-devel" ;;
+        *) PKGS="$PKGS $pkg" ;;
+      esac
+    done
+
+    echo "Executing: sudo zypper install -y$PKGS"
+    sudo zypper install -y $PKGS
+    ;;
+
+  *)
+    echo "ERROR: Unsupported distribution: $DISTRO_ID"
+    echo ""
+    echo "Please manually install: ${MISSING[*]}"
+    echo "Then re-run the build"
+    echo ""
+    exit 1
+    ;;
+esac
+
+echo ""
+echo "System dependencies installed successfully"
+echo ""
+'''
+
+# Install Rust toolchain components
+[tasks.install-rust-components]
+workspace = false
+script = '''
+#!/bin/bash
+set -e
+
+echo ""
+echo "===================================================================="
+echo "Rust Toolchain Components"
+echo "===================================================================="
+
+# Check if llvm-tools-preview is installed
+if rustup component list | grep -q "llvm-tools-preview (installed)"; then
+  echo "[OK] llvm-tools-preview (already installed)"
+  echo ""
+else
+  echo "Installing llvm-tools-preview component..."
+  rustup component add llvm-tools-preview
+  echo ""
+  echo "llvm-tools-preview installed successfully"
+  echo ""
+fi
+'''
+
+# Ensure required directories exist
+[tasks.ensure-directories]
+workspace = false
+script = '''
+#!/bin/bash
+set -e
+
+echo ""
+echo "===================================================================="
+echo "Workspace Directory Structure"
+echo "===================================================================="
+
+if [ ! -d ".coverage" ]; then
+  echo "Creating .coverage/ directory..."
+  mkdir -p .coverage
+  echo "[OK] .coverage/ created"
+else
+  echo "[OK] .coverage/ exists"
+fi
+
+echo ""
+'''
+
+# Master setup task - runs all dependency installations
+[tasks.setup-dev-env]
+workspace = false
+description = "Install all development dependencies (system packages, Rust components, directories)"
+dependencies = [
+  "install-system-deps",
+  "install-rust-components",
+  "ensure-directories",
+  "install-nextest",
+  "install-llvm-cov",
+]
 
 # Coverage tool installation
 [tasks.install-llvm-cov]

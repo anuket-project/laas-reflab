@@ -1,18 +1,19 @@
 use common::prelude::{
     anyhow,
     tokio::time::{sleep, Duration},
-    tracing::{error, info, trace, warn},
+    tracing::{error, info, warn},
 };
 
 use config::settings;
 use dal::{new_client, AsEasyTransaction, FKey, ID};
 
 use models::{
-    dashboard::{image::Distro, Aggregate, Instance, NetworkAssignmentMap, StatusSentiment},
+    dashboard::{types::Distro, Aggregate, Instance, NetworkAssignmentMap, StatusSentiment, Image},
     inventory::{BootTo, Host, Lab},
     EasyLog,
+
 };
-use notifications::{email::send_to_admins, templates::render_eve_grub_config};
+use notifications::{email::send_to_admins};
 use serde::{Deserialize, Serialize};
 use users::ipa;
 
@@ -21,21 +22,12 @@ use tascii::{prelude::*, task_trait::AsyncRunnable};
 use super::{set_boot::SetBoot, set_host_power_state::SetPower};
 use crate::{
     configure_networking::{
-        mgmt_network_config, prod_network_config,
-        vlan_connection::create_network_manager_vlan_connections_from_bondgroups,
-        ConfigureNetworking,
-    },
-    deploy_booking::{
-        cobbler_set_config::*,
-        reachable::WaitReachable,
-        set_host_power_state::{confirm_power_state, HostConfig, PowerState, TimeoutConfig},
-    },
-    render_kickstart_template,
-    resource_management::{
-        cobbler::*,
-        ipmi_accounts::CreateIPMIAccount,
-        mailbox::{Endpoint, Mailbox, MailboxMessageReceiver},
-    },
+        ConfigureNetworking, mgmt_network_config, prod_network_config, vlan_connection::create_network_manager_vlan_connections_from_bondgroups
+    }, deploy_booking::{
+        grub::GenericGrubConfig, reachable::WaitReachable, set_host_power_state::{HostConfig, PowerState, TimeoutConfig, confirm_power_state}
+    }, generate_soft_serial, render_autoinstall_template, render_kickstart_template, resource_management::{
+        external_server::{SSHClientInfo, cleanup_generated_host_grub_files, cleanup_generated_hostname_files, write_file_to_external, write_system_grub_to_external}, ipmi_accounts::CreateIPMIAccount, mailbox::{Endpoint, Mailbox, MailboxMessageReceiver}
+    }
 };
 
 #[derive(Debug, Clone, Hash, Serialize, Deserialize)]
@@ -89,7 +81,7 @@ impl AsyncRunnable for DeployHost {
         // It isn't useful or valuable to base this timeout on the overall timeouts of child tasks
         // as something is likely wrong if it takes that long, so we're better off
         // just failing early and trying again.
-        Duration::from_secs(60 * 45)
+        Duration::from_mins(90)
     }
 
     fn retry_count() -> usize {
@@ -153,9 +145,9 @@ impl DeployHost {
         let (preimage_waiter, imaging_waiter, mut post_boot_waiter, mut post_provision_waiter) =
             self.generate_endpoints().await;
 
-        self.prepare_host_environment(context, host_name).await?;
+        self.prepare_host_environment(context, host_name, &lab.clone()).await?;
 
-        self.configure_cobbler_and_set_boot(
+        self.write_config_files_and_set_boot(
             context,
             preimage_waiter.endpoint(),
             imaging_waiter.endpoint(),
@@ -190,6 +182,8 @@ impl DeployHost {
             StatusSentiment::Succeeded,
         )
         .await;
+
+        self.cleanup_external_server().await?;
 
         Ok(())
     }
@@ -391,6 +385,7 @@ impl DeployHost {
         &mut self,
         context: &Context,
         host_name: &str,
+        lab: &Lab,
     ) -> Result<(), TaskError> {
         self.log(
             "Preparing host environment",
@@ -428,18 +423,39 @@ impl DeployHost {
         )
         .await;
 
-        // Todo - handle alternate case for aarch64
-        let wipefs_cobbler_join_handle = context.spawn(CobblerSetConfiguration {
-            host_id: self.host_id,
-            config: CobblerConfig::new(
-                PREINSTALL_IMAGE_NAME.to_string(),
-                self.using_instance,
-                self.host_id,
-                None,
-                None,
-                vec![],
-            ),
-        });
+        let mut client = new_client().await?;
+        let mut transaction = client.easy_transaction().await?;
+
+        let wipefs_image = Image::get_by_name(&mut transaction, PREINSTALL_IMAGE_NAME.to_string()).await.unwrap().into_inner();
+        // get image struct for above str with purely just a string 
+
+        let host = self.fetch_instance_host().await?;
+                
+        let grub_content = GenericGrubConfig::wipefs(
+            wipefs_image, 
+            host_name.to_string()
+        ).await
+        .render()
+        .unwrap();
+
+        let pxe = settings().pxe.clone();
+
+        let ssh_client = SSHClientInfo {
+            address: pxe.address,
+            port: pxe.ssh.port,
+            user: pxe.ssh.user,
+            password: pxe.ssh.password,
+            writable_directory: pxe.ssh.writable_directory,
+        };
+
+
+        write_system_grub_to_external(
+            &host, 
+            pxe.managed_directories.grub_menuentry, 
+            grub_content, 
+            ssh_client
+        ).await
+        .unwrap();
 
         // Set device to PXE boot
         self.log(
@@ -448,6 +464,7 @@ impl DeployHost {
             StatusSentiment::InProgress,
         )
         .await;
+
 
         context
             .spawn(SetBoot {
@@ -474,7 +491,6 @@ impl DeployHost {
             StatusSentiment::InProgress,
         )
         .await;
-        wipefs_cobbler_join_handle.join()?;
 
         self.log(
             "Powering host on",
@@ -503,7 +519,6 @@ impl DeployHost {
         .await;
 
         // todo - create a new mailbox target that is hit by the early script after wiping disks. For now wait until host is powered off.
-        let host = self.fetch_instance_host().await?;
 
         confirm_power_state(
             &HostConfig {
@@ -533,6 +548,7 @@ impl DeployHost {
     }
 
     /// Generates a soft serial number, renders the grub config, and pushes to cobbler
+    #[deprecated(note="Unnecessary with laas-pxe")]
     async fn configure_cobbler_for_eve(&mut self) -> Result<(), TaskError> {
         self.log(
             "Preparing netinstaller",
@@ -544,23 +560,23 @@ impl DeployHost {
         let soft_serial = generate_soft_serial(16);
         self.set_soft_serial(&soft_serial).await?;
 
-        // Render template
-        let grub_config_content = render_eve_grub_config(
-            &self.fetch_host_details().await.unwrap().1,
-            &self.fetch_instance_image().await.unwrap().cobbler_name, // ex: "eveos-12.0.4-lts-x86_64"
-            "sda",
-            &soft_serial,
-        )
-        .unwrap();
+        // // Render template
+        // let grub_config_content = render_eve_grub_config(
+        //     &self.fetch_host_details().await.unwrap().1,
+        //     &self.fetch_instance_image().await.unwrap().cobbler_name, // ex: "eveos-12.0.4-lts-x86_64"
+        //     "sda",
+        //     &soft_serial,
+        // )
+        // .unwrap();
 
-        // Push to cobbler
-        let host = self.fetch_instance_host().await.unwrap();
-        override_system_grub_config(&host, &grub_config_content).await?;
+        // // Push to cobbler
+        // let host = self.fetch_instance_host().await.unwrap();
+        // override_system_grub_config(&host, &grub_config_content).await?;
 
         Ok(())
     }
 
-    async fn configure_cobbler_and_set_boot(
+    async fn write_config_files_and_set_boot(
         &mut self,
         context: &Context,
         preimage_endpoint: Endpoint,
@@ -582,48 +598,59 @@ impl DeployHost {
         .await;
 
         let workflow_distro = self.get_distro().await?;
+        let host = self
+            .host_id
+            .get(&mut transaction)
+            .await
+            .expect("host did not exist by given fk?");
 
-        let cobbler_config_jh = context.spawn(CobblerSetConfiguration {
-            host_id: self.host_id,
-            config: CobblerConfig::new(
-                self.fetch_instance_image().await?.cobbler_name,
-                self.using_instance,
-                self.host_id,
-                Some(postimage_endpoint),
-                Some(preimage_endpoint),
-                match workflow_distro {
-                    Distro::Fedora | Distro::Alma => {
-                        let host = self
-                            .host_id
-                            .get(&mut transaction)
-                            .await
-                            .expect("host did not exist by given fk?");
+        let grub_config: String = match workflow_distro {
+            Distro::Ubuntu => {
+                GenericGrubConfig::ubuntu(
+                    self.fetch_instance_image().await.unwrap(), 
+                    host.server_name.clone(), 
+                ).await
+                .render()
+                .unwrap()
+            },
+            Distro::Fedora | Distro::Alma => {
+                GenericGrubConfig::rhel(
+                    self.fetch_instance_image().await.unwrap(), 
+                    host.ports(&mut transaction).await.expect("didn't get ports?"), 
+                    host.server_name.clone()
+                ).await
+                .render()
+                .unwrap()
+            },
+            Distro::Eve => {
+                let soft_serial = generate_soft_serial(16);
+                self.set_soft_serial(&soft_serial).await?;
+                GenericGrubConfig::eve(
+                    self.fetch_instance_image().await.unwrap(), 
+                    host.server_name.clone(), 
+                    soft_serial,
+                ).await
+                .render()
+                .unwrap()
+            },
+        };
 
-                        let mut port_args: Vec<(String, String)> = vec![];
+        let pxe_config: config::PxeConfig = settings().pxe.clone();
+        let pxe_ssh_client = SSHClientInfo{ 
+                    address: pxe_config.address.clone(), 
+                    port: pxe_config.ssh.port, 
+                    user: pxe_config.ssh.user, 
+                    password: pxe_config.ssh.password, 
+                    writable_directory: pxe_config.ssh.writable_directory,  
+                };
 
-                        for port in host
-                            .ports(&mut transaction)
-                            .await
-                            .expect("didn't get ports?")
-                        {
-                            port_args.push((
-                                "ifname".to_string(),
-                                format!("{}:{}", port.name, port.mac),
-                            ));
-                        }
 
-                        let cobbler_address = settings().cobbler.ssh.address.clone();
-                        port_args.push((
-                            "inst.ks".to_string(),
-                            format!("http://{cobbler_address}/laas_files/fedora-kickstarts/{host_name}.ks"),
-                        ));
-
-                        port_args
-                    }
-                    _ => vec![],
-                },
-            ),
-        });
+        write_system_grub_to_external(
+            &host.into_inner(), 
+            pxe_config.managed_directories.grub_menuentry, 
+            grub_config.to_string(), 
+            pxe_ssh_client.clone()
+        ).await.unwrap();
 
         warn!("setting boot dev for {} to network boot", host_name);
 
@@ -655,14 +682,12 @@ impl DeployHost {
 
         info!("Making sure cobbler config is done");
 
-        cobbler_config_jh.join()?;
-
         match workflow_distro {
             Distro::Eve => {
-                self.configure_cobbler_for_eve().await?;
+                info!("Skipping generation of config file,  EVE does not use an auto-config files");
             }
             Distro::Fedora | Distro::Alma => {
-                info!("Configuring host {} for Fedora on Cobbler", host_name);
+                info!("Configuring host {} for RHEL based image", host_name);
 
                 let interfaces = self
                     .host_id
@@ -684,8 +709,10 @@ impl DeployHost {
                     .map(|nm_conn| nm_conn.render_kickstart_network_config())
                     .collect();
 
+
                 let kickstart_template = render_kickstart_template(
-                    self.fetch_instance_image().await.unwrap().cobbler_name,
+                    pxe_config.address,
+                    self.fetch_instance_image().await.unwrap().http_unattended_install_config_path().unwrap().to_string(),
                     self.fetch_users().await.unwrap(),
                     interfaces,
                     vlan_configs,
@@ -696,25 +723,62 @@ impl DeployHost {
 
                 info!("Kickstart template successfully rendered for {}", host_name);
 
-                let mut directory = settings().cobbler.ssh.laas_files.clone();
+                let settings_clone = settings().clone();
+                let directory = settings_clone.pxe.managed_directories.rhel_kickstart.clone();
 
-                directory.push_str("fedora-kickstarts/");
+                let filename: String = format!("{host_name}.ks");
+
+
+                write_file_to_external(
+                    directory, 
+                    filename, 
+                    kickstart_template, 
+                    pxe_ssh_client.clone())
+                .await
+                .unwrap()   
+            }
+
+            Distro::Ubuntu => {
+                // to-do redo how we template and render cloud-init files so they are not served from Liblaas' memory
+
+                let network_assignment_map = self.fetch_network_assignment_map().await?;
+                let host_config = self.fetch_instance_config().await?;
+
+
+                let autoinstall_content = render_autoinstall_template(
+                    self.fetch_users().await.unwrap(),
+                    preimage_endpoint,
+                    postimage_endpoint,
+                    host_name.to_string(),
+                    self.fetch_instance_host().await?.ports(&mut transaction).await?,
+                    create_network_manager_vlan_connections_from_bondgroups(
+                        &network_assignment_map, 
+                        &host_config.connections
+                        ).await?
+                )
+                .unwrap();
+
+
+                let settings_clone = settings().clone();
+                let directory = settings_clone.pxe.managed_directories.ubuntu_cloudinit.clone();
 
                 let mut filename: String = "".to_string();
                 filename.push_str(host_name);
-                filename.push_str(".ks");
+                filename.push_str(".yaml"); // Double check file name and path is correct
 
-                write_file_to_cobbler(directory, filename, kickstart_template)
-                    .await
-                    .unwrap()
-            }
+                write_file_to_external(
+                    directory, 
+                    filename, 
+                    autoinstall_content, 
+                    pxe_ssh_client.clone()
+                )
+                .await
+                .unwrap();
 
-            _ => {
-                info!(
-                    "set cobbler configuration and finished mgmt net config, also set host next boot dev"
-                );
             }
         };
+
+        info!("wrote configuration files to remote PXE server and finished mgmt net config, also set host next boot dev");
 
         transaction.commit().await?;
 
@@ -828,7 +892,7 @@ impl DeployHost {
 
     async fn install_os(
         &mut self,
-        mut preimage_waiter: MailboxMessageReceiver,
+        _preimage_waiter: MailboxMessageReceiver,
         mut imaging_waiter: MailboxMessageReceiver,
     ) -> Result<(), TaskError> {
         self.log(
@@ -867,7 +931,8 @@ impl DeployHost {
                 .unwrap();
             }
             _ => {
-                match imaging_waiter.wait_next(Duration::from_secs(60 * 35)) {
+                // The longest step of the process, this is when apt/dnf update is run so it takes a *while*
+                match imaging_waiter.wait_next(Duration::from_mins(90)) {
                     Ok(_) => {
                         // TODO: allow host to post a *failure* message, so we can detect that and save
                         // those logs and force it to reboot and retry (and detect this all early)
@@ -902,38 +967,6 @@ impl DeployHost {
         lab: Lab,
         post_boot_waiter: &mut MailboxMessageReceiver,
     ) -> Result<(), TaskError> {
-        let workflow_distro = self.get_distro().await?;
-
-        match workflow_distro {
-            Distro::Ubuntu => {
-                self.log(
-                    "Wait Host Pre-Configure",
-                    "wait for host to boot into pre-configure mode and bootstrap the configuration environment",
-                    StatusSentiment::InProgress,
-                )
-                .await;
-
-                // This is where ubuntu waits for cloud init to finish running
-                match post_boot_waiter.wait_next(Duration::from_secs(60 * 35)) {
-                    Ok(_) => {
-                        info!("Host came back up after imaging");
-                    }
-                    Err(e) => {
-                        self.log(
-                            "Pre-Configure Wait Failed",
-                            "host failed to boot into pre-configure mode, initiating error recovery routines",
-                            StatusSentiment::Degraded,
-                        )
-                        .await;
-                        error!("MAILBOX FAILED with {:?}", e);
-                        return Err(TaskError::Reason("Mailbox error".to_owned()));
-                    }
-                }
-            }
-            _ => {
-                info!("No postprovision network configuration needed.")
-            }
-        }
 
         if lab.is_dynamic {
             self.log(
@@ -973,37 +1006,39 @@ impl DeployHost {
     async fn verify_host_provisioned(
         &mut self,
         context: &Context,
-        host_name: &str,
+        _host_name: &str,
         post_provision_waiter: &mut MailboxMessageReceiver,
     ) -> Result<(), TaskError> {
         let workflow_distro = self.get_distro().await?;
 
+        // This is where a host would hit a mailbox endpoint which would indicate it is done applying cloud_init,
+            // since this is not being used right now it will be commented out until the host has the ability to hit the endpoint again 
         match workflow_distro {
-            Distro::Ubuntu => {
-                self.log(
-                    "Wait Host Online",
-                    "wait for host to complete on-device setup steps (incl Cloud-Init)",
-                    StatusSentiment::InProgress,
-                )
-                .await;
+            // Distro::Ubuntu => {
+            //     self.log(
+            //         "Wait Host Online",
+            //         "wait for host to complete on-device setup steps (incl Cloud-Init)",
+            //         StatusSentiment::InProgress,
+            //     )
+            //     .await;
 
-                match post_provision_waiter.wait_next(Duration::from_secs(60 * 30)) {
-                    Ok(_) => {
-                        info!("Host came back up after applying network configs");
-                    }
-                    Err(e) => {
-                        self.log(
-                            "On-Device Setup Failed",
-                            "host failed to complete on-device configuration, initiating error recovery routines",
-                            StatusSentiment::Degraded,
-                        )
-                        .await;
+            //     match post_provision_waiter.wait_next(Duration::from_secs(60 * 30)) {
+            //         Ok(_) => {
+            //             info!("Host came back up after applying network configs");
+            //         }
+            //         Err(e) => {
+            //             self.log(
+            //                 "On-Device Setup Failed",
+            //                 "host failed to complete on-device configuration, initiating error recovery routines",
+            //                 StatusSentiment::Degraded,
+            //             )
+            //             .await;
 
-                        error!("MAILBOX FAILED with {:?}", e);
-                        return Err(TaskError::Reason("Mailbox error".to_owned()));
-                    }
-                }
-            }
+            //             error!("MAILBOX FAILED with {:?}", e);
+            //             return Err(TaskError::Reason("Mailbox error".to_owned()));
+            //         }
+            //     }
+            // }
 
             _ => {
                 self.log(
@@ -1093,5 +1128,53 @@ impl DeployHost {
     }
     async fn log(&mut self, msg: &str, desc: &str, sentiment: StatusSentiment) {
         self.using_instance.log(msg, desc, sentiment).await;
+    }
+
+    async fn cleanup_external_server(
+        &mut self,
+    ) -> Result<(), anyhow::Error>{
+        info!("Cleaning up generated files in PXE server");
+
+        let workflow_config = settings().workflow_config.clone();
+
+        info!("Worflow config set to {:?}", workflow_config);
+
+        if !workflow_config.cleanup_generated_files {
+            info!("Config set to disable cleanup, exiting");
+            return Ok(())
+        }
+
+        let host = self.fetch_instance_host().await.unwrap();
+        let pxe_config = settings().pxe.clone();
+        let pxe_directories_config = pxe_config.managed_directories.clone();
+        
+        let ssh_client = SSHClientInfo{
+            address: pxe_config.address,
+            port: pxe_config.ssh.port,
+            user: pxe_config.ssh.user,
+            password: pxe_config.ssh.password,
+            writable_directory: pxe_config.ssh.writable_directory,
+        };
+
+        info!("Cleaning up host GRUB files");
+
+        cleanup_generated_host_grub_files(
+            &host, 
+            pxe_directories_config.grub_menuentry.clone(), 
+            ssh_client.clone()
+        ).await.unwrap();
+
+        info!("Cleaning up hostname configuration files");
+
+        let config_file_directories: Vec<_> = vec![pxe_directories_config.rhel_kickstart, pxe_directories_config.ubuntu_cloudinit, pxe_directories_config.grub_menuentry];
+
+        cleanup_generated_hostname_files(
+            &host, 
+            config_file_directories, 
+            ssh_client.clone()
+        ).await.unwrap();
+
+
+        Ok(())
     }
 }

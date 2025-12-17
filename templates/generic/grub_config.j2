@@ -3,8 +3,8 @@ set timeout=1
 set default='{{ system_name }}'
 menuentry '{{ system_name }}' --class gnu-linux --class gnu --class os {
   echo 'Loading kernel ...'
-  clinux {{ kernel_path }} {% for arg in kernel_args -%} {{ arg }} {% endfor %}
+  linux {{ kernel_path }} {% for arg in kernel_args -%} {{ arg }} {% endfor %}
   echo 'Loading initial ramdisk ...'
-  cinitrd {% for initrd in initrd_paths -%} {{ initrd }} {% endfor %}
+  initrd {% for initrd in initrd_paths -%} {{ initrd }} {% endfor %}
   echo '...done'
 }

@@ -27,10 +27,7 @@ use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
-use tascii::{
-    prelude::{Runtime, *},
-    task_trait::AsyncRunnable,
-};
+use tascii::prelude::Runtime;
 use tracing::{error, info, warn};
 
 // const MESSAGE_EXPIRY_TIME_MINUTES: f32 = 5.0;
@@ -368,6 +365,7 @@ impl Mailbox {
     }*/
 }
 
+#[deprecated(note="Cloud init is now served through laas-pxe")]
 async fn get_ci_injector() -> Result<impl IntoApiResponse, (StatusCode, String)> {
     // TODO: want to allow sending the finalize_provision stub
     // from liblaas instead of having to have it served by cobbler
@@ -453,7 +451,7 @@ pub async fn entry(_rt: &'static Runtime) {
         .route("/:instance/:unique/pop", post(Mailbox::pop))
         //.route("/:instance/:aggregate/cloud_init.tar", get(get_ci_file))
         .route("/:instance/user-data", get(get_ci_file))
-        .route("/cloud_init.py", get(get_ci_injector))
+        .route("/cloud_init.py", get(get_ci_injector)) // DEPRECATED 
         .finish_api_with(&mut api, api_docs)
         .layer(Extension(Arc::new(api)))
         .with_state(state);

@@ -1,5 +1,3 @@
-cargo-features = ["profile-rustflags"]
-
 [package]
 name = "tascii"
 version = "0.1.0"
@@ -27,10 +25,6 @@ dal = { path = "../dal/" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 linux-futex = "0.1.2"
-
-[profile.test]
-panic = 'abort'
-rustflags = ["-Cpanic=abort", "-Zpanic_abort_tests"]
 
 # This compiling this into the binary auto-initializes the PyO3 runtime, 
 # which is needed to interface with cobbler.

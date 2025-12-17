@@ -7,6 +7,7 @@ edition = "2021"
 anyhow = { workspace = true }
 chrono = { workspace = true }
 dashmap = { workspace = true }
+itertools = { workspace = true }
 serde = { workspace = true, features = ["derive", "rc"] }
 thiserror = { workspace = true }
 serde_json = { workspace = true }
@@ -35,6 +36,8 @@ config = { path = "../config/" }
 common = { path = "../common/" }
 metrics = { path = "../metrics/" }
 dal = { path = "../dal/" }
+http.workspace = true
+mac_address.workspace = true
 
 [package.metadata.cargo-machete]
 ignored = ["strum"]

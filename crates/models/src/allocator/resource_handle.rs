@@ -81,7 +81,7 @@ impl DBTable for ResourceHandle {
         Ok(ExistingRow::from_existing(s))
     }
 
-    fn to_rowlike(&self) -> Result<HashMap<&str, Box<dyn ToSql + Sync + Send>>, anyhow::Error> {
+    fn to_rowlike(&self) -> Result<HashMap<&str, Box<dyn ToSqlObject>>, anyhow::Error> {
         let (tracking_type, tracking_id, lab) = match self.tracks {
             ResourceHandleInner::Host(h) => ("host", h.into_id(), self.lab),
             ResourceHandleInner::PrivateVlan(id) => ("private_vlan", id.into_id(), self.lab),
@@ -89,7 +89,7 @@ impl DBTable for ResourceHandle {
             ResourceHandleInner::VPNAccess(id) => ("vpn", id.into_id(), self.lab),
         };
 
-        let c: [(&str, Box<dyn tokio_postgres::types::ToSql + Sync + Send>); _] = [
+        let c: [(&str, Box<dyn ToSqlObject>); _] = [
             ("id", Box::new(self.id)),
             ("tracks_resource", Box::new(tracking_id)),
             ("tracks_resource_type", Box::new(tracking_type)),
@@ -267,8 +267,6 @@ impl ResourceHandle {
         params: &[&(dyn ToSql + Sync)],
         except_for: &[FKey<ResourceHandle>],
     ) -> Result<Vec<(FKey<T>, FKey<ResourceHandle>)>, anyhow::Error> {
-        let tn = T::table_name();
-
         let mut params: Vec<&(dyn ToSql + Sync)> = Vec::from_iter(params.iter().copied());
 
         params.push(&lab);
@@ -294,7 +292,7 @@ impl ResourceHandle {
         _token: &AllocatorToken,
         transaction: &mut EasyTransaction<'_>,
         filter: ResourceRequestInner,
-        except_for: &Vec<FKey<ResourceHandle>>,
+        except_for: &[FKey<ResourceHandle>],
     ) -> Result<ExistingRow<ResourceHandle>, anyhow::Error> {
         match filter {
             ResourceRequestInner::HostByCharacteristics { .. } => {
@@ -325,7 +323,9 @@ impl ResourceHandle {
                             EXCEPT (SELECT for_resource FROM {allocation_tn} WHERE ended IS NULL);
                 ");*/
 
-                tracing::info!("Free hosts of flavor {flavor:?} found by allocator: {free_hosts:?}");
+                tracing::info!(
+                    "Free hosts of flavor {flavor:?} found by allocator: {free_hosts:?}"
+                );
 
                 //let handle_ids = transaction.query(&free_hosts, &[&flavor]).await.anyway()?;
 
@@ -334,9 +334,7 @@ impl ResourceHandle {
                 // for excluding it is fragile and arcane
                 let mut handle_ids = free_hosts
                     .into_iter()
-                    .filter(|(hfk, rhfk)| {
-                        !except_for.contains(rhfk)
-                    })
+                    .filter(|(_hfk, rhfk)| !except_for.contains(rhfk))
                     .collect_vec();
 
                 handle_ids.shuffle(&mut thread_rng());
@@ -532,7 +530,7 @@ impl ResourceHandle {
         filter: ResourceRequestInner,
         for_aggregate: Option<FKey<Aggregate>>,
         reason: AllocationReason,
-        except_for: &Vec<FKey<ResourceHandle>>,
+        except_for: &[FKey<ResourceHandle>],
     ) -> Result<ExistingRow<ResourceHandle>, anyhow::Error> {
         let mut transaction = t.easy_transaction().await?;
 

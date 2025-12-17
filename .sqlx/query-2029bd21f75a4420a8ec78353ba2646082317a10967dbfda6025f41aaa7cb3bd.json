@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE images\n            SET\n                cobbler_name = $2,\n                flavors = (\n                    SELECT ARRAY(\n                        SELECT id \n                        FROM flavors \n                        WHERE name = ANY($3) AND deleted = false\n                        )\n                    ),\n                distro = $4::text::distro,\n                version = $5,\n                arch = $6::text::arch,\n                http_unattended_install_config_path = $7,\n                http_iso_path = $8,\n                tftp_kernel_path = $9,\n                tftp_initrd_paths = $10\n            WHERE name = $1;\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Varchar",
+        "TextArray",
+        "Text",
+        "Varchar",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2029bd21f75a4420a8ec78353ba2646082317a10967dbfda6025f41aaa7cb3bd"
+}

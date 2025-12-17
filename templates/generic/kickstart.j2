@@ -1,8 +1,8 @@
-%ksappend http://10.13.0.3/laas_files/{{os_name}}/base.ks
+%ksappend http://{{pxe_address}}{{base_config_uri}}
 
 {% for user in ipa_users %}
 user --name={{user["username"]}} --groups=wheel --lock 
-sshkey --username={{user["username"]}} "{{user["ssh_keys"]}}"
+sshkey --username={{user["username"]}} "{% for key in user["ssh_keys"] %} {{ key }} {% endfor %}"
 
 {% endfor %}
 

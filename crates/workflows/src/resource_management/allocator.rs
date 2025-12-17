@@ -409,7 +409,7 @@ impl Allocator {
             },
             Some(for_aggregate),
             AllocationReason::ForBooking,
-            &vec![],
+            &[],
         )
         .await?;
 

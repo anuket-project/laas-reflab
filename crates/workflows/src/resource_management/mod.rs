@@ -7,6 +7,7 @@ pub mod cisco;
 pub mod cobbler;
 pub mod ipmi_accounts;
 pub mod mailbox;
+pub mod external_server;
 // we dont use this anywhere
 // pub mod sonic;
 pub mod vpn;

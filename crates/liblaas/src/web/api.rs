@@ -11,7 +11,7 @@ use models::{
     inventory::{Arch, StorageType},
 };
 use models::{
-    dashboard::{image::Distro, Image, Template},
+    dashboard::{types::Distro, Image, Template},
     inventory::{self, CardType, DataValue, Flavor},
 };
 

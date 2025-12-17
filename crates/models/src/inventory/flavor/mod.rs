@@ -5,7 +5,7 @@ use sqlx::PgPool;
 use std::collections::HashMap;
 
 use crate::{
-    dashboard::{image::Distro, Image},
+    dashboard::{types::Distro, Image},
     inventory::{Arch, StorageType},
 };
 
@@ -100,7 +100,7 @@ impl Flavor {
 
     pub async fn get_images(&self, pool: &PgPool) -> Vec<Image> {
         let image_records = sqlx::query!(
-            r#"SELECT id, name, deleted, flavors, distro as "distro: Distro", cobbler_name, version, arch as "arch: Arch", http_unattended_install_config_path, http_iso_path, tftp_kernel_path, tftp_initrd_paths FROM images where $1=ANY(flavors)"#,
+            r#"SELECT id, name, deleted, flavors, distro as "distro: Distro", cobbler_name, version, arch as "arch: Arch", http_unattended_install_config_path as "http_unattended_install_config_path?", http_iso_path as "http_iso_path?", tftp_kernel_path, tftp_initrd_paths FROM images where $1=ANY(flavors)"#,
             self.id().into_uuid()
         )
         .fetch_all(pool)
@@ -124,29 +124,28 @@ impl Flavor {
                 .filter_map(|s| s.parse().ok())
                 .collect();
 
-            let image: Image = Image {
-                id: FKey::from_id(ID::from(image_record.id)),
-                name: image_record.name,
-                deleted: image_record.deleted,
-                flavors,
-                distro: image_record.distro,
-                version: image_record.version,
-                arch: image_record.arch,
-                cobbler_name: image_record.cobbler_name,
-                http_unattended_install_config_path: image_record
-                    .http_unattended_install_config_path
-                    .parse()
-                    .unwrap_or_else(|_| "/".parse().unwrap()),
-                http_iso_path: image_record
-                    .http_iso_path
-                    .parse()
-                    .unwrap_or_else(|_| "/".parse().unwrap()),
-                tftp_kernel_path: image_record
+            let mut image = Image::new(
+                FKey::from_id(ID::from(image_record.id)),
+                image_record.name,
+                image_record.cobbler_name,
+                image_record.distro,
+                image_record.version,
+                image_record.arch,
+                image_record
                     .tftp_kernel_path
                     .parse()
                     .unwrap_or_else(|_| "/".parse().unwrap()),
                 tftp_initrd_paths,
-            };
+            );
+
+            image.set_deleted(image_record.deleted);
+            image.set_flavors(flavors);
+            image.set_http_unattended_install_config_path(
+                image_record
+                    .http_unattended_install_config_path
+                    .and_then(|s| s.parse().ok()),
+            );
+            image.set_http_iso_path(image_record.http_iso_path.and_then(|s| s.parse().ok()));
 
             ret_image_vec.push(image);
         }

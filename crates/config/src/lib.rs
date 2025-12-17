@@ -1,5 +1,3 @@
-// Copyright (c) 2023 University of New Hampshire
-// SPDX-License-Identifier: MIT
 #![doc = include_str!("../README.md")]
 
 use std::{collections::HashMap, fmt::Display, path::PathBuf};
@@ -16,6 +14,8 @@ pub struct LibLaaSConfig {
     pub cli: CliConfig,
     pub notifications: NotificationConfig,
     pub cobbler: CobblerConfig,
+    pub pxe: PxeConfig,
+    pub workflow_config: WorkflowConfig,
     pub ipa: Vec<IPAConfig>,
     pub eve: EveConfig,
     pub projects: HashMap<String, ProjectConfig>,
@@ -133,13 +133,14 @@ pub struct NotificationConfig {
     pub templates_directory: String,
     pub vpn_config_path: PathBuf,
 }
+#[deprecated(note = "We are removing Cobbler")]
 #[derive(Debug, Deserialize, Clone)]
 pub struct CobblerAPIConfig {
     pub url: String,
     pub username: String,
     pub password: String,
 }
-
+#[deprecated(note = "We are removing Cobbler")]
 #[derive(Debug, Deserialize, Clone)]
 pub struct CobblerSSHConfig {
     pub address: String,
@@ -150,11 +151,48 @@ pub struct CobblerSSHConfig {
     pub system_directory: String,   // i.e. /srv/tftpboot/grub/system
     pub laas_files: String,         // ie. /srv/www/laas_files/
 }
-
+#[deprecated(note = "We are removing Cobbler")]
 #[derive(Debug, Deserialize, Clone)]
 pub struct CobblerConfig {
     pub api: CobblerAPIConfig,
     pub ssh: CobblerSSHConfig,
+}
+#[derive(Debug, Deserialize, Clone)]
+pub struct PxeSSHConfig {
+    pub port: i32,
+    pub user: String,
+    pub password: String,
+    pub writable_directory: String, // i,e. /tmp
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct PxeManagedDirectoriesConfig {
+    pub ubuntu_cloudinit: String,
+    pub rhel_kickstart: String,
+    pub grub_menuentry: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct PxeHttpTftpUriConfig {
+    pub ubuntu_cloudinit: String,
+    pub rhel_kickstart: String,
+    pub iso_packed: String,
+    pub iso_unpacked: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct PxeConfig {
+    pub address: String,
+    pub ssh: PxeSSHConfig,
+    pub managed_directories: PxeManagedDirectoriesConfig,
+    pub http_tftp_uri: PxeHttpTftpUriConfig,
+}
+
+// Used to customize Workflow behavior for development purposes
+#[derive(Debug, Deserialize, Clone)]
+pub struct WorkflowConfig {
+    pub cleanup_generated_files: bool,
+    pub generate_hostname_grub_file: bool, // If liblaas should render a <hostname>.cfg grub config alongside the <MAC-addr> files
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -165,6 +203,7 @@ pub struct IPAConfig {
     pub certificate_path: PathBuf,
 }
 
+#[deprecated(note = "Removed as part of laas-pxe migration")]
 #[derive(Debug, Deserialize, Clone)]
 pub struct EveConfig {
     pub url: String,

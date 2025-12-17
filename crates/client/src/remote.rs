@@ -2,9 +2,9 @@
 
 #[allow(deprecated)]
 use std::{
-    io::{stdout, Write},
+    io::{Write, stdout},
     mem::swap,
-    panic::{AssertUnwindSafe, BacktraceStyle, PanicInfo},
+    panic::{AssertUnwindSafe, PanicInfo},
     sync::Arc,
 };
 
@@ -28,12 +28,12 @@ use common::prelude::{
 
 use serde::{Deserialize, Serialize};
 use tascii::{
-    executors::{self, spawn_on_tascii_tokio_options, RtOptions},
+    executors::{self, RtOptions, spawn_on_tascii_tokio_options},
     prelude::Runtime,
     set_local_hook,
 };
 
-use crate::{cli_entry, LiblaasStateInstruction};
+use crate::{LiblaasStateInstruction, cli_entry};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SentObject {
@@ -865,13 +865,6 @@ pub async fn cli_server(tascii_rt: &'static Runtime, server: Server) -> LiblaasS
 
     #[allow(deprecated)]
     fn panic_handler(info: &PanicInfo<'_>) {
-        let style = if !info.can_unwind() {
-            Some(BacktraceStyle::Full)
-        } else {
-            std::panic::get_backtrace_style()
-        };
-
-        // The current implementation always returns `Some`.
         let location = info.location();
         if let Some(location) = location {
             let msg = match info.payload().downcast_ref::<&'static str>() {
@@ -893,16 +886,9 @@ pub async fn cli_server(tascii_rt: &'static Runtime, server: Server) -> LiblaasS
                 "thread '{name}' panicked at '{msg}', {location}"
             );
 
-            match style {
-                Some(BacktraceStyle::Short)
-                | Some(BacktraceStyle::Full)
-                | Some(BacktraceStyle::Off) => {
-                    let bt = std::backtrace::Backtrace::force_capture().to_string();
-
-                    let _ = writeln!(output, "{bt}");
-                }
-                Some(_) => {}
-                None => {}
+            let bt = std::backtrace::Backtrace::force_capture().to_string();
+            if !bt.is_empty() {
+                let _ = writeln!(output, "{bt}");
             }
 
             SERVER_STUB.with(|ss| {
