@@ -12,7 +12,6 @@ path = "src/lib.rs"
 anyhow = { workspace = true }
 enum_dispatch = { workspace = true }
 mac_address = { workspace = true, features = ["serde"] }
-tokio = { workspace = true }
 models = { path = "../models" }
 dal = { path = "../dal" }
 sqlx = { workspace = true, features = ["mac_address"] }

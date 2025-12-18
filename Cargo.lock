@@ -558,7 +558,6 @@ dependencies = [
  "common",
  "config 0.1.0",
  "dal",
- "liblaas",
  "models",
  "notifications",
  "remoc",
@@ -1989,7 +1988,6 @@ dependencies = [
  "tempdir",
  "tempfile",
  "thiserror 1.0.69",
- "tokio",
  "uuid",
 ]
 
@@ -2444,7 +2442,6 @@ dependencies = [
  "tokio",
  "tokio-postgres",
  "tracing",
- "url",
  "uuid",
 ]
 
@@ -5452,7 +5449,6 @@ dependencies = [
  "metrics",
  "models",
  "notifications",
- "pyo3",
  "schemars 0.8.22",
  "serde",
  "serde-xml-rs",

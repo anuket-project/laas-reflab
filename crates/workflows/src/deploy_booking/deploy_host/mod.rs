@@ -145,7 +145,7 @@ impl DeployHost {
         let (preimage_waiter, imaging_waiter, mut post_boot_waiter, mut post_provision_waiter) =
             self.generate_endpoints().await;
 
-        self.prepare_host_environment(context, host_name, &lab.clone()).await?;
+        self.prepare_host_environment(context, host_name).await?;
 
         self.write_config_files_and_set_boot(
             context,
@@ -385,7 +385,6 @@ impl DeployHost {
         &mut self,
         context: &Context,
         host_name: &str,
-        lab: &Lab,
     ) -> Result<(), TaskError> {
         self.log(
             "Preparing host environment",
@@ -547,35 +546,6 @@ impl DeployHost {
         Ok(())
     }
 
-    /// Generates a soft serial number, renders the grub config, and pushes to cobbler
-    #[deprecated(note="Unnecessary with laas-pxe")]
-    async fn configure_cobbler_for_eve(&mut self) -> Result<(), TaskError> {
-        self.log(
-            "Preparing netinstaller",
-            "configuring EVE-OS installer arguments",
-            StatusSentiment::InProgress,
-        )
-        .await;
-
-        let soft_serial = generate_soft_serial(16);
-        self.set_soft_serial(&soft_serial).await?;
-
-        // // Render template
-        // let grub_config_content = render_eve_grub_config(
-        //     &self.fetch_host_details().await.unwrap().1,
-        //     &self.fetch_instance_image().await.unwrap().cobbler_name, // ex: "eveos-12.0.4-lts-x86_64"
-        //     "sda",
-        //     &soft_serial,
-        // )
-        // .unwrap();
-
-        // // Push to cobbler
-        // let host = self.fetch_instance_host().await.unwrap();
-        // override_system_grub_config(&host, &grub_config_content).await?;
-
-        Ok(())
-    }
-
     async fn write_config_files_and_set_boot(
         &mut self,
         context: &Context,
@@ -679,8 +649,6 @@ impl DeployHost {
         .await;
 
         context.spawn(SetPower::off(self.host_id)).join()?;
-
-        info!("Making sure cobbler config is done");
 
         match workflow_distro {
             Distro::Eve => {

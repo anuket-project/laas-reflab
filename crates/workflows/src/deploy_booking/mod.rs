@@ -8,14 +8,11 @@ use std::{
 
 use common::prelude::{itertools::Itertools, parking_lot::Mutex, *};
 
-pub mod cobbler_set_config;
 pub mod deploy_host;
 pub mod notify;
 pub mod reachable;
 pub mod set_boot;
 pub mod set_host_power_state;
-pub mod sol;
-pub mod wait_host_os_reachable;
 pub mod grub;
 
 use config::Situation;
