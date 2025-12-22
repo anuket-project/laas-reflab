@@ -20,7 +20,7 @@ impl GenericGrubConfig {
     pub async fn rhel(
         image: Image,
         interfaces: Vec<HostPort>,
-        hostname: String,
+        server_hostname: String, // ie. hpe1, arm4 etc
     ) -> Self {
         let db_pool = get_db_pool().await.unwrap();
         let mut kargs: Vec<String> = vec![];
@@ -35,20 +35,20 @@ impl GenericGrubConfig {
         let pxe_settings = settings().pxe.clone();
         let kickstart_dir = pxe_settings.http_tftp_uri.rhel_kickstart;
         let pxe_address = pxe_settings.address;
-        kargs.push(format!("inst.ks=http://{}{}/{}.ks", pxe_address, kickstart_dir, hostname));
+        kargs.push(format!("inst.ks=http://{}{}/{}.ks", pxe_address, kickstart_dir, server_hostname));
 
         
         GenericGrubConfig {
             kernel_path: image.tftp_kernel_path().clone(), 
             kernel_args: kargs, 
             initrd_paths: image.tftp_initrd_paths().to_vec(), 
-            hostname: hostname, 
+            hostname: server_hostname, 
         }
     }
 
     pub async fn ubuntu(
         image: Image,
-        hostname: String,
+        server_hostname: String, // ie. hpe1, arm4 etc
     ) -> Self {
         let db_pool = get_db_pool().await.unwrap();
         let mut kargs: Vec<String> = vec![];
@@ -58,7 +58,7 @@ impl GenericGrubConfig {
         
 
         let settings_copy = settings();
-        let ci_url = format!("http://{}{}/{}.yaml", settings_copy.pxe.address, settings_copy.pxe.http_tftp_uri.ubuntu_cloudinit, &hostname);
+        let ci_url = format!("http://{}{}/{}.yaml", settings_copy.pxe.address, settings_copy.pxe.http_tftp_uri.ubuntu_cloudinit, &server_hostname);
 
         kargs.push(format!("cloud-config-url={}", ci_url));
         // kargs.push(format!("provision_id={}", ID::new().to_string()));
@@ -67,7 +67,7 @@ impl GenericGrubConfig {
             kernel_path: image.tftp_kernel_path().clone(), 
             kernel_args: kargs, 
             initrd_paths: image.tftp_initrd_paths().to_vec(), 
-            hostname: hostname, 
+            hostname: server_hostname, 
         }
 
     }
@@ -75,7 +75,7 @@ impl GenericGrubConfig {
     // Here to be more basic Ubuntu Grub file used pre-eve install to wipe disks
     pub async fn wipefs(
         image: Image,
-        hostname: String,
+        server_hostname: String, // ie. hpe1, arm4 etc
     ) -> Self {
         let db_pool = get_db_pool().await.unwrap();
         let mut kargs: Vec<String> = vec![];
@@ -90,14 +90,14 @@ impl GenericGrubConfig {
             kernel_path: image.tftp_kernel_path().clone(), 
             kernel_args: kargs, 
             initrd_paths: image.tftp_initrd_paths().to_vec(), 
-            hostname: hostname, 
+            hostname: server_hostname, 
         }
 
     }
 
     pub async fn eve(
         image: Image,
-        hostname: String,
+        server_hostname: String, // ie. hpe1, arm4 etc
         soft_serial: String,
     ) -> Self {
 
@@ -113,7 +113,7 @@ impl GenericGrubConfig {
             kernel_path: image.tftp_kernel_path().clone(), 
             kernel_args: kargs, 
             initrd_paths: image.tftp_initrd_paths().to_vec(), 
-            hostname: hostname, 
+            hostname: server_hostname, 
         }
     
     }

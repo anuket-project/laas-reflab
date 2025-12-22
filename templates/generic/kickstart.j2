@@ -7,7 +7,7 @@ sshkey --username={{user["username"]}} "{% for key in user["ssh_keys"] %} {{ key
 {% endfor %}
 
 {% for config in vlan_configs %}
-{{config}}
+{{config}} --hostname {{hostname}}
 
 {% endfor %}
 

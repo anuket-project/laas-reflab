@@ -684,6 +684,7 @@ impl DeployHost {
                     self.fetch_users().await.unwrap(),
                     interfaces,
                     vlan_configs,
+                    self.fetch_instance_config().await.unwrap().hostname,
                     preimage_endpoint,
                     postimage_endpoint,
                 )
@@ -717,7 +718,7 @@ impl DeployHost {
                     self.fetch_users().await.unwrap(),
                     preimage_endpoint,
                     postimage_endpoint,
-                    host_name.to_string(),
+                    self.fetch_instance_config().await.unwrap().hostname,
                     self.fetch_instance_host().await?.ports(&mut transaction).await?,
                     create_network_manager_vlan_connections_from_bondgroups(
                         &network_assignment_map, 
