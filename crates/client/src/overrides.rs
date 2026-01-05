@@ -105,6 +105,8 @@ async fn handle_set_host_power_state(
     Ok(())
 }
 
+/// Runs the DeployHost task for a host within an Active aggregate.
+/// Cannot be run if the aggregate is still completing the initial provision or if the booking has ended.
 async fn handle_redeploy(
     mut session: &Server,
     tascii_rt: &'static Runtime,
@@ -115,7 +117,9 @@ async fn handle_redeploy(
         .await
         .expect("Transaction creation error");
 
-    let agg = select_aggregate(session, LifeCycleState::New, &mut transaction)
+    let allowed_lifecycle = LifeCycleState::Active;
+
+    let agg = select_aggregate(session, allowed_lifecycle, &mut transaction)
         .await
         .unwrap();
     let inst = select_instance(session, agg, &mut transaction)
@@ -132,10 +136,10 @@ async fn handle_redeploy(
 
     let lifecycle_state = agg.get(&mut transaction).await.unwrap().into_inner().state;
 
-    if let LifeCycleState::New = lifecycle_state {
+    if lifecycle_state != allowed_lifecycle {
         let _ = writeln!(
             session,
-            "Cannot rerun host deployment while aggregate is still provisioning!"
+            "Cannot rerun host deployment while aggregate is still provisioning or if the booking has ended!"
         );
         return Ok(());
     }
