@@ -7,6 +7,7 @@ mod ipa;
 mod notifications;
 mod overrides;
 mod queries;
+mod switch_test;
 
 use common::prelude::{anyhow, itertools::Itertools};
 use dal::{AsEasyTransaction, DBTable, EasyTransaction, FKey, ID, new_client};
@@ -47,6 +48,10 @@ pub enum Command {
     ManageTemplates,
     #[strum(serialize = "Recovery")]
     Recovery,
+    #[strum(serialize = "Test NXOS Switch")]
+    TestSwitch,
+    #[strum(serialize = "Test NXOS VLAN Configuration")]
+    TestVlanConfig,
     #[strum(serialize = "Exit CLI")]
     Exit,
 }
@@ -114,6 +119,12 @@ pub async fn cli_entry(
                 notifications::notification_actions(session, tascii_rt).await?;
             }
             Command::Query => queries::query(session).await.unwrap(),
+            Command::TestSwitch => {
+                switch_test::test_switch(session).await?;
+            }
+            Command::TestVlanConfig => {
+                switch_test::test_vlan_configuration(session).await?;
+            }
             Command::Exit => return Ok(LiblaasStateInstruction::Exit),
         }
     }

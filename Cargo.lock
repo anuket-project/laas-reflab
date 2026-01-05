@@ -555,6 +555,8 @@ name = "client"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
+ "colored",
  "common",
  "config 0.1.0",
  "dal",
@@ -562,11 +564,14 @@ dependencies = [
  "notifications",
  "remoc",
  "serde",
+ "serde_json",
  "sqlx",
  "strum",
  "strum_macros",
  "tascii",
+ "thiserror 1.0.69",
  "tracing",
+ "ureq",
  "users",
  "uuid",
  "workflows",
