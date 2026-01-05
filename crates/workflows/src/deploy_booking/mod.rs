@@ -14,6 +14,7 @@ pub mod reachable;
 pub mod set_boot;
 pub mod set_host_power_state;
 pub mod grub;
+pub mod ssh_server_up;
 
 use config::Situation;
 

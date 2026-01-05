@@ -24,7 +24,7 @@ use crate::{
     configure_networking::{
         ConfigureNetworking, mgmt_network_config, prod_network_config, vlan_connection::create_network_manager_vlan_connections_from_bondgroups
     }, deploy_booking::{
-        grub::GenericGrubConfig, reachable::WaitReachable, set_host_power_state::{HostConfig, PowerState, TimeoutConfig, confirm_power_state}
+        grub::GenericGrubConfig, reachable::WaitReachable, set_host_power_state::{HostConfig, PowerState, TimeoutConfig, confirm_power_state}, ssh_server_up::{WaitSshReachable}
     }, generate_soft_serial, render_autoinstall_template, render_kickstart_template, resource_management::{
         external_server::{SSHClientInfo, cleanup_generated_host_grub_files, cleanup_generated_hostname_files, write_file_to_external, write_system_grub_to_external}, ipmi_accounts::CreateIPMIAccount, mailbox::{Endpoint, Mailbox, MailboxMessageReceiver}
     }
@@ -1034,6 +1034,19 @@ impl DeployHost {
 
         context
             .spawn(WaitReachable {
+                endpoint: host_public_fqdn.clone(),
+            })
+            .join()?;
+
+        self.log(
+            "Verify Host Provisioned",
+            &format!("check ssh server is reachable on {}", host_public_fqdn),
+            StatusSentiment::InProgress,
+        )
+        .await;
+
+        context
+            .spawn(WaitSshReachable {
                 endpoint: host_public_fqdn.clone(),
             })
             .join()?;

@@ -45,7 +45,7 @@ FROM debian:bookworm-slim AS runtime
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y python3.11-dev postgresql-client ipmitool iputils-ping && rm -rf /var/lib/apt/lists/* 
+RUN apt-get update && apt-get install -y python3.11-dev postgresql-client ipmitool iputils-ping netcat-traditional && rm -rf /var/lib/apt/lists/* 
 
 COPY --from=builder /app/target/release/laas-reflab /usr/local/bin
 COPY --from=builder /app/migrations /app/migrations
