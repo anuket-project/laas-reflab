@@ -25,7 +25,9 @@ impl AsyncRunnable for ConfigureNetworking {
     type Output = bool;
 
     async fn execute_task(&mut self, _context: &Context) -> Result<Self::Output, TaskError> {
-        cisco::nx_run_network_task(self.net_config.clone()).await;
+        cisco::nx_run_network_task(self.net_config.clone())
+            .await
+            .map_err(|e| TaskError::Reason(format!("Failed to configure network: {}", e)))?;
         // sonic::sonic_run_network_task(self.net_config.clone()).await;
         Ok(true)
     }

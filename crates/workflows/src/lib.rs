@@ -149,6 +149,7 @@ pub fn render_kickstart_template(
     ipa_users: Vec<ipa::User>,
     interfaces: Vec<HostPort>,
     vlan_configs: Vec<String>, //Need to be the full vlan configuration strings for a kickstart file
+    hostname: String,
     preimage_endpoint: Endpoint,
     postimage_endpoint: Endpoint,
 ) -> Result<String, tera::Error> {
@@ -171,6 +172,7 @@ pub fn render_kickstart_template(
     template_context.insert("ipa_users", &IpaUserFormatted::from_users(ipa_users));
     template_context.insert("vlan_configs", &vlan_configs); // to-do, move rendering of configs to jinja template and use local functions and variables
     template_context.insert("interfaces", &formatted_interfaces);
+    template_context.insert("hostname", &hostname);
     template_context.insert("mailbox_endpoint", &formatted_mailboxes);
 
     render_template("generic/kickstart.j2", &template_context)

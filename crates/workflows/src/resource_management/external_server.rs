@@ -123,7 +123,6 @@ pub async fn write_system_grub_to_external(
 }
 
 
-// To-do, use std::fs functions to create cleanup / delete file commands to keep remote server hygienic
 pub async fn cleanup_generated_host_grub_files(
     host: &Host,
     directory_path: String, // The directory all of the files will be written to (must end in trailing slash)

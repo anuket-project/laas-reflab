@@ -19,9 +19,6 @@ cli:
   bind_addr: 0.0.0.0:3002
   external_url: 0.0.0.0:3002
 
-pxe:
-  http_base_url: http://10.13.0.3
-
 notifications:
   mail_server: mail.example.com:25
   admin_gchat_webhook: example.mail:12345
@@ -38,20 +35,6 @@ notifications:
   templates_directory: templates/**/*.html
   vpn_config_path: /etc/laas-reflab/os-vpn-client.ovpn
 
-cobbler:
-  api:
-    url: http://cobbler.example.com/cobbler_api
-    username: username
-    password: password
-
-  ssh:
-    address: 127.0.0.1
-    port: 22
-    user: username
-    password: password
-    writable_directory: /tmp
-    system_directory: /srv/tftpboot/grub/system
-
 pxe:
   address: 10.13.0.8
   ssh:  
@@ -61,15 +44,15 @@ pxe:
     writable_directory: /tmp/ #To-do, remove dependency!
 
   managed_directories:
-    ubuntu_cloudinit: /srv/tftp-http/config/ubuntu-cloudinit/
-    rhel_kickstart: /srv/tftp-http/config/rhel_kickstart/
-    grub_menuentry: /srv/tftp-http/grub/grub_menuentry/
+    ubuntu_cloudinit: /srv/tftp-http/config/ubuntu-cloudinit
+    rhel_kickstart: /srv/tftp-http/config/rhel-kickstart
+    grub_menuentry: /srv/tftp-http/grub/menuentry
 
   http_tftp_uri:
-    ubuntu_cloudinit: /config/ubuntu-cloudinit/
-    rhel_kickstart: /config/rhel_kickstart/
-    iso_packed: /iso/packed/
-    iso_unpacked: /iso/unpacked/
+    ubuntu_cloudinit: /config/ubuntu-cloudinit
+    rhel_kickstart: /config/rhel-kickstart
+    iso_packed: /iso/packed
+    iso_unpacked: /iso/unpacked
 
 workflow_config:
     cleanup_generated_files: true
@@ -85,11 +68,6 @@ ipa:
     username: username
     password: password
     certificate_path: config_data/os-ipa-ca.crt
-
-eve:
-  url: https://sandbox.url.com
-  api_key: example-api-key
-  onboarding_key: example-onboarding-key
 
 projects:
   project1:

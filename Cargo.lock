@@ -555,19 +555,23 @@ name = "client"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
+ "colored",
  "common",
  "config 0.1.0",
  "dal",
- "liblaas",
  "models",
  "notifications",
  "remoc",
  "serde",
+ "serde_json",
  "sqlx",
  "strum",
  "strum_macros",
  "tascii",
+ "thiserror 1.0.69",
  "tracing",
+ "ureq",
  "users",
  "uuid",
  "workflows",
@@ -1989,7 +1993,6 @@ dependencies = [
  "tempdir",
  "tempfile",
  "thiserror 1.0.69",
- "tokio",
  "uuid",
 ]
 
@@ -2444,7 +2447,6 @@ dependencies = [
  "tokio",
  "tokio-postgres",
  "tracing",
- "url",
  "uuid",
 ]
 
@@ -5452,7 +5454,6 @@ dependencies = [
  "metrics",
  "models",
  "notifications",
- "pyo3",
  "schemars 0.8.22",
  "serde",
  "serde-xml-rs",

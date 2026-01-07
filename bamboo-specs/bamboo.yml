@@ -204,6 +204,7 @@ dependencies:
   block-strategy: none
   plans:
   - OST-BAFL
+  - OST-ULS
 
 other:
   concurrent-build-plugin: system-default

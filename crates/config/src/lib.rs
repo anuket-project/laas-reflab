@@ -13,11 +13,9 @@ pub struct LibLaaSConfig {
     pub mailbox: MailboxConfig,
     pub cli: CliConfig,
     pub notifications: NotificationConfig,
-    pub cobbler: CobblerConfig,
     pub pxe: PxeConfig,
     pub workflow_config: WorkflowConfig,
     pub ipa: Vec<IPAConfig>,
-    pub eve: EveConfig,
     pub projects: HashMap<String, ProjectConfig>,
     #[serde(default)]
     pub metrics: Option<MetricsConfig>,
@@ -133,30 +131,6 @@ pub struct NotificationConfig {
     pub templates_directory: String,
     pub vpn_config_path: PathBuf,
 }
-#[deprecated(note = "We are removing Cobbler")]
-#[derive(Debug, Deserialize, Clone)]
-pub struct CobblerAPIConfig {
-    pub url: String,
-    pub username: String,
-    pub password: String,
-}
-#[deprecated(note = "We are removing Cobbler")]
-#[derive(Debug, Deserialize, Clone)]
-pub struct CobblerSSHConfig {
-    pub address: String,
-    pub port: i32,
-    pub user: String,
-    pub password: String,
-    pub writable_directory: String, // i.e. /tmp
-    pub system_directory: String,   // i.e. /srv/tftpboot/grub/system
-    pub laas_files: String,         // ie. /srv/www/laas_files/
-}
-#[deprecated(note = "We are removing Cobbler")]
-#[derive(Debug, Deserialize, Clone)]
-pub struct CobblerConfig {
-    pub api: CobblerAPIConfig,
-    pub ssh: CobblerSSHConfig,
-}
 #[derive(Debug, Deserialize, Clone)]
 pub struct PxeSSHConfig {
     pub port: i32,
@@ -201,14 +175,6 @@ pub struct IPAConfig {
     pub username: String,
     pub password: String,
     pub certificate_path: PathBuf,
-}
-
-#[deprecated(note = "Removed as part of laas-pxe migration")]
-#[derive(Debug, Deserialize, Clone)]
-pub struct EveConfig {
-    pub url: String,
-    pub api_key: String,
-    pub onboarding_key: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]

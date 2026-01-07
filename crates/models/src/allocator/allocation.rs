@@ -167,7 +167,7 @@ impl Allocation {
         Self::from_rows(rows)
     }
 
-    /// selects for the given aggregate and host
+    /// Finds allocations given an aggregate, host, and whether or not it is active.
     pub async fn find_for_aggregate_and_host(
         t: &mut EasyTransaction<'_>,
         agg: FKey<Aggregate>,
@@ -179,8 +179,8 @@ impl Allocation {
 
         let rh_id = format!("select {rh_tn}.id from {rh_tn} where tracks_resource = $2");
         let is_null = match completed {
-            true => "is null",
-            false => "is not null",
+            true => "is not null",
+            false => "is null",
         };
 
         let q = format!("select * from {allocation_tn} where for_aggregate = $1 and ended {is_null} and for_resource = ({rh_id})");
@@ -288,6 +288,48 @@ mod tests {
 
                 let retrieved_allocation = first_allocation.unwrap().clone().into_inner();
                 prop_assert_eq!(retrieved_allocation, allocation);
+
+                Ok(())
+
+            })?
+        }
+
+        #[test]
+        /// Tests [`Allocation::find_for_aggregate_and_host`]
+        /// Proptest ensures a mix of ended and not ended allocations.
+        fn test_find_allocation_for_aggregate_and_host(allocation in Allocation::arbitrary()) {
+            block_on_runtime!({
+
+                let client = new_client().await;
+                prop_assert!(client.is_ok(), "DB connection failed: {:?}", client.err());
+                let mut client = client.unwrap();
+
+                let transaction = client.easy_transaction().await;
+                prop_assert!(transaction.is_ok(), "Transaction creation failed: {:?}", transaction.err());
+                let mut transaction = transaction.unwrap();
+
+                let resource_handle_insert_result = insert_default_model_at(allocation.for_resource, &mut transaction).await;
+                prop_assert!(resource_handle_insert_result.is_ok(), "Failed to prepare test environment: {:?}", resource_handle_insert_result.err());
+
+                if let Some(agg) = allocation.for_aggregate {
+                    let aggregate_insert_result = Aggregate::insert_default_at(agg, &mut transaction).await;
+                    prop_assert!(aggregate_insert_result.is_ok(), "Failed to prepare test environment: {:?}", aggregate_insert_result.err());
+                }
+
+                let new_row = NewRow::new(allocation.clone());
+                let insert_result = new_row.insert(&mut transaction).await;
+                prop_assert!(insert_result.is_ok(), "Insert failed: {:?}", insert_result.err());
+
+                let rh = ResourceHandle::select().where_field("id").equals(allocation.for_resource).run(&mut transaction).await.unwrap().first().unwrap().clone();
+
+                if let Some(_) = allocation.for_aggregate {
+                    if let crate::allocator::ResourceHandleInner::Host(host) = rh.tracks {
+                        let queried_allocation = Allocation::find_for_aggregate_and_host(&mut transaction, allocation.for_aggregate.unwrap(), host, allocation.ended.is_some()).await.unwrap().first().unwrap().clone().into_inner();
+                        prop_assert_eq!(queried_allocation, allocation);
+                    } else {
+                        prop_assert!(false, "RH isn't tracking a host?");
+                    }
+                }
 
                 Ok(())
 
