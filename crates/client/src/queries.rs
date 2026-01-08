@@ -1,19 +1,21 @@
 use crate::remote::{Select, Server, Text};
 use crate::{areyousure, get_lab, select_host};
 use common::prelude::anyhow;
-use dal::{get_db_pool, new_client, AsEasyTransaction, DBTable, EasyTransaction, FKey};
+use dal::{AsEasyTransaction, DBTable, EasyTransaction, FKey, get_db_pool, new_client};
 
 use models::{
     allocator::{Allocation, ResourceHandle},
     dashboard::{Aggregate, BookingMetadata, Instance, LifeCycleState, Network, ProvisionLogEvent},
     inventory::{Host, Vlan},
 };
+use std::collections::HashSet;
 use std::io::Write;
 use strum::IntoEnumIterator;
 use strum_macros::{Display, EnumIter, EnumString};
+use users::ipa;
 use uuid::Uuid;
 use workflows::{
-    deploy_booking::set_host_power_state::{get_host_power_state, HostConfig, PowerStateError},
+    deploy_booking::set_host_power_state::{HostConfig, PowerStateError, get_host_power_state},
     resource_management::allocator,
 };
 
@@ -37,6 +39,8 @@ pub enum Queries {
     LeakedBooking,
     #[strum(serialize = "Query BMC/IPMI VLAN for Host")]
     BMCVlan,
+    #[strum(serialize = "Get Active Booking Emails for BCC")]
+    ActiveBookingEmails,
 }
 
 pub async fn query(session: &Server) -> Result<(), anyhow::Error> {
@@ -53,6 +57,7 @@ pub async fn query(session: &Server) -> Result<(), anyhow::Error> {
         Queries::Config => handle_config_query(session).await,
         Queries::LeakedBooking => handle_leaked_query(session).await,
         Queries::BMCVlan => handle_bmc_vlan_query(session).await,
+        Queries::ActiveBookingEmails => handle_active_booking_emails_query(session).await,
     }
 }
 
@@ -273,7 +278,9 @@ async fn handle_aggregate_query(mut session: &Server) -> Result<(), anyhow::Erro
             }
         }
         more => {
-            unreachable!("Host was a member of multiple allocations, they are {more:?}, which is a DB integrity issue!")
+            unreachable!(
+                "Host was a member of multiple allocations, they are {more:?}, which is a DB integrity issue!"
+            )
         }
     }
 
@@ -322,11 +329,7 @@ async fn handle_config_query(mut session: &Server) -> Result<(), anyhow::Error> 
             let image = conf.image.get(&mut transaction).await.unwrap().into_inner();
             let hostname = conf.hostname.clone();
             writeln!(session, "Hostname {hostname}")?;
-            writeln!(
-                session,
-                "Assigned image: {}, id {:?}",
-                image.name, image.id
-            )?;
+            writeln!(session, "Assigned image: {}, id {:?}", image.name, image.id)?;
             let generated = workflows::deploy_booking::generate_cloud_config(
                 conf.clone(),
                 h,
@@ -364,7 +367,10 @@ async fn handle_leaked_query(mut session: &Server) -> Result<(), anyhow::Error> 
     let allocation_tn = Allocation::table_name();
     let resource_handle_tn = ResourceHandle::table_name();
 
-    let _ = writeln!(session, "Finding potentially leaked bookings. THIS IS FOR DIAGNOSTIC PURPOSES ONLY. A booking is NOT guarenteed to be leaked if it appears here. The dashboard is the only source of truth for booking end dates.");
+    let _ = writeln!(
+        session,
+        "Finding potentially leaked bookings. THIS IS FOR DIAGNOSTIC PURPOSES ONLY. A booking is NOT guarenteed to be leaked if it appears here. The dashboard is the only source of truth for booking end dates."
+    );
     areyousure(session)?;
 
     let active_not_ended_query = format!(
@@ -393,7 +399,10 @@ async fn handle_leaked_query(mut session: &Server) -> Result<(), anyhow::Error> 
         .await
         .expect("Expected to query for active bookings that were not ended!");
 
-    let _ = writeln!(session, "Aggregates with lifecycle_state = \"Active\" and end < NOW()\n-----------------------------");
+    let _ = writeln!(
+        session,
+        "Aggregates with lifecycle_state = \"Active\" and end < NOW()\n-----------------------------"
+    );
     for row in active_not_ended_rows {
         let agg_id: Uuid = row.get("agg_id");
         let expected_end: String = row.get("expected_end");
@@ -446,7 +455,10 @@ async fn handle_leaked_query(mut session: &Server) -> Result<(), anyhow::Error> 
         let alloc_id: Uuid = row.get("alloc_id");
         let resource_type: String = row.get("resource_type");
 
-        let _ = writeln!(session, "Aggregate ID: {agg_id}, Allocation ID: {alloc_id}, Resource Type: {resource_type}, Expected End: {expected_end}");
+        let _ = writeln!(
+            session,
+            "Aggregate ID: {agg_id}, Allocation ID: {alloc_id}, Resource Type: {resource_type}, Expected End: {expected_end}"
+        );
     }
     Ok(())
 }
@@ -486,6 +498,85 @@ pub async fn handle_bmc_vlan_query(mut session: &Server) -> Result<(), anyhow::E
         }
     }
 
+    Ok(())
+}
+
+async fn handle_active_booking_emails_query(mut session: &Server) -> Result<(), anyhow::Error> {
+    let mut client = new_client().await.expect("Expected to connect to db");
+    let mut transaction = client
+        .easy_transaction()
+        .await
+        .expect("Transaction creation error");
+
+    let active_aggregates = Aggregate::select()
+        .where_field("lifecycle_state")
+        .equals(LifeCycleState::Active)
+        .run(&mut transaction)
+        .await
+        .unwrap();
+
+    writeln!(
+        session,
+        "Fetching emails for {} active booking(s)...\n",
+        active_aggregates.len()
+    )?;
+
+    let mut all_usernames = HashSet::new();
+
+    for agg in &active_aggregates {
+        let agg = agg.clone().into_inner();
+
+        if let Some(owner) = agg.metadata.owner {
+            all_usernames.insert(owner);
+        }
+
+        for user in agg.users {
+            all_usernames.insert(user);
+        }
+    }
+
+    writeln!(
+        session,
+        "Found {} unique user(s) across all active bookings\n",
+        all_usernames.len()
+    )?;
+
+    let mut ipa = ipa::IPA::init().await?;
+    let mut emails = Vec::new();
+    let mut failed_users = Vec::new();
+
+    for username in all_usernames {
+        match ipa.find_matching_user(username.clone(), false, false).await {
+            Ok(user) => {
+                emails.push(format!("{} <{}>", user.uid, user.mail));
+            }
+            Err(e) => {
+                failed_users.push(format!("{}: {}", username, e));
+            }
+        }
+    }
+
+    emails.sort();
+
+    writeln!(session, "=====================================")?;
+    writeln!(session, "Active Booking Emails:")?;
+    writeln!(session, "=====================================")?;
+    writeln!(session, "{}", emails.join(", "))?;
+    writeln!(session, "=====================================")?;
+    writeln!(session, "\nTotal: {} user(s) with emails", emails.len())?;
+
+    if !failed_users.is_empty() {
+        writeln!(
+            session,
+            "\nWarning: Could not fetch emails for {} user(s):",
+            failed_users.len()
+        )?;
+        for failure in failed_users {
+            writeln!(session, "  - {}", failure)?;
+        }
+    }
+
+    transaction.commit().await?;
     Ok(())
 }
 
