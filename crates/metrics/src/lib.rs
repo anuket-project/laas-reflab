@@ -61,17 +61,12 @@
 //! [`metrics`]: crate::metrics
 //! [`MetricsConfig`]: config::MetricsConfig
 //! [`send()`]: tokio::sync::mpsc::UnboundedSender::send()
-#![allow(unused_imports)]
 use config::MetricsConfig;
-use serde::{Deserialize, Serialize};
-use std::collections::VecDeque;
-use std::fs::File;
-use std::io::{self, ErrorKind};
 use std::sync::OnceLock;
-use telegraf::{Client, Metric};
-use tokio::sync::mpsc::{self, unbounded_channel, UnboundedReceiver, UnboundedSender};
+use telegraf::Client;
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 pub mod error;
 pub mod message;
@@ -183,8 +178,6 @@ pub struct MetricConsumer {
     pub cancel: CancellationToken,
     /// Configuration defined in the `config` module.
     pub config: MetricsConfig,
-    /// failover counter for handling client recovery.
-    pub failover_counter: usize,
 }
 
 impl MetricConsumer {
@@ -199,14 +192,13 @@ impl MetricConsumer {
             None => return Err(MetricError::ConfigError),
         };
 
-        let client = get_client(config)?;
+        let client = get_client(config).await?;
 
         Ok(Self {
             rx,
             client,
             cancel,
             config: config.clone(),
-            failover_counter: 0,
         })
     }
 
@@ -215,47 +207,47 @@ impl MetricConsumer {
     pub async fn run(mut self) -> Result<(), MetricError> {
         while !self.cancel.is_cancelled() {
             if let Some(message) = self.rx.recv().await {
-                self.process_message(message);
-            }
-
-            if self.failover_counter > 0 {
-                if let Err(e) = self.attempt_client_recovery().await {
-                    warn!(
-                        "Client recovery failed after {} retries: {}",
-                        self.failover_counter, e
-                    );
-                }
+                self.process_message(message).await;
             }
         }
         Ok(())
     }
 
-    /// Processes a single [`MetricMessage`] by recieved from [`Self::rx`]
-    /// Drops messages on write error, and increments the failover counter.
-    pub fn process_message(&mut self, message: MetricMessage) {
-        match message.write_to_client(&mut self.client) {
-            Ok(_) => {
-                info!("Metric successfully sent to Telegraf.");
-            }
-            Err(e) => {
-                warn!("Failed to send metric to Telegraf: {}", e);
-                info!("Dropped Metric: {:?}", message);
-                self.failover_counter += 1;
-            }
+    /// Processes a single [`MetricMessage`] received from [`Self::rx`].
+    /// If the write fails, attempts recovery and retries once before dropping.
+    pub async fn process_message(&mut self, message: MetricMessage) {
+        // First attempt
+        if self.try_write(&message).is_ok() {
+            return;
+        }
+
+        // First attempt failed, try recovery and retry
+        warn!("Write failed, attempting recovery and retry...");
+        if let Err(e) = self.reconnect().await {
+            warn!("Recovery failed: {}", e);
+            info!("Dropped Metric: {:?}", message);
+            return;
+        }
+
+        // Retry after successful recovery
+        if let Err(e) = self.try_write(&message) {
+            warn!("Retry after recovery also failed: {}", e);
+            info!("Dropped Metric: {:?}", message);
         }
     }
 
-    /// Attempts to recover the Telegraf [`Client`] by creating a new instance
-    /// from the same configuration. If successful, resets [`Self::failover_counter`].
-    pub async fn attempt_client_recovery(&mut self) -> Result<(), MetricError> {
-        match get_client(&self.config) {
-            Ok(new_client) => {
-                self.client = new_client;
-                self.failover_counter = 0;
-                Ok(())
-            }
-            Err(e) => Err(e),
-        }
+    /// Attempts to write a metric to the Telegraf client.
+    fn try_write(&mut self, message: &MetricMessage) -> Result<(), MetricError> {
+        message.write_to_client(&mut self.client)?;
+        info!("Metric successfully sent to Telegraf.");
+        Ok(())
+    }
+
+    /// Reconnects to Telegraf by creating a new client.
+    async fn reconnect(&mut self) -> Result<(), MetricError> {
+        self.client = get_client(&self.config).await?;
+        info!("Successfully reconnected to Telegraf.");
+        Ok(())
     }
 }
 
@@ -267,21 +259,27 @@ impl MetricConsumer {
 /// configured number of retries and with the provided connection string.
 ///
 /// See [`MetricsConfig`] and [`telegraf`] documentation for reference.
-pub fn get_client(config: &MetricsConfig) -> Result<Client, MetricError> {
+pub async fn get_client(config: &MetricsConfig) -> Result<Client, MetricError> {
     let connection_str = &config.url;
     let max_retries = config.client_retries;
-    let mut retries = 0;
+    let mut last_error = None;
 
-    while retries < max_retries {
+    for attempt in 1..=max_retries {
         match Client::new(connection_str) {
             Ok(client) => return Ok(client),
-            Err(_) => {
-                warn!("Failed to create client. Retrying...");
-                retries += 1;
-                std::thread::sleep(std::time::Duration::from_secs(3));
+            Err(e) => {
+                warn!(
+                    "Failed to create client (attempt {}/{}): {}",
+                    attempt, max_retries, e
+                );
+                last_error = Some(e);
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
             }
         }
     }
 
+    if let Some(e) = last_error {
+        warn!("All {} connection attempts failed. Last error: {}", max_retries, e);
+    }
     Err(MetricError::ClientError(connection_str.to_string()))
 }

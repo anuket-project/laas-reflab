@@ -79,7 +79,6 @@
 //! enum variants. This is also how [`MetricWrapper::write_to_client()`] is available automatically
 //! on `MetricMessage`, even though it's only generically implemented on types that implement [`Metric`].
 //!
-use super::message::*;
 use chrono::prelude::*;
 use serde::{Deserialize, Serialize};
 use telegraf::*;
