@@ -254,7 +254,8 @@ pub struct ProvisionMetric {
     /// **Tag:** The hostname of the provisioned host. ie. "ampere-1-ampere-2"
     #[telegraf(tag)]
     #[serde(default)]
-    pub hostname: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hostname: Option<String>,
 
     /// **Tag:** Indicates whether the provisioning was successful.
     #[telegraf(tag)]
@@ -284,7 +285,8 @@ pub struct ProvisionMetric {
     /// **Tag:** The project associated with the host being provisioned.
     #[telegraf(tag)]
     #[serde(default)]
-    pub project: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
 
     /// **Tag:** Metadata tag to differentiate between fake/mock data and real data in the
     /// dashboard.
