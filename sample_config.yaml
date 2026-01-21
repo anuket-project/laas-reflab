@@ -8,7 +8,6 @@ web:
 
 metrics:
   url: tcp://telegraf:8094
-  max_failover: 5
   client_retries: 10
 
 mailbox:

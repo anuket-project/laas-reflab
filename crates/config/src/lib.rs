@@ -179,7 +179,6 @@ pub struct IPAConfig {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct MetricsConfig {
-    pub max_failover: u8,
     pub client_retries: u8,
     pub url: String,
 }

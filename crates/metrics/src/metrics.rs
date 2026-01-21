@@ -79,7 +79,6 @@
 //! enum variants. This is also how [`MetricWrapper::write_to_client()`] is available automatically
 //! on `MetricMessage`, even though it's only generically implemented on types that implement [`Metric`].
 //!
-use super::message::*;
 use chrono::prelude::*;
 use serde::{Deserialize, Serialize};
 use telegraf::*;
@@ -217,13 +216,15 @@ pub struct BookingMetric {
 
     #[telegraf(tag)]
     #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     /// **Tag:** The purpose of this booking. ex. "ONAP_DEV"
-    pub purpose: String,
+    pub purpose: Option<String>,
 
     #[telegraf(tag)]
     #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     /// **Tag:** The details associated with the booking. ex "Compile time optimization"
-    pub details: String,
+    pub details: Option<String>,
 
     /// **Tag:** Metadata tag to differentiate between fake/mock data and real data in the
     /// dashboard.
@@ -253,7 +254,8 @@ pub struct ProvisionMetric {
     /// **Tag:** The hostname of the provisioned host. ie. "ampere-1-ampere-2"
     #[telegraf(tag)]
     #[serde(default)]
-    pub hostname: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hostname: Option<String>,
 
     /// **Tag:** Indicates whether the provisioning was successful.
     #[telegraf(tag)]
@@ -283,7 +285,8 @@ pub struct ProvisionMetric {
     /// **Tag:** The project associated with the host being provisioned.
     #[telegraf(tag)]
     #[serde(default)]
-    pub project: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
 
     /// **Tag:** Metadata tag to differentiate between fake/mock data and real data in the
     /// dashboard.

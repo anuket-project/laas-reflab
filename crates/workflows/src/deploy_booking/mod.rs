@@ -1465,7 +1465,7 @@ async fn send_provision_metric(
     let aggregate = aggregate.get(&mut transaction).await.unwrap();
 
     let provision_metric = ProvisionMetric {
-        hostname: host_name.to_string(),
+        hostname: Some(host_name.to_string()).filter(|s| !s.is_empty()),
         owner: aggregate
             .metadata
             .owner
@@ -1476,11 +1476,7 @@ async fn send_provision_metric(
             .get(&mut transaction)
             .await
             .map_or_else(|_| "None".to_string(), |v| v.name.clone()),
-        project: aggregate
-            .metadata
-            .project
-            .clone()
-            .unwrap_or_else(|| "None".to_string()),
+        project: aggregate.metadata.project.clone().filter(|s| !s.is_empty()),
         provisioning_time_seconds: duration,
         success,
         ..Default::default()
