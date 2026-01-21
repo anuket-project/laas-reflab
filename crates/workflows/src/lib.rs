@@ -73,10 +73,7 @@ impl IpaUserFormatted {
     fn from_users(ipa_users: Vec<ipa::User>) -> Vec<IpaUserFormatted> {
         let mut formated_ipa_users: Vec<IpaUserFormatted> = vec![];
         for user in ipa_users {
-            let mut ssh_keys: Vec<String> = vec![];
-            for ssh_key in user.ipasshpubkey.unwrap() {
-                ssh_keys.push(ssh_key);
-            }
+            let ssh_keys = user.ipasshpubkey.unwrap_or_default();
 
             formated_ipa_users.push(IpaUserFormatted {
                 username: user.uid,
