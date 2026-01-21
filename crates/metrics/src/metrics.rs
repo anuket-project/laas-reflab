@@ -216,13 +216,15 @@ pub struct BookingMetric {
 
     #[telegraf(tag)]
     #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     /// **Tag:** The purpose of this booking. ex. "ONAP_DEV"
-    pub purpose: String,
+    pub purpose: Option<String>,
 
     #[telegraf(tag)]
     #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     /// **Tag:** The details associated with the booking. ex "Compile time optimization"
-    pub details: String,
+    pub details: Option<String>,
 
     /// **Tag:** Metadata tag to differentiate between fake/mock data and real data in the
     /// dashboard.

@@ -68,8 +68,8 @@ pub async fn make_aggregate(blob: api::BookingBlob) -> Result<FKey<Aggregate>, a
         owner: blob.metadata.owner.clone().unwrap_or("None".to_string()),
         lab: blob.origin.clone(),
         project: blob.metadata.project.clone().unwrap_or("None".to_string()),
-        purpose: blob.metadata.purpose.clone().unwrap_or("None".to_string()),
-        details: blob.metadata.details.clone().unwrap_or("None".to_string()),
+        purpose: blob.metadata.purpose.clone().filter(|s| !s.is_empty()),
+        details: blob.metadata.details.clone().filter(|s| !s.is_empty()),
         mock: false,
 
         // defaults to current time.
