@@ -23,7 +23,7 @@ use workflows::{
 
 #[derive(Clone, Debug, Display, EnumString, EnumIter)]
 pub enum Queries {
-    #[strum(serialize = "Summarize Aggregate")]
+    #[strum(serialize = "Summarize Aggregate For Server Name")]
     Aggregate,
     #[strum(serialize = "Query Host Config")]
     Config,

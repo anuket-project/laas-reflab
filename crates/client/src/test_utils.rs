@@ -4,6 +4,7 @@ use dal::{FKey, ID};
 
 use models::inventory::HostPort;
 
+use crate::switch_test;
 use std::io::Write;
 use strum::IntoEnumIterator;
 use strum_macros::{Display, EnumIter, EnumString};
@@ -16,6 +17,10 @@ use workflows::{render_autoinstall_template, render_kickstart_template};
 pub enum TestUtils {
     #[strum(serialize = "Render Autoinstall / Kickstart Jinja Template")]
     RenderAutoinstallTemplate,
+    #[strum(serialize = "Test NXOS Switch")]
+    TestSwitch,
+    #[strum(serialize = "Test NXOS VLAN Configuration")]
+    TestVlanConfig,
 }
 
 pub async fn test_utils(session: &Server) -> Result<(), anyhow::Error> {
@@ -26,6 +31,8 @@ pub async fn test_utils(session: &Server) -> Result<(), anyhow::Error> {
         TestUtils::RenderAutoinstallTemplate => {
             handle_test_render_autoinstall_and_ks_template(session).await
         }
+        TestUtils::TestSwitch => switch_test::test_switch(session).await,
+        TestUtils::TestVlanConfig => switch_test::test_vlan_configuration(session).await,
     }
 }
 

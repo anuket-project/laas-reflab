@@ -49,10 +49,6 @@ pub enum Command {
     ManageTemplates,
     #[strum(serialize = "Recovery")]
     Recovery,
-    #[strum(serialize = "Test NXOS Switch")]
-    TestSwitch,
-    #[strum(serialize = "Test NXOS VLAN Configuration")]
-    TestVlanConfig,
     #[strum(serialize = "Testing Utilities")]
     TestingUtils,
     #[strum(serialize = "Exit CLI")]
@@ -122,12 +118,6 @@ pub async fn cli_entry(
                 notifications::notification_actions(session, tascii_rt).await?;
             }
             Command::Query => queries::query(session).await.unwrap(),
-            Command::TestSwitch => {
-                switch_test::test_switch(session).await?;
-            }
-            Command::TestVlanConfig => {
-                switch_test::test_vlan_configuration(session).await?;
-            }
             Command::TestingUtils => {test_utils::test_utils(session).await?;}
             Command::Exit => return Ok(LiblaasStateInstruction::Exit),
         }
