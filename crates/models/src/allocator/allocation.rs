@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use sqlx::prelude::FromRow;
 use std::collections::HashMap;
 
 use dal::{web::*, *};
@@ -189,6 +190,81 @@ impl Allocation {
 
         Allocation::from_rows(rows)
     }
+}
+
+#[derive(Debug, FromRow)]
+pub struct HostAllocationSummary {
+    pub server_name: String,
+    pub started: Option<DateTime<Utc>>,
+    pub booking_owner: Option<String>,
+    pub booking_id: Option<String>,
+    pub project: Option<String>,
+    pub purpose: Option<String>,
+    pub details: Option<String>,
+    pub related_booking_vlans: Option<Vec<i16>>,
+}
+
+pub async fn get_host_allocation_summary_for_lab(
+    lab_name: &str,
+) -> Result<Vec<HostAllocationSummary>, sqlx::Error> {
+    let pool = get_db_pool().await?;
+    sqlx::query_as!(
+        HostAllocationSummary,
+        r#"
+WITH latest_host_allocations AS (
+    SELECT
+        DISTINCT ON (h.server_name) 
+        h.server_name AS server_name,
+        a.started,
+        a.ended,
+        ag.metadata ->> 'owner' AS booking_owner,
+        ag.metadata ->> 'booking_id' AS booking_id,
+        ag.metadata ->> 'project' AS project,
+        ag.metadata ->> 'purpose' AS purpose,
+        ag.metadata ->> 'details' AS details,
+        ag.id as aggregate_id,
+        l.name AS lab_name
+    FROM
+        hosts h
+        JOIN resource_handles rh ON rh.tracks_resource = h.id
+        LEFT JOIN allocations a ON a.for_resource = rh.id
+        JOIN aggregates ag ON a.for_aggregate = ag.id
+        JOIN labs l ON rh.lab = l.id
+    ORDER BY
+        h.server_name,
+        a.started DESC
+)
+SELECT
+    lha.server_name,
+    lha.started,
+    lha.booking_owner,
+    lha.booking_id,
+    lha.project,
+    lha.purpose,
+    lha.details,
+    COALESCE(v_aggs.vlan_ids, '{}') AS "related_booking_vlans: Vec<i16>"
+FROM
+    latest_host_allocations lha
+LEFT JOIN LATERAL (
+    SELECT
+        array_agg(v.vlan_id) as vlan_ids
+    FROM
+        allocations a
+        JOIN resource_handles rh ON a.for_resource = rh.id
+        JOIN vlans v ON rh.tracks_resource = v.id
+    WHERE
+        a.for_aggregate = lha.aggregate_id
+) v_aggs ON true
+WHERE
+    lha.lab_name = $1
+    AND lha.ended IS NULL
+ORDER BY
+    lha.booking_id
+"#,
+        lab_name
+    )
+    .fetch_all(&pool)
+    .await
 }
 
 #[cfg(test)]

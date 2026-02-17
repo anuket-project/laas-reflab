@@ -1,7 +1,9 @@
 use crate::remote::{Select, Server, Text};
 use crate::{areyousure, get_lab, select_host};
+use comfy_table::{Cell, Color, ContentArrangement, Table, presets::UTF8_FULL};
 use common::prelude::anyhow;
 use dal::{AsEasyTransaction, DBTable, EasyTransaction, FKey, get_db_pool, new_client};
+use models::allocator::allocation::{HostAllocationSummary, get_host_allocation_summary_for_lab};
 
 use models::{
     allocator::{Allocation, ResourceHandle},
@@ -26,7 +28,9 @@ pub enum Queries {
     #[strum(serialize = "Query Host Config")]
     Config,
     #[strum(serialize = "Summarize Current Bookings")]
-    Summarize,
+    SummarizeBookings,
+    #[strum(serialize = "Summarize Active Allocations")]
+    SummarizeAllocations,
     #[strum(serialize = "Display IPMI Credentials")]
     IpmiCredentials,
     #[strum(serialize = "List Free Vlans")]
@@ -52,12 +56,13 @@ pub async fn query(session: &Server) -> Result<(), anyhow::Error> {
         Queries::FreeVlans => handle_free_vlans_query(session).await,
         Queries::FreeHosts => handle_free_hosts_query(session).await,
         Queries::IpmiCredentials => handle_ipmi_credentials_query(session).await,
-        Queries::Summarize => handle_summarize_query(session).await,
+        Queries::SummarizeBookings => handle_summarize_booking_query(session).await,
         Queries::Aggregate => handle_aggregate_query(session).await,
         Queries::Config => handle_config_query(session).await,
         Queries::LeakedBooking => handle_leaked_query(session).await,
         Queries::BMCVlan => handle_bmc_vlan_query(session).await,
         Queries::ActiveBookingEmails => handle_active_booking_emails_query(session).await,
+        Queries::SummarizeAllocations => handle_summarize_allocations_query(session).await,
     }
 }
 
@@ -207,7 +212,7 @@ async fn handle_ipmi_credentials_query(mut session: &Server) -> Result<(), anyho
     Ok(())
 }
 
-async fn handle_summarize_query(session: &Server) -> Result<(), anyhow::Error> {
+async fn handle_summarize_booking_query(session: &Server) -> Result<(), anyhow::Error> {
     let mut client = new_client().await.expect("Expected to connect to db");
     let mut transaction = client
         .easy_transaction()
@@ -237,6 +242,71 @@ async fn handle_summarize_query(session: &Server) -> Result<(), anyhow::Error> {
     }
 
     transaction.commit().await?;
+    Ok(())
+}
+
+pub trait AsTable {
+    fn as_table(&self) -> Table;
+}
+
+impl AsTable for Vec<HostAllocationSummary> {
+    fn as_table(&self) -> Table {
+        let mut table = Table::new();
+
+        table
+            .load_preset(UTF8_FULL)
+            .set_content_arrangement(ContentArrangement::Dynamic)
+            .set_header(vec![
+                "Server Name",
+                "Booking ID",
+                "Owner",
+                "Project",
+                "Started",
+                "Purpose",
+                "Details",
+                "Related Vlans"
+            ]);
+
+        for alloc in self {
+            let booking_id = alloc.booking_id.as_deref().unwrap_or("-");
+            let owner = alloc.booking_owner.as_deref().unwrap_or("-");
+            let project = alloc.project.as_deref().unwrap_or("-");
+            let purpose = alloc.purpose.as_deref().unwrap_or("-");
+            let details = alloc.details.as_deref().unwrap_or("-");
+            let vlans: &[i16] = alloc.related_booking_vlans.as_deref().unwrap_or_default();
+            let started = alloc
+                .started
+                .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
+                .unwrap_or_else(|| "-".to_string());
+
+            table.add_row(vec![
+                Cell::new(&alloc.server_name).fg(Color::Green),
+                Cell::new(booking_id),
+                Cell::new(owner),
+                Cell::new(project),
+                Cell::new(started),
+                Cell::new(purpose),
+                Cell::new(details),
+                Cell::new(format!("{vlans:?}")),
+            ]);
+        }
+        table
+    }
+}
+
+async fn handle_summarize_allocations_query(mut session: &Server) -> Result<(), anyhow::Error> {
+
+    let mut client = new_client().await.expect("Expected to connect to db");
+    let mut transaction = client
+        .easy_transaction()
+        .await
+        .expect("Transaction creation error");
+
+    let lab_name = &get_lab(session, &mut transaction).await?.get(&mut transaction).await?.name;
+
+    let allocations = get_host_allocation_summary_for_lab(lab_name).await?;
+
+    writeln!(session, "{}", allocations.as_table())?;
     Ok(())
 }
 
