@@ -12,10 +12,12 @@ autoinstall:
       groups: sudo
       sudo: ALL=(ALL) NOPASSWD:ALL
       shell: /bin/bash
+      {% if user["ssh_keys"] | length > 0 %}
       ssh_authorized_keys:
       {% for key in user["ssh_keys"] %}
       - {{ key }}
       {% endfor %}
+      {% endif %}
     {% endfor %}
 
 

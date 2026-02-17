@@ -1,8 +1,11 @@
 %ksappend http://{{pxe_address}}{{base_config_uri}}
 
 {% for user in ipa_users %}
-user --name={{user["username"]}} --groups=wheel --lock 
+user --name={{user["username"]}} --groups=wheel --lock
+
+{% if user["ssh_keys"] | length > 0 %}
 sshkey --username={{user["username"]}} "{% for key in user["ssh_keys"] %} {{ key }} {% endfor %}"
+{% endif %}
 
 {% endfor %}
 

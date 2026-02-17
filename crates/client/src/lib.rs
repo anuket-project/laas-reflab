@@ -8,6 +8,7 @@ mod notifications;
 mod overrides;
 mod queries;
 mod switch_test;
+mod test_utils;
 
 use common::prelude::{anyhow, itertools::Itertools};
 use dal::{AsEasyTransaction, DBTable, EasyTransaction, FKey, ID, new_client};
@@ -52,6 +53,8 @@ pub enum Command {
     TestSwitch,
     #[strum(serialize = "Test NXOS VLAN Configuration")]
     TestVlanConfig,
+    #[strum(serialize = "Testing Utilities")]
+    TestingUtils,
     #[strum(serialize = "Exit CLI")]
     Exit,
 }
@@ -125,6 +128,7 @@ pub async fn cli_entry(
             Command::TestVlanConfig => {
                 switch_test::test_vlan_configuration(session).await?;
             }
+            Command::TestingUtils => {test_utils::test_utils(session).await?;}
             Command::Exit => return Ok(LiblaasStateInstruction::Exit),
         }
     }

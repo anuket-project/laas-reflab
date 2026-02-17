@@ -205,3 +205,208 @@ pub fn render_autoinstall_template(
     
     render_template("generic/autoinstall.j2", &template_context)
 }
+
+
+#[cfg(test)]
+mod tests {
+    use dal::{FKey, ID};
+    use models::inventory::HostPort;
+    use users::ipa;
+    use crate::{
+        configure_networking::vlan_connection::NetworkManagerVlanConnection, render_autoinstall_template, render_kickstart_template, resource_management::mailbox::Endpoint
+    };
+
+    #[test]
+    fn test_kickstart_j2_successfully_renders() {
+        let ipa_users: Vec<ipa::User> = vec![
+            ipa::User {
+                uid: "has-an-ssh-key".to_string(),
+                givenname: "test-gn".to_string(),
+                sn: "test-sn".to_string(),
+                cn: None,
+                homedirectory: None,
+                gidnumber: None,
+                displayname: None,
+                loginshell: None,
+                mail: "testmail".to_string(),
+                userpassword: None,
+                random: None,
+                uidnumber: None,
+                ou: "test-ou".to_string(),
+                title: None,
+                ipasshpubkey: Some(vec!["abcdef ssh-rsa testemail@mail.com".to_string()]),
+                ipauserauthtype: None,
+                userclass: None,
+                usercertificate: None,
+            },
+            ipa::User {
+                uid: "empty-ssh-key".to_string(),
+                givenname: "test-gn".to_string(),
+                sn: "test-sn".to_string(),
+                cn: None,
+                homedirectory: None,
+                gidnumber: None,
+                displayname: None,
+                loginshell: None,
+                mail: "testmail".to_string(),
+                userpassword: None,
+                random: None,
+                uidnumber: None,
+                ou: "test-ou".to_string(),
+                title: None,
+                ipasshpubkey: Some(vec![]),
+                ipauserauthtype: None,
+                userclass: None,
+                usercertificate: None,
+            },
+            ipa::User {
+                uid: "none-ssh-key".to_string(),
+                givenname: "test-gn".to_string(),
+                sn: "test-sn".to_string(),
+                cn: None,
+                homedirectory: None,
+                gidnumber: None,
+                displayname: None,
+                loginshell: None,
+                mail: "testmail".to_string(),
+                userpassword: None,
+                random: None,
+                uidnumber: None,
+                ou: "test-ou".to_string(),
+                title: None,
+                ipasshpubkey: None,
+                ipauserauthtype: None,
+                userclass: None,
+                usercertificate: None,
+            },
+        ];
+        let preimage_endpoint: Endpoint = Endpoint {
+            for_instance: FKey::new_id_dangling(),
+            unique: ID::new(),
+        };
+        let postimage_endpoint: Endpoint = Endpoint {
+            for_instance: FKey::new_id_dangling(),
+            unique: ID::new(),
+        };
+        let ports: Vec<HostPort> = vec![];
+        let nm_connections: Vec<NetworkManagerVlanConnection> =
+            vec![NetworkManagerVlanConnection {
+                device_name: "ens-test".to_string(),
+                network_name: "test-network".to_string(),
+                vlan_id: 200,
+                tagged: true,
+                connection_number: 1,
+            }];
+
+        let vlan_configs = nm_connections
+            .iter()
+            .map(|nm| nm.render_kickstart_network_config())
+            .collect();
+        let hostname = "test-host".to_string();
+
+        render_kickstart_template(
+            config::settings().pxe.address.clone(),
+            "/render-test".to_string(),
+            ipa_users,
+            ports,
+            vlan_configs,
+            hostname,
+            preimage_endpoint,
+            postimage_endpoint,
+        ).unwrap();
+    }
+
+    #[test]
+    fn test_autoinstall_j2_successfully_renders() {
+        let ipa_users: Vec<ipa::User> = vec![
+            ipa::User {
+                uid: "has-an-ssh-key".to_string(),
+                givenname: "test-gn".to_string(),
+                sn: "test-sn".to_string(),
+                cn: None,
+                homedirectory: None,
+                gidnumber: None,
+                displayname: None,
+                loginshell: None,
+                mail: "testmail".to_string(),
+                userpassword: None,
+                random: None,
+                uidnumber: None,
+                ou: "test-ou".to_string(),
+                title: None,
+                ipasshpubkey: Some(vec!["abcdef ssh-rsa testemail@mail.com".to_string()]),
+                ipauserauthtype: None,
+                userclass: None,
+                usercertificate: None,
+            },
+            ipa::User {
+                uid: "empty-ssh-key".to_string(),
+                givenname: "test-gn".to_string(),
+                sn: "test-sn".to_string(),
+                cn: None,
+                homedirectory: None,
+                gidnumber: None,
+                displayname: None,
+                loginshell: None,
+                mail: "testmail".to_string(),
+                userpassword: None,
+                random: None,
+                uidnumber: None,
+                ou: "test-ou".to_string(),
+                title: None,
+                ipasshpubkey: Some(vec![]),
+                ipauserauthtype: None,
+                userclass: None,
+                usercertificate: None,
+            },
+            ipa::User {
+                uid: "none-ssh-key".to_string(),
+                givenname: "test-gn".to_string(),
+                sn: "test-sn".to_string(),
+                cn: None,
+                homedirectory: None,
+                gidnumber: None,
+                displayname: None,
+                loginshell: None,
+                mail: "testmail".to_string(),
+                userpassword: None,
+                random: None,
+                uidnumber: None,
+                ou: "test-ou".to_string(),
+                title: None,
+                ipasshpubkey: None,
+                ipauserauthtype: None,
+                userclass: None,
+                usercertificate: None,
+            },
+        ];
+        let preimage_endpoint: Endpoint = Endpoint {
+            for_instance: FKey::new_id_dangling(),
+            unique: ID::new(),
+        };
+        let postimage_endpoint: Endpoint = Endpoint {
+            for_instance: FKey::new_id_dangling(),
+            unique: ID::new(),
+        };
+        let hostname: String = "CLI Test Host".to_string();
+        let ports: Vec<HostPort> = vec![];
+        let nm_connections: Vec<NetworkManagerVlanConnection> =
+            vec![NetworkManagerVlanConnection {
+                device_name: "ens-test".to_string(),
+                network_name: "test-network".to_string(),
+                vlan_id: 200,
+                tagged: true,
+                connection_number: 1,
+            }];
+
+        render_autoinstall_template(
+            ipa_users.clone(),
+            preimage_endpoint,
+            postimage_endpoint,
+            hostname,
+            ports.clone(),
+            nm_connections.clone(),
+        )
+        .unwrap();
+    }
+}

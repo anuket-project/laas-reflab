@@ -31,7 +31,7 @@ notifications:
   admin_send_to_email:
     username: example
     domain: mail.com
-  templates_directory: templates/**/*.html
+  templates_directory: /app/templates/**/*.{html,j2}
   vpn_config_path: /etc/laas-reflab/os-vpn-client.ovpn
 
 pxe:
