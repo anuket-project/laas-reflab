@@ -7,7 +7,7 @@ use tascii::prelude::*;
 
 #[derive(Debug, Clone, Hash, Serialize, Deserialize)]
 pub struct WaitSshReachable {
-    pub endpoint: String
+    pub endpoint: String,
 }
 
 tascii::mark_task!(WaitSshReachable);
@@ -15,7 +15,7 @@ tascii::mark_task!(WaitSshReachable);
 impl AsyncRunnable for WaitSshReachable {
     type Output = ();
 
-    async fn execute_task(&mut self, _context: &Context, ) -> Result<Self::Output, TaskError> {
+    async fn execute_task(&mut self, _context: &Context) -> Result<Self::Output, TaskError> {
         let hostname = self.endpoint.clone();
 
         loop {

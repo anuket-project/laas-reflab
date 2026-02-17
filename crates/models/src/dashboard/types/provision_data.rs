@@ -1,7 +1,4 @@
-use crate::{
-    dashboard::Cifile,
-    inventory::{Flavor, Vlan},
-};
+use crate::inventory::{Flavor, Vlan};
 use dal::*;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -46,7 +43,7 @@ pub struct InstanceProvData {
     pub hostname: String,
     pub flavor: FKey<Flavor>,
     pub image: String,
-    pub cifile: Vec<Cifile>,
+    pub cifile: Option<String>,
     pub ipmi_create: bool,
     pub networks: Vec<NetworkProvData>,
 }

@@ -177,7 +177,7 @@ pub async fn make_aggregate(blob: api::BookingBlob) -> Result<FKey<Aggregate>, a
             hostname: config.hostname.clone(),
             flavor: config.flavor,
             image: String::from(""),
-            cifile: Vec::new(),
+            cifile: config.clone().get_ci_file().await.unwrap(),
             ipmi_create: true,
             networks: Vec::new(),
         };
@@ -185,8 +185,6 @@ pub async fn make_aggregate(blob: api::BookingBlob) -> Result<FKey<Aggregate>, a
         // Resource processing:
         // Hardware
         hardware_conf(&mut transaction, &mut instance, config.clone()).await;
-        // CI Files
-        ci_processing(&mut transaction, &mut instance, config.clone()).await;
         // Finalize
         // Push prov data to vec
         let inst_id = FKey::new_id_dangling();
@@ -238,16 +236,6 @@ async fn hardware_conf(
     instance.hostname = conf.hostname;
     instance.flavor = conf.flavor;
     instance.ipmi_create = true;
-}
-
-async fn ci_processing(
-    t: &mut EasyTransaction<'_>,
-    instance: &mut InstanceProvData,
-    conf: HostConfig,
-) {
-    for c in conf.cifile.clone() {
-        instance.cifile.push(c.get(t).await.unwrap().into_inner())
-    }
 }
 
 /// Attempts to end a booking. A booking can only be ended if the aggregate lifecycle state is "Active".

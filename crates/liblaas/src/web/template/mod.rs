@@ -20,6 +20,7 @@ use models::{
 };
 
 use axum::http::StatusCode;
+use tracing::info;
 
 use crate::web::api::{self};
 
@@ -75,6 +76,7 @@ pub async fn list_templates(
             let mut network_blobs = Vec::new();
 
             for hc in hosts {
+                let ci = hc.clone().get_ci_file().await.unwrap();
                 let HostConfig {
                     hostname,
                     flavor,
@@ -134,23 +136,14 @@ pub async fn list_templates(
                     };
 
                     bg_blobs.push(bgb);
-                }
-                let cifiles = cifile
-                    .gotten(t)
-                    .await
-                    .into_iter()
-                    .map(|c| {
-                        let c = c?;
-                        Ok(c.into_inner().data)
-                    })
-                    .try_collect::<_, _, anyhow::Error>()
-                    .log_db_client_error()?;
+                };
+
 
                 let hcb = HostConfigBlob {
                     hostname,
                     flavor,
                     image,
-                    cifile: cifiles,
+                    cifile: ci,
                     bondgroups: bg_blobs,
                 };
                 host_blobs.push(hcb);
@@ -315,18 +308,9 @@ pub async fn make_template(
             bg_configs.push(bgc);
         }
 
-        let cifile = dashboard::Cifile::new(&mut transaction, cifile)
-            .await
-            .log_server_error("unable to create CI file", true)
-            .expect("Expected to log server error");
+        info!("Making CI file with file: {:?}", cifile);
 
-        let host = dashboard::HostConfig {
-            hostname,
-            flavor,
-            image,
-            cifile,
-            connections: bg_configs,
-        };
+        let host = dashboard::HostConfig::new(hostname, flavor, image, cifile, bg_configs).await;
 
         db_host_configs.push(host);
     }

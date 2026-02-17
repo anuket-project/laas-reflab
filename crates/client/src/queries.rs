@@ -2,7 +2,7 @@ use crate::remote::{Select, Server, Text};
 use crate::{areyousure, get_lab, select_host};
 use comfy_table::{Cell, Color, ContentArrangement, Table, presets::UTF8_FULL};
 use common::prelude::anyhow;
-use dal::{AsEasyTransaction, DBTable, EasyTransaction, FKey, get_db_pool, new_client};
+use dal::{get_db_pool, new_client, AsEasyTransaction, DBTable, EasyTransaction, FKey};
 use models::allocator::allocation::{HostAllocationSummary, get_host_allocation_summary_for_lab};
 
 use models::{
@@ -17,7 +17,7 @@ use strum_macros::{Display, EnumIter, EnumString};
 use users::ipa;
 use uuid::Uuid;
 use workflows::{
-    deploy_booking::set_host_power_state::{HostConfig, PowerStateError, get_host_power_state},
+    deploy_booking::set_host_power_state::{get_host_power_state, HostConfig, PowerStateError},
     resource_management::allocator,
 };
 
@@ -348,9 +348,7 @@ async fn handle_aggregate_query(mut session: &Server) -> Result<(), anyhow::Erro
             }
         }
         more => {
-            unreachable!(
-                "Host was a member of multiple allocations, they are {more:?}, which is a DB integrity issue!"
-            )
+            unreachable!("Host was a member of multiple allocations, they are {more:?}, which is a DB integrity issue!")
         }
     }
 
@@ -399,31 +397,20 @@ async fn handle_config_query(mut session: &Server) -> Result<(), anyhow::Error> 
             let image = conf.image.get(&mut transaction).await.unwrap().into_inner();
             let hostname = conf.hostname.clone();
             writeln!(session, "Hostname {hostname}")?;
-            writeln!(session, "Assigned image: {}, id {:?}", image.name, image.id)?;
-            let generated = workflows::deploy_booking::generate_cloud_config(
-                conf.clone(),
-                h,
-                inst.id,
-                agg.id,
-                &mut transaction,
-            )
-            .await
-            .unwrap();
+            writeln!(
+                session,
+                "Assigned image: {}, id {:?}",
+                image.name, image.id
+            )?;
 
-            writeln!(session, "Primary CI file:")?;
-            writeln!(session, "{generated}")?;
+            writeln!(session, "CI file:")?;
             writeln!(session, "=======")?;
-
-            for cif in conf.cifile {
-                let cif = cif.get(&mut transaction).await.unwrap().into_inner();
-                writeln!(
-                    session,
-                    "Additional CI file {:?}, priority {}:",
-                    cif.id, cif.priority
-                )?;
-                writeln!(session, "=== BEGIN CONFIG FILE ===")?;
-                writeln!(session, "{}", cif.data)?;
-                writeln!(session, "==== END CONFIG FILE ====")?;
+            match conf.get_ci_file().await.unwrap() {
+                Some(content) => {
+                    writeln!(session, "{}", content)?;
+                    writeln!(session, "==== END CLOUD-INIT FILE ====")?;
+                },
+                None => writeln!(session, "==== NO ASSOCIATED CI FILE ====")?,
             }
         }
     }
@@ -437,10 +424,7 @@ async fn handle_leaked_query(mut session: &Server) -> Result<(), anyhow::Error> 
     let allocation_tn = Allocation::table_name();
     let resource_handle_tn = ResourceHandle::table_name();
 
-    let _ = writeln!(
-        session,
-        "Finding potentially leaked bookings. THIS IS FOR DIAGNOSTIC PURPOSES ONLY. A booking is NOT guarenteed to be leaked if it appears here. The dashboard is the only source of truth for booking end dates."
-    );
+    let _ = writeln!(session, "Finding potentially leaked bookings. THIS IS FOR DIAGNOSTIC PURPOSES ONLY. A booking is NOT guarenteed to be leaked if it appears here. The dashboard is the only source of truth for booking end dates.");
     areyousure(session)?;
 
     let active_not_ended_query = format!(
@@ -469,10 +453,7 @@ async fn handle_leaked_query(mut session: &Server) -> Result<(), anyhow::Error> 
         .await
         .expect("Expected to query for active bookings that were not ended!");
 
-    let _ = writeln!(
-        session,
-        "Aggregates with lifecycle_state = \"Active\" and end < NOW()\n-----------------------------"
-    );
+    let _ = writeln!(session, "Aggregates with lifecycle_state = \"Active\" and end < NOW()\n-----------------------------");
     for row in active_not_ended_rows {
         let agg_id: Uuid = row.get("agg_id");
         let expected_end: String = row.get("expected_end");
@@ -525,10 +506,7 @@ async fn handle_leaked_query(mut session: &Server) -> Result<(), anyhow::Error> 
         let alloc_id: Uuid = row.get("alloc_id");
         let resource_type: String = row.get("resource_type");
 
-        let _ = writeln!(
-            session,
-            "Aggregate ID: {agg_id}, Allocation ID: {alloc_id}, Resource Type: {resource_type}, Expected End: {expected_end}"
-        );
+        let _ = writeln!(session, "Aggregate ID: {agg_id}, Allocation ID: {alloc_id}, Resource Type: {resource_type}, Expected End: {expected_end}");
     }
     Ok(())
 }

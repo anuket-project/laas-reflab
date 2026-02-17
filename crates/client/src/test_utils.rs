@@ -109,6 +109,12 @@ async fn handle_test_render_autoinstall_and_ks_template(
         for_instance: FKey::new_id_dangling(),
         unique: ID::new(),
     };
+
+    let postprovision_endpoint: Endpoint = Endpoint {
+        for_instance: FKey::new_id_dangling(),
+        unique: ID::new(),
+    };
+
     let hostname: String = "CLI Test Host".to_string();
     let ports: Vec<HostPort> = vec![];
     let nm_connections: Vec<NetworkManagerVlanConnection> = vec![NetworkManagerVlanConnection {
@@ -128,6 +134,8 @@ async fn handle_test_render_autoinstall_and_ks_template(
         ipa_users.clone(),
         preimage_endpoint,
         postimage_endpoint,
+        postprovision_endpoint,
+        None,
         hostname,
         ports.clone(),
         nm_connections.clone(),
@@ -154,6 +162,7 @@ async fn handle_test_render_autoinstall_and_ks_template(
         hostname,
         preimage_endpoint,
         postimage_endpoint,
+        None,
     )?;
 
     writeln!(session, "{rendered_template}")?;

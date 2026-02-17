@@ -26,7 +26,7 @@ pub async fn write_file_to_external(
     info!("Attempting to connect to {} via ssh", ssh_client.address);
 
     let mut session =
-        ssh2::Session::new().expect(&format!("Failed to create a new SSH session for {}.", ssh_client.address));
+        ssh2::Session::new().unwrap_or_else(|_| panic!("Failed to create a new SSH session for {}.", ssh_client.address));
     let connection =
         std::net::TcpStream::connect(format!("{}:{}", ssh_client.address, ssh_client.port))
             .unwrap_or_else(|_| {
@@ -134,7 +134,7 @@ pub async fn cleanup_generated_host_grub_files(
     let mut transaction = client.easy_transaction().await?;
 
     let mut session =
-        ssh2::Session::new().expect(&format!("Failed to create a new SSH session for {}.", ssh_client.address));
+        ssh2::Session::new().unwrap_or_else(|_| panic!("Failed to create a new SSH session for {}.", ssh_client.address));
     let connection =
         std::net::TcpStream::connect(format!("{}:{}", ssh_client.address, ssh_client.port))
             .unwrap_or_else(|_| {
@@ -182,7 +182,7 @@ pub async fn cleanup_generated_hostname_files(
 
 
     let mut session =
-        ssh2::Session::new().expect(&format!("Failed to create a new SSH session for {}.", ssh_client.address));
+        ssh2::Session::new().unwrap_or_else(|_| panic!("Failed to create a new SSH session for {}.", ssh_client.address));
     let connection =
         std::net::TcpStream::connect(format!("{}:{}", ssh_client.address, ssh_client.port))
             .unwrap_or_else(|_| {

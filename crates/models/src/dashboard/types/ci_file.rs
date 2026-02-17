@@ -19,6 +19,7 @@ impl Cifile {
     ) -> Result<Vec<FKey<Cifile>>, anyhow::Error> {
         let mut priority: i16 = 1;
         let mut cifiles: Vec<FKey<Cifile>> = Vec::new();
+
         for data in strings {
             if !data.is_empty() {
                 let cif = Cifile {
@@ -27,10 +28,13 @@ impl Cifile {
                     data,
                 };
 
+
                 priority += 1; // Starts priority at 2 as the generated file is highest priority
 
                 match NewRow::new(cif.clone()).insert(t).await {
-                    Ok(fk) => cifiles.push(fk),
+                    Ok(fk) => {
+                        cifiles.push(fk)
+                    }
                     Err(e) => {
                         todo!("Handle failure: {e:?}")
                         // TODO

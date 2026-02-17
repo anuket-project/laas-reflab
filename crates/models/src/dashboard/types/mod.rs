@@ -1,4 +1,5 @@
 mod bond_group_config;
+mod ci_file;
 mod distro;
 mod host_config;
 mod provision_data;
