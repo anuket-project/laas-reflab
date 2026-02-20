@@ -50,7 +50,7 @@ pub struct HostConfigBlob {
     /// UUID of the selected image
     pub image: FKey<Image>,
     /// A vector of C-I Files. order is determined by order of the Vec
-    pub cifile: Vec<String>,
+    pub cifile: Option<String>,
     pub bondgroups: Vec<BondgroupBlob>,
 }
 

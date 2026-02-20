@@ -1,0 +1,52 @@
+#cloud-config-archive
+- type: "text/cloud-config"
+  content: |
+    merge_how:
+    - name: list
+      settings: [append]
+    - name: dict
+      settings: [no_replace, recurse_list]
+
+    hostname: {{ hostname }}
+    users:
+    {% for user in ipa_users %}
+    - name: {{ user["username"] }}
+      lock_passwd: false
+      groups: sudo
+      sudo: ALL=(ALL) NOPASSWD:ALL
+      shell: /bin/bash
+      {% if user["ssh_keys"] | length > 0 %}
+      ssh_authorized_keys:
+      {% for key in user["ssh_keys"] %}
+      - {{ key }}
+      {% endfor %}
+      {% endif %}
+    {% endfor %}
+
+
+
+{# This is a bash script to avoid conflicts with user-data 
+- cant just use runcmd since user-data may overwrite that
+
+TODO:
+- Implement check to see if cloud init succeeded or failed
+#}
+- type: text/x-shellscript
+  content: |
+    #!/bin/sh
+
+    cat <<'EOF' > /etc/cloud/laas-provision-log.sh
+
+    #!/bin/bash
+    {# echo cloud-init hi > /etc/cloud/logged-start.txt #}
+
+    cloud-init status --wait
+
+    {# echo cloud-init finished > /etc/cloud/logged.txt #}
+
+    curl -X POST -H "Content-Type: application/json" {{mailbox_endpoint}}/push -d "{\"success\": true}"
+
+    EOF
+
+    sudo /bin/bash /etc/cloud/laas-provision-log.sh &
+    

@@ -8,12 +8,11 @@ use config::settings;
 use dal::{new_client, AsEasyTransaction, FKey, ID};
 
 use models::{
-    dashboard::{types::Distro, Aggregate, Instance, NetworkAssignmentMap, StatusSentiment, Image},
+    dashboard::{types::Distro, Aggregate, Image, Instance, NetworkAssignmentMap, StatusSentiment},
     inventory::{BootTo, Host, Lab},
     EasyLog,
-
 };
-use notifications::{email::send_to_admins};
+use notifications::email::send_to_admins;
 use serde::{Deserialize, Serialize};
 use users::ipa;
 
@@ -22,12 +21,25 @@ use tascii::{prelude::*, task_trait::AsyncRunnable};
 use super::{set_boot::SetBoot, set_host_power_state::SetPower};
 use crate::{
     configure_networking::{
-        ConfigureNetworking, mgmt_network_config, prod_network_config, vlan_connection::create_network_manager_vlan_connections_from_bondgroups
-    }, deploy_booking::{
-        grub::GenericGrubConfig, reachable::WaitReachable, set_host_power_state::{HostConfig, PowerState, TimeoutConfig, confirm_power_state}, ssh_server_up::{WaitSshReachable}
-    }, generate_soft_serial, render_autoinstall_template, render_kickstart_template, resource_management::{
-        external_server::{SSHClientInfo, cleanup_generated_host_grub_files, cleanup_generated_hostname_files, write_file_to_external, write_system_grub_to_external}, ipmi_accounts::CreateIPMIAccount, mailbox::{Endpoint, Mailbox, MailboxMessageReceiver}
-    }
+        mgmt_network_config, prod_network_config,
+        vlan_connection::create_network_manager_vlan_connections_from_bondgroups,
+        ConfigureNetworking,
+    },
+    deploy_booking::{
+        grub::GenericGrubConfig,
+        reachable::WaitReachable,
+        set_host_power_state::{confirm_power_state, HostConfig, PowerState, TimeoutConfig},
+        ssh_server_up::WaitSshReachable,
+    },
+    generate_soft_serial, render_autoinstall_template, render_kickstart_template,
+    resource_management::{
+        external_server::{
+            cleanup_generated_host_grub_files, cleanup_generated_hostname_files,
+            write_file_to_external, write_system_grub_to_external, SSHClientInfo,
+        },
+        ipmi_accounts::CreateIPMIAccount,
+        mailbox::{Endpoint, Mailbox, MailboxMessageReceiver},
+    },
 };
 
 #[derive(Debug, Clone, Hash, Serialize, Deserialize)]
@@ -142,8 +154,10 @@ impl DeployHost {
         )
         .await;
 
-        let (preimage_waiter, imaging_waiter, mut post_boot_waiter, mut post_provision_waiter) =
+        let (preimage_waiter, imaging_waiter, mut provision_waiter, cloud_init_endpoint) =
             self.generate_endpoints().await;
+
+        self.configure_mgmt_networking(context, lab.clone()).await?;
 
         self.prepare_host_environment(context, host_name).await?;
 
@@ -151,6 +165,8 @@ impl DeployHost {
             context,
             preimage_waiter.endpoint(),
             imaging_waiter.endpoint(),
+            provision_waiter.endpoint(),
+            cloud_init_endpoint,
             host_name,
         )
         .await?;
@@ -159,19 +175,23 @@ impl DeployHost {
 
         self.set_power_on(context, host_name).await?;
 
-        self.configure_mgmt_networking(context, lab.clone()).await?;
-
         self.install_os(preimage_waiter, imaging_waiter).await?;
 
         self.set_power_off(context, host_name).await?;
 
         self.boot_from_disk(context, host_name).await?;
 
-        self.configure_postprovision_networking(context, lab.clone(), &mut post_boot_waiter)
+        self.configure_postprovision_networking(context, lab.clone())
             .await?;
 
-        self.verify_host_provisioned(context, host_name, &mut post_provision_waiter)
-            .await?;
+        self.apply_custom_cloud_init(
+            &mut provision_waiter,
+            host_name,
+            cloud_init_endpoint.is_some(),
+        )
+        .await?;
+
+        self.verify_host_provisioned(context).await?;
 
         self.setup_ipmi_accounts(context, aggregate.clone(), host_name)
             .await?;
@@ -194,7 +214,7 @@ impl DeployHost {
         MailboxMessageReceiver,
         MailboxMessageReceiver,
         MailboxMessageReceiver,
-        MailboxMessageReceiver,
+        Option<Endpoint>, // Option based on whether host has associated cloud init file
     ) {
         self.log(
             "Generating Endpoints",
@@ -207,15 +227,27 @@ impl DeployHost {
 
         let imaging_waiter = self.set_endpoint_hook("post_image").await.unwrap();
 
-        let post_boot_waiter = self.set_endpoint_hook("post_boot").await.unwrap();
+        let provision_waiter = self.set_endpoint_hook("post_provision").await.unwrap();
 
-        let post_provision_waiter = self.set_endpoint_hook("post_provision").await.unwrap();
+        let cloud_init_endpoint = if self
+            .fetch_instance_config()
+            .await
+            .expect("")
+            .get_ci_file()
+            .await
+            .unwrap()
+            .is_none()
+        {
+            Option::None
+        } else {
+            Option::Some(Endpoint::new(self.using_instance))
+        };
 
         (
             preimage_waiter,
             imaging_waiter,
-            post_boot_waiter,
-            post_provision_waiter,
+            provision_waiter,
+            cloud_init_endpoint,
         )
     }
     async fn wait_for_mock_injection(&mut self) -> MockInjectionResult {
@@ -425,17 +457,18 @@ impl DeployHost {
         let mut client = new_client().await?;
         let mut transaction = client.easy_transaction().await?;
 
-        let wipefs_image = Image::get_by_name(&mut transaction, PREINSTALL_IMAGE_NAME.to_string()).await.unwrap().into_inner();
-        // get image struct for above str with purely just a string 
+        let wipefs_image = Image::get_by_name(&mut transaction, PREINSTALL_IMAGE_NAME.to_string())
+            .await
+            .unwrap()
+            .into_inner();
+        // get image struct for above str with purely just a string
 
         let host = self.fetch_instance_host().await?;
                 
-        let grub_content = GenericGrubConfig::wipefs(
-            wipefs_image, 
-            host_name.to_string()
-        ).await
-        .render()
-        .unwrap();
+        let grub_content = GenericGrubConfig::wipefs(wipefs_image, host_name.to_string())
+            .await
+            .render()
+            .unwrap();
 
         let pxe = settings().pxe.clone();
 
@@ -449,10 +482,10 @@ impl DeployHost {
 
 
         write_system_grub_to_external(
-            &host, 
-            pxe.managed_directories.grub_menuentry, 
-            grub_content, 
-            ssh_client
+            &host,
+            pxe.managed_directories.grub_menuentry,
+            grub_content,
+            ssh_client,
         ).await
         .unwrap();
 
@@ -551,6 +584,8 @@ impl DeployHost {
         context: &Context,
         preimage_endpoint: Endpoint,
         postimage_endpoint: Endpoint,
+        postprovision_endpoint: Endpoint,
+        cloud_init_endpoint: Option<Endpoint>,
         host_name: &str,
     ) -> Result<(), TaskError> {
         let mut client = new_client().await.unwrap();
@@ -575,52 +610,52 @@ impl DeployHost {
             .expect("host did not exist by given fk?");
 
         let grub_config: String = match workflow_distro {
-            Distro::Ubuntu => {
-                GenericGrubConfig::ubuntu(
-                    self.fetch_instance_image().await.unwrap(), 
-                    host.server_name.clone(), 
-                ).await
-                .render()
-                .unwrap()
-            },
-            Distro::Fedora | Distro::Alma => {
-                GenericGrubConfig::rhel(
-                    self.fetch_instance_image().await.unwrap(), 
-                    host.ports(&mut transaction).await.expect("didn't get ports?"), 
-                    host.server_name.clone()
-                ).await
-                .render()
-                .unwrap()
-            },
+            Distro::Ubuntu => GenericGrubConfig::ubuntu(
+                self.fetch_instance_image().await.unwrap(),
+                host.server_name.clone(), 
+            ).await
+            .render()
+            .unwrap(),
+            Distro::Fedora | Distro::Alma => GenericGrubConfig::rhel(
+                self.fetch_instance_image().await.unwrap(), 
+                host.ports(&mut transaction)
+                    .await
+                    .expect("didn't get ports?"), 
+                host.server_name.clone(),
+            ).await
+            .render()
+            .unwrap(),
             Distro::Eve => {
                 let soft_serial = generate_soft_serial(16);
                 self.set_soft_serial(&soft_serial).await?;
                 GenericGrubConfig::eve(
-                    self.fetch_instance_image().await.unwrap(), 
-                    host.server_name.clone(), 
+                    self.fetch_instance_image().await.unwrap(),
+                    host.server_name.clone(),
                     soft_serial,
-                ).await
+                )
+                .await
                 .render()
                 .unwrap()
-            },
+            }
         };
 
         let pxe_config: config::PxeConfig = settings().pxe.clone();
-        let pxe_ssh_client = SSHClientInfo{ 
-                    address: pxe_config.address.clone(), 
-                    port: pxe_config.ssh.port, 
-                    user: pxe_config.ssh.user, 
-                    password: pxe_config.ssh.password, 
-                    writable_directory: pxe_config.ssh.writable_directory,  
-                };
-
+        let pxe_ssh_client = SSHClientInfo {
+            address: pxe_config.address.clone(),
+            port: pxe_config.ssh.port,
+            user: pxe_config.ssh.user,
+            password: pxe_config.ssh.password,
+            writable_directory: pxe_config.ssh.writable_directory,
+        };
 
         write_system_grub_to_external(
-            &host.into_inner(), 
-            pxe_config.managed_directories.grub_menuentry, 
-            grub_config.to_string(), 
-            pxe_ssh_client.clone()
-        ).await.unwrap();
+            &host.into_inner(),
+            pxe_config.managed_directories.grub_menuentry,
+            grub_config.to_string(),
+            pxe_ssh_client.clone(),
+        )
+        .await
+        .unwrap();
 
         warn!("setting boot dev for {} to network boot", host_name);
 
@@ -680,36 +715,44 @@ impl DeployHost {
 
                 let kickstart_template = render_kickstart_template(
                     pxe_config.address,
-                    self.fetch_instance_image().await.unwrap().http_unattended_install_config_path().unwrap().to_string(),
+                    self.fetch_instance_image()
+                        .await
+                        .unwrap()
+                        .http_unattended_install_config_path()
+                        .unwrap()
+                        .to_string(),
                     self.fetch_users().await.unwrap(),
                     interfaces,
                     vlan_configs,
                     self.fetch_instance_config().await.unwrap().hostname,
                     preimage_endpoint,
                     postimage_endpoint,
+                    cloud_init_endpoint,
                 )
                 .unwrap();
 
                 info!("Kickstart template successfully rendered for {}", host_name);
 
                 let settings_clone = settings().clone();
-                let directory = settings_clone.pxe.managed_directories.rhel_kickstart.clone();
+                let directory = settings_clone
+                    .pxe
+                    .managed_directories
+                    .rhel_kickstart
+                    .clone();
 
                 let filename: String = format!("{host_name}.ks");
 
-
                 write_file_to_external(
-                    directory, 
-                    filename, 
-                    kickstart_template, 
-                    pxe_ssh_client.clone())
+                    directory,
+                    filename,
+                    kickstart_template,
+                    pxe_ssh_client.clone(),
+                )
                 .await
-                .unwrap()   
+                .unwrap()
             }
 
             Distro::Ubuntu => {
-                // to-do redo how we template and render cloud-init files so they are not served from Liblaas' memory
-
                 let network_assignment_map = self.fetch_network_assignment_map().await?;
                 let host_config = self.fetch_instance_config().await?;
 
@@ -718,32 +761,41 @@ impl DeployHost {
                     self.fetch_users().await.unwrap(),
                     preimage_endpoint,
                     postimage_endpoint,
+                    postprovision_endpoint,
+                    cloud_init_endpoint,
                     self.fetch_instance_config().await.unwrap().hostname,
-                    self.fetch_instance_host().await?.ports(&mut transaction).await?,
+                    self.fetch_instance_host()
+                        .await?
+                        .ports(&mut transaction)
+                        .await?,
                     create_network_manager_vlan_connections_from_bondgroups(
-                        &network_assignment_map, 
-                        &host_config.connections
-                        ).await?
+                        &network_assignment_map,
+                        &host_config.connections,
+                    )
+                    .await?,
                 )
                 .unwrap();
 
 
                 let settings_clone = settings().clone();
-                let directory = settings_clone.pxe.managed_directories.ubuntu_cloudinit.clone();
+                let directory = settings_clone
+                    .pxe
+                    .managed_directories
+                    .ubuntu_cloudinit
+                    .clone();
 
                 let mut filename: String = "".to_string();
                 filename.push_str(host_name);
-                filename.push_str(".yaml"); // Double check file name and path is correct
+                filename.push_str(".yaml");
 
                 write_file_to_external(
-                    directory, 
-                    filename, 
-                    autoinstall_content, 
-                    pxe_ssh_client.clone()
+                    directory,
+                    filename,
+                    autoinstall_content,
+                    pxe_ssh_client.clone(),
                 )
                 .await
                 .unwrap();
-
             }
         };
 
@@ -861,7 +913,7 @@ impl DeployHost {
 
     async fn install_os(
         &mut self,
-        _preimage_waiter: MailboxMessageReceiver,
+        mut preimage_waiter: MailboxMessageReceiver,
         mut imaging_waiter: MailboxMessageReceiver,
     ) -> Result<(), TaskError> {
         self.log(
@@ -900,12 +952,41 @@ impl DeployHost {
                 .unwrap();
             }
             _ => {
+                // Wait for host to begin installation
+                match preimage_waiter.wait_next(Duration::from_mins(10)) {
+                    Ok(_) => {
+                        self.log(
+                            "Installing OS", 
+                            "the host has booted into the installer and has begun installing the chosen operating system", 
+                            StatusSentiment::InProgress
+                        )
+                        .await;
+                    }
+                    Err(e) => {
+                        self.log(
+                                "OS Install Failed",
+                                "booting into the OS installer timed out or experienced an early failure, initiating error recovery routines",
+                                StatusSentiment::Degraded,
+                            )
+                            .await;
+
+                        error!("MAILBOX FAILED with {:?}", e);
+                        return Err(TaskError::Reason("Mailbox error".to_owned()));
+                    }
+                }
+
                 // The longest step of the process, this is when apt/dnf update is run so it takes a *while*
                 match imaging_waiter.wait_next(Duration::from_mins(90)) {
                     Ok(_) => {
                         // TODO: allow host to post a *failure* message, so we can detect that and save
                         // those logs and force it to reboot and retry (and detect this all early)
-                        info!("Imaging successful!!")
+                        info!("Imaging successful!!");
+                        self.log(
+                            "OS Installed",
+                            "the unconfigured operating system has been installed onto the host",
+                            StatusSentiment::InProgress,
+                        )
+                        .await;
                     }
                     Err(e) => {
                         self.log(
@@ -919,12 +1000,6 @@ impl DeployHost {
                         return Err(TaskError::Reason("Mailbox error".to_owned()));
                     }
                 }
-                self.log(
-                    "OS Installed",
-                    "the unconfigured operating system has been installed onto the host",
-                    StatusSentiment::InProgress,
-                )
-                .await;
             }
         }
         Ok(())
@@ -934,9 +1009,7 @@ impl DeployHost {
         &mut self,
         context: &Context,
         lab: Lab,
-        post_boot_waiter: &mut MailboxMessageReceiver,
     ) -> Result<(), TaskError> {
-
         if lab.is_dynamic {
             self.log(
                 "Host Configure",
@@ -972,52 +1045,69 @@ impl DeployHost {
         Ok(())
     }
 
-    async fn verify_host_provisioned(
+    async fn apply_custom_cloud_init(
         &mut self,
-        context: &Context,
-        _host_name: &str,
-        post_provision_waiter: &mut MailboxMessageReceiver,
+        provision_waiter: &mut MailboxMessageReceiver,
+        host_name: &str,
+        apply_cloud_init: bool,
     ) -> Result<(), TaskError> {
-        let workflow_distro = self.get_distro().await?;
+        // Most of the work here is done in the jinja template(s), this is really waiting just for the mailbox to be hit before final networking checks
 
-        // This is where a host would hit a mailbox endpoint which would indicate it is done applying cloud_init,
-            // since this is not being used right now it will be commented out until the host has the ability to hit the endpoint again 
-        match workflow_distro {
-            // Distro::Ubuntu => {
-            //     self.log(
-            //         "Wait Host Online",
-            //         "wait for host to complete on-device setup steps (incl Cloud-Init)",
-            //         StatusSentiment::InProgress,
-            //     )
-            //     .await;
+        if !apply_cloud_init {
+            self.log(
+                "Cloud init",
+                "No custom user-data provided, skipping",
+                StatusSentiment::InProgress,
+            )
+            .await;
+            return Ok(());
+        };
 
-            //     match post_provision_waiter.wait_next(Duration::from_secs(60 * 30)) {
-            //         Ok(_) => {
-            //             info!("Host came back up after applying network configs");
-            //         }
-            //         Err(e) => {
-            //             self.log(
-            //                 "On-Device Setup Failed",
-            //                 "host failed to complete on-device configuration, initiating error recovery routines",
-            //                 StatusSentiment::Degraded,
-            //             )
-            //             .await;
 
-            //             error!("MAILBOX FAILED with {:?}", e);
-            //             return Err(TaskError::Reason("Mailbox error".to_owned()));
-            //         }
-            //     }
-            // }
+        self.log(
+            "Cloud init",
+            "Applying custom user-data file",
+            StatusSentiment::InProgress,
+        )
+        .await;
 
-            _ => {
+
+        // Wait for a host to finish cloud init and report status,
+        //      the host failing to hit the mailbox does cause a panic since this implies something is wrong (cloud init did not run?)
+        // To-Do: make ability for host go tell tascii about specific errors
+        match provision_waiter.wait_next(Duration::from_mins(15)) {
+            Ok(_m) => {
                 self.log(
-                    "Wait Host Online",
-                    "wait for host to come online",
+                    "Cloud init",
+                    "host has successfully applied initial cloud init configurations.",
                     StatusSentiment::InProgress,
                 )
                 .await;
+                info!("Host finished applying initial cloud init configurations and is ready for user-data, running file checks for : {}", host_name);
+            }
+            Err(e) => {
+                self.log(
+                    "Cloud init",
+                    "host has failed to complete supplied user cloud init files, initiating error recovery routines",
+                    StatusSentiment::Degraded,
+                )
+                .await;
+
+                error!("MAILBOX FAILED with {:?}", e);
+                return Err(TaskError::Reason("Mailbox error".to_owned()));
             }
         }
+
+        Ok(())
+    }
+
+    async fn verify_host_provisioned(&mut self, context: &Context) -> Result<(), TaskError> {
+        self.log(
+            "Wait Host Online",
+            "wait for host to come online",
+            StatusSentiment::InProgress,
+        )
+        .await;
 
         let mut client = new_client().await.unwrap();
         let mut transaction = client.easy_transaction().await.unwrap();
@@ -1112,9 +1202,7 @@ impl DeployHost {
         self.using_instance.log(msg, desc, sentiment).await;
     }
 
-    async fn cleanup_external_server(
-        &mut self,
-    ) -> Result<(), anyhow::Error>{
+    async fn cleanup_external_server(&mut self) -> Result<(), anyhow::Error>{
         info!("Cleaning up generated files in PXE server");
 
         let workflow_config = settings().workflow_config.clone();
@@ -1123,14 +1211,14 @@ impl DeployHost {
 
         if !workflow_config.cleanup_generated_files {
             info!("Config set to disable cleanup, exiting");
-            return Ok(())
+            return Ok(());
         }
 
         let host = self.fetch_instance_host().await.unwrap();
         let pxe_config = settings().pxe.clone();
         let pxe_directories_config = pxe_config.managed_directories.clone();
-        
-        let ssh_client = SSHClientInfo{
+
+        let ssh_client = SSHClientInfo {
             address: pxe_config.address,
             port: pxe_config.ssh.port,
             user: pxe_config.ssh.user,
@@ -1141,20 +1229,28 @@ impl DeployHost {
         info!("Cleaning up host GRUB files");
 
         cleanup_generated_host_grub_files(
-            &host, 
-            pxe_directories_config.grub_menuentry.clone(), 
-            ssh_client.clone()
-        ).await.unwrap();
+            &host,
+            pxe_directories_config.grub_menuentry.clone(),
+            ssh_client.clone(),
+        )
+        .await
+        .unwrap();
 
         info!("Cleaning up hostname configuration files");
 
-        let config_file_directories: Vec<_> = vec![pxe_directories_config.rhel_kickstart, pxe_directories_config.ubuntu_cloudinit, pxe_directories_config.grub_menuentry];
+        let config_file_directories: Vec<_> = vec![
+            pxe_directories_config.rhel_kickstart,
+            pxe_directories_config.ubuntu_cloudinit,
+            pxe_directories_config.grub_menuentry
+        ];
 
         cleanup_generated_hostname_files(
-            &host, 
-            config_file_directories, 
-            ssh_client.clone()
-        ).await.unwrap();
+            &host,
+            config_file_directories,
+            ssh_client.clone(),
+        )
+        .await
+        .unwrap();
 
 
         Ok(())

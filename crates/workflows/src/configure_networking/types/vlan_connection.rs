@@ -43,6 +43,8 @@ impl VlanConnection {
 /// tagged true / false
 ///
 /// connection_number 1 / 2 /etc (only needed to create distinct interface names)
+
+#[derive(Debug, Clone)]
 pub struct NetworkManagerVlanConnection {
     pub device_name: String,
     pub network_name: String,

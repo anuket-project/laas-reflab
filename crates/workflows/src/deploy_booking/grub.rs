@@ -29,7 +29,7 @@ impl GenericGrubConfig {
         kargs.append(&mut image_kernel_args);
 
         for port in &interfaces {
-            kargs.push(format!("ifname={}:{}", port.name, port.mac.to_string()));
+            kargs.push(format!("ifname={}:{}", port.name, port.mac));
         }
 
         let pxe_settings = settings().pxe.clone();

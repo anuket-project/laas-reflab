@@ -1,16 +1,20 @@
 use crate::remote::{Select, Server, Text};
 use crate::{areyousure, get_lab, select_host};
+use comfy_table::{Cell, Color, ContentArrangement, Table, presets::UTF8_FULL};
 use common::prelude::anyhow;
 use dal::{get_db_pool, new_client, AsEasyTransaction, DBTable, EasyTransaction, FKey};
+use models::allocator::allocation::{HostAllocationSummary, get_host_allocation_summary_for_lab};
 
 use models::{
     allocator::{Allocation, ResourceHandle},
     dashboard::{Aggregate, BookingMetadata, Instance, LifeCycleState, Network, ProvisionLogEvent},
     inventory::{Host, Vlan},
 };
+use std::collections::HashSet;
 use std::io::Write;
 use strum::IntoEnumIterator;
 use strum_macros::{Display, EnumIter, EnumString};
+use users::ipa;
 use uuid::Uuid;
 use workflows::{
     deploy_booking::set_host_power_state::{get_host_power_state, HostConfig, PowerStateError},
@@ -19,12 +23,14 @@ use workflows::{
 
 #[derive(Clone, Debug, Display, EnumString, EnumIter)]
 pub enum Queries {
-    #[strum(serialize = "Summarize Aggregate")]
+    #[strum(serialize = "Summarize Aggregate For Server Name")]
     Aggregate,
     #[strum(serialize = "Query Host Config")]
     Config,
     #[strum(serialize = "Summarize Current Bookings")]
-    Summarize,
+    SummarizeBookings,
+    #[strum(serialize = "Summarize Active Allocations")]
+    SummarizeAllocations,
     #[strum(serialize = "Display IPMI Credentials")]
     IpmiCredentials,
     #[strum(serialize = "List Free Vlans")]
@@ -37,6 +43,8 @@ pub enum Queries {
     LeakedBooking,
     #[strum(serialize = "Query BMC/IPMI VLAN for Host")]
     BMCVlan,
+    #[strum(serialize = "Get Active Booking Emails for BCC")]
+    ActiveBookingEmails,
 }
 
 pub async fn query(session: &Server) -> Result<(), anyhow::Error> {
@@ -48,11 +56,13 @@ pub async fn query(session: &Server) -> Result<(), anyhow::Error> {
         Queries::FreeVlans => handle_free_vlans_query(session).await,
         Queries::FreeHosts => handle_free_hosts_query(session).await,
         Queries::IpmiCredentials => handle_ipmi_credentials_query(session).await,
-        Queries::Summarize => handle_summarize_query(session).await,
+        Queries::SummarizeBookings => handle_summarize_booking_query(session).await,
         Queries::Aggregate => handle_aggregate_query(session).await,
         Queries::Config => handle_config_query(session).await,
         Queries::LeakedBooking => handle_leaked_query(session).await,
         Queries::BMCVlan => handle_bmc_vlan_query(session).await,
+        Queries::ActiveBookingEmails => handle_active_booking_emails_query(session).await,
+        Queries::SummarizeAllocations => handle_summarize_allocations_query(session).await,
     }
 }
 
@@ -202,7 +212,7 @@ async fn handle_ipmi_credentials_query(mut session: &Server) -> Result<(), anyho
     Ok(())
 }
 
-async fn handle_summarize_query(session: &Server) -> Result<(), anyhow::Error> {
+async fn handle_summarize_booking_query(session: &Server) -> Result<(), anyhow::Error> {
     let mut client = new_client().await.expect("Expected to connect to db");
     let mut transaction = client
         .easy_transaction()
@@ -232,6 +242,71 @@ async fn handle_summarize_query(session: &Server) -> Result<(), anyhow::Error> {
     }
 
     transaction.commit().await?;
+    Ok(())
+}
+
+pub trait AsTable {
+    fn as_table(&self) -> Table;
+}
+
+impl AsTable for Vec<HostAllocationSummary> {
+    fn as_table(&self) -> Table {
+        let mut table = Table::new();
+
+        table
+            .load_preset(UTF8_FULL)
+            .set_content_arrangement(ContentArrangement::Dynamic)
+            .set_header(vec![
+                "Server Name",
+                "Booking ID",
+                "Owner",
+                "Project",
+                "Started",
+                "Purpose",
+                "Details",
+                "Related Vlans"
+            ]);
+
+        for alloc in self {
+            let booking_id = alloc.booking_id.as_deref().unwrap_or("-");
+            let owner = alloc.booking_owner.as_deref().unwrap_or("-");
+            let project = alloc.project.as_deref().unwrap_or("-");
+            let purpose = alloc.purpose.as_deref().unwrap_or("-");
+            let details = alloc.details.as_deref().unwrap_or("-");
+            let vlans: &[i16] = alloc.related_booking_vlans.as_deref().unwrap_or_default();
+            let started = alloc
+                .started
+                .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
+                .unwrap_or_else(|| "-".to_string());
+
+            table.add_row(vec![
+                Cell::new(&alloc.server_name).fg(Color::Green),
+                Cell::new(booking_id),
+                Cell::new(owner),
+                Cell::new(project),
+                Cell::new(started),
+                Cell::new(purpose),
+                Cell::new(details),
+                Cell::new(format!("{vlans:?}")),
+            ]);
+        }
+        table
+    }
+}
+
+async fn handle_summarize_allocations_query(mut session: &Server) -> Result<(), anyhow::Error> {
+
+    let mut client = new_client().await.expect("Expected to connect to db");
+    let mut transaction = client
+        .easy_transaction()
+        .await
+        .expect("Transaction creation error");
+
+    let lab_name = &get_lab(session, &mut transaction).await?.get(&mut transaction).await?.name;
+
+    let allocations = get_host_allocation_summary_for_lab(lab_name).await?;
+
+    writeln!(session, "{}", allocations.as_table())?;
     Ok(())
 }
 
@@ -327,30 +402,15 @@ async fn handle_config_query(mut session: &Server) -> Result<(), anyhow::Error> 
                 "Assigned image: {}, id {:?}",
                 image.name, image.id
             )?;
-            let generated = workflows::deploy_booking::generate_cloud_config(
-                conf.clone(),
-                h,
-                inst.id,
-                agg.id,
-                &mut transaction,
-            )
-            .await
-            .unwrap();
 
-            writeln!(session, "Primary CI file:")?;
-            writeln!(session, "{generated}")?;
+            writeln!(session, "CI file:")?;
             writeln!(session, "=======")?;
-
-            for cif in conf.cifile {
-                let cif = cif.get(&mut transaction).await.unwrap().into_inner();
-                writeln!(
-                    session,
-                    "Additional CI file {:?}, priority {}:",
-                    cif.id, cif.priority
-                )?;
-                writeln!(session, "=== BEGIN CONFIG FILE ===")?;
-                writeln!(session, "{}", cif.data)?;
-                writeln!(session, "==== END CONFIG FILE ====")?;
+            match conf.get_ci_file().await.unwrap() {
+                Some(content) => {
+                    writeln!(session, "{}", content)?;
+                    writeln!(session, "==== END CLOUD-INIT FILE ====")?;
+                },
+                None => writeln!(session, "==== NO ASSOCIATED CI FILE ====")?,
             }
         }
     }
@@ -486,6 +546,85 @@ pub async fn handle_bmc_vlan_query(mut session: &Server) -> Result<(), anyhow::E
         }
     }
 
+    Ok(())
+}
+
+async fn handle_active_booking_emails_query(mut session: &Server) -> Result<(), anyhow::Error> {
+    let mut client = new_client().await.expect("Expected to connect to db");
+    let mut transaction = client
+        .easy_transaction()
+        .await
+        .expect("Transaction creation error");
+
+    let active_aggregates = Aggregate::select()
+        .where_field("lifecycle_state")
+        .equals(LifeCycleState::Active)
+        .run(&mut transaction)
+        .await
+        .unwrap();
+
+    writeln!(
+        session,
+        "Fetching emails for {} active booking(s)...\n",
+        active_aggregates.len()
+    )?;
+
+    let mut all_usernames = HashSet::new();
+
+    for agg in &active_aggregates {
+        let agg = agg.clone().into_inner();
+
+        if let Some(owner) = agg.metadata.owner {
+            all_usernames.insert(owner);
+        }
+
+        for user in agg.users {
+            all_usernames.insert(user);
+        }
+    }
+
+    writeln!(
+        session,
+        "Found {} unique user(s) across all active bookings\n",
+        all_usernames.len()
+    )?;
+
+    let mut ipa = ipa::IPA::init().await?;
+    let mut emails = Vec::new();
+    let mut failed_users = Vec::new();
+
+    for username in all_usernames {
+        match ipa.find_matching_user(username.clone(), false, false).await {
+            Ok(user) => {
+                emails.push(format!("{} <{}>", user.uid, user.mail));
+            }
+            Err(e) => {
+                failed_users.push(format!("{}: {}", username, e));
+            }
+        }
+    }
+
+    emails.sort();
+
+    writeln!(session, "=====================================")?;
+    writeln!(session, "Active Booking Emails:")?;
+    writeln!(session, "=====================================")?;
+    writeln!(session, "{}", emails.join(", "))?;
+    writeln!(session, "=====================================")?;
+    writeln!(session, "\nTotal: {} user(s) with emails", emails.len())?;
+
+    if !failed_users.is_empty() {
+        writeln!(
+            session,
+            "\nWarning: Could not fetch emails for {} user(s):",
+            failed_users.len()
+        )?;
+        for failure in failed_users {
+            writeln!(session, "  - {}", failure)?;
+        }
+    }
+
+    transaction.commit().await?;
     Ok(())
 }
 

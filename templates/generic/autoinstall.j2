@@ -12,12 +12,13 @@ autoinstall:
       groups: sudo
       sudo: ALL=(ALL) NOPASSWD:ALL
       shell: /bin/bash
+      {% if user["ssh_keys"] | length > 0 %}
       ssh_authorized_keys:
       {% for key in user["ssh_keys"] %}
       - {{ key }}
       {% endfor %}
+      {% endif %}
     {% endfor %}
-
 
   network:
     version: 2
@@ -51,10 +52,29 @@ autoinstall:
   early-commands:
     - "apt-get update"
     - "for i in $(lsblk | awk '/^sd?/{print $1}'); do sudo parted -s /dev/$i -- mklabel gpt; done"
-    - "curl -X POST -H \"Content-Type: application/json\" {{mailbox_endpoint.preimage_waiter}}/push -d '{\"success\": true}'"
+    - "curl -X POST -H \"Content-Type: application/json\" {{install_endpoints.preimage_waiter}}/push -d '{\"success\": true}'"
 
+  {# /target is where the installing OS is mounted #}
   late-commands:
-    - "curl -X POST -H \"Content-Type: application/json\" {{mailbox_endpoint.imaging_waiter}}/push -d '{\"success\": true}'"
+    {% if cloud_init_endpoint is defined %}
+    - "mkdir /target/etc/cloud/laas-seed/"
+    - "wget -O /target/etc/cloud/laas-seed/user-data {{cloud_init_endpoint}}/cloud-init/user-data"
+    - "wget -O /target/etc/cloud/laas-seed/network-config {{cloud_init_endpoint}}/cloud-init/network-config"
+    - "wget -O /target/etc/cloud/laas-seed/vendor-data {{cloud_init_endpoint}}/cloud-init/vendor-data"
+    - "wget -O /target/etc/cloud/laas-seed/meta-data {{cloud_init_endpoint}}/cloud-init/meta-data"
+    - |
+      cat <<EOF > /target/etc/cloud/cloud.cfg.d/99-seed.cfg
+      datasource:
+        NoCloud:
+          seedfrom: file:///etc/cloud/laas-seed/
+
+      datasource_list:
+      - NoCloud
+
+      EOF
+    {% endif %}
+
+    - "curl -X POST -H \"Content-Type: application/json\" {{install_endpoints.imaging_waiter}}/push -d '{\"success\": true}'"
 
   error-commands:
     - "sudo reboot -f"

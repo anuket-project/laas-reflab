@@ -429,6 +429,18 @@ else
   echo "[OK] .coverage/ exists"
 fi
 
+if [ ! -d "/etc/laas-reflab" ]; then
+  echo "Creating /etc/laas-reflab directory..."
+  mkdir /etc/laas-reflab
+  echo "[OK] /etc/laas-reflab created"
+fi
+
+if [ ! -d "/etc/laas-reflab/config.yaml" ]; then
+  echo "Creating /etc/laas-reflab/config.yaml file from sample_config.yaml..."
+  cp sample_config.yaml /etc/laas-reflab/config.yaml
+  echo "[OK] /etc/laas-reflab/config.yaml created"
+fi
+
 echo ""
 '''
 

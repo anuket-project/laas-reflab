@@ -17,8 +17,7 @@ use common::prelude::{
 };
 use crossbeam_channel::{Receiver, Sender};
 use dal::{new_client, web::*, AsEasyTransaction, FKey, ID};
-use maplit::hashmap;
-use models::dashboard::{Cifile, Instance};
+use models::dashboard::Instance;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -27,9 +26,14 @@ use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
-use tascii::prelude::Runtime;
+use tascii::prelude::{Runtime, Uuid};
 use tracing::{error, info, warn};
 
+use crate::{
+    configure_networking::vlan_connection::create_network_manager_vlan_connections_from_bondgroups,
+    deploy_booking::cloud_init::{render_meta_data, render_network_config, render_vendor_data},
+    get_ipa_users,
+};
 // const MESSAGE_EXPIRY_TIME_MINUTES: f32 = 5.0;
 
 #[derive(Serialize, Deserialize, Clone, Debug, Hash, JsonSchema, PartialEq, Eq)]
@@ -160,11 +164,6 @@ impl Mailbox {
 
             un_acked: HashSet::new(),
         }
-    }
-
-    pub fn run() {
-        // spawns the bind, services requests
-        // I don't think this is used anymore? can check
     }
 
     async fn clear(Path(endpoint): Path<Endpoint>) {
@@ -365,78 +364,156 @@ impl Mailbox {
     }*/
 }
 
-#[deprecated(note="Cloud init is now served through laas-pxe")]
-async fn get_ci_injector() -> Result<impl IntoApiResponse, (StatusCode, String)> {
-    // TODO: want to allow sending the finalize_provision stub
-    // from liblaas instead of having to have it served by cobbler
-    Ok(())
-}
-
-async fn get_ci_file(
-    Path(instance_id): Path<FKey<Instance>>,
-    //Path(aggregate_id): Path<FKey<Aggregate>>, // will need this extra param for generating CI
-    //files "on demand"
+async fn get_user_data_file(
+    Path((instance_id, _llid)): Path<(FKey<Instance>, ID)>,
 ) -> Result<impl IntoApiResponse, (StatusCode, String)> {
     let mut client = new_client().await.log_db_client_error()?;
     let mut transaction = client.easy_transaction().await.log_db_client_error()?;
-    // todo - finish this
-    //let config = dashboard::HostConfig::get(&mut new_client().unwrap(), server.);
-    info!("Mailbox was asked to get the CI files for {instance_id:?}");
     let instance = instance_id
         .get(&mut transaction)
         .await
         .expect("invalid hostconfig id provided");
 
-    tracing::debug!("Config: {:?}", instance);
-
-    let mut ci_files = Vec::new();
-
-    let host = instance.linked_host.expect("no host for ci file");
-    let agg = instance.aggregate;
-
-    for fk in instance.config.cifile.clone() {
-        let ci = fk.get(&mut transaction).await.unwrap();
-        tracing::info!("Returning additional ci file from list:\n{}", ci.data);
-        ci_files.push(ci.into_inner());
-    }
-
-    ci_files.sort_by_key(|c| c.priority);
-
-    let generated_cifile = crate::deploy_booking::generate_cloud_config(
-        instance.config.clone(),
-        host,
-        instance.id,
-        agg,
-        &mut transaction,
-    )
-    .await
-    .log_server_error("couldn't generate ci file", true)?;
-
-    let ci_files = Some(Cifile {
-        id: FKey::new_id_dangling(),
-        priority: 0,
-        data: generated_cifile,
-    })
-    .into_iter()
-    .chain(ci_files.into_iter().enumerate().map(|(i, c)| Cifile {
-        id: c.id,
-        priority: i as i16 + 1,
-        data: c.data,
-    }))
-    .collect_vec();
+    let host = instance
+        .linked_host
+        .unwrap_or_else(|| panic!("no host for requested ci file, instance_id = {instance_id:?}"));
+    let host_name = host
+        .get(&mut transaction)
+        .await
+        .expect("")
+        .server_name
+        .clone();
+    info!("Host {host_name} requested user-cloud init file");
 
     match transaction.commit().await {
         Ok(_) => {}
-        Err(e) => tracing::info!("Error committing mailbox transaction: {}", e.to_string()),
+        Err(e) => tracing::info!("Error in mailbox communication: {e:?}"),
     }
 
-    let list = ci_files.into_iter().map(|cif| {
-        hashmap! { "data" => serde_json::json!(cif.data.clone()), "priority" => serde_json::json!(cif.priority) }
-    }).collect_vec();
+    match instance.config.clone().get_ci_file().await.unwrap() {
+        Some(content) => Ok(content.to_owned()),
+        None => {
+            tracing::info!("Cloud init file for host {host_name} not found");
+            Err((
+                StatusCode::NOT_FOUND,
+                "Cloud init user-data file not found".to_string()
+            ))
+        }
+    }
 
-    //Ok(Json(ci_files.into_iter().map(|cif| cif.data.clone()).collect_vec()))
-    Ok(Json(list))
 }
+
+async fn get_vendor_data_file(
+    Path((instance_id, _llid)): Path<(FKey<Instance>, ID)>,
+) -> Result<impl IntoApiResponse, (StatusCode, String)> {
+    let mut client = new_client().await.log_db_client_error()?;
+    let mut transaction = client.easy_transaction().await.log_db_client_error()?;
+
+    let instance = instance_id
+        .get(&mut transaction)
+        .await
+        .expect("invalid hostconfig id provided");
+
+    let aggregate = instance
+        .aggregate
+        .get(&mut transaction)
+        .await
+        .expect("panic at getting instance aggregate");
+
+    let ipa_users = get_ipa_users(aggregate.into_inner()).await;
+
+    transaction.commit().await.unwrap();
+
+
+    // Get post_provision mailbox so host can inform backend about state of cloud-init
+    let mailbox_blob = instance.metadata.get("post_provision").unwrap();
+
+    let mailbox_uuid: Uuid = serde_json::from_str(&mailbox_blob.get("unique").unwrap().to_string()).unwrap(); 
+
+    let mailbox_unique = ID::from_str(&mailbox_uuid.to_string()).unwrap();
+
+    let file_content = render_vendor_data(
+        ipa_users,
+        instance.config.hostname.clone(),
+        Endpoint::from_parts(
+            instance_id, // Mailbox instance should always be this instance
+            mailbox_unique,
+        ),
+    );
+
+    match file_content {
+        Ok(content) => Ok(content.to_owned()),
+        Err(_) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Error in retrieving cloud init file".to_string()
+        )),
+    }
+}
+
+async fn get_network_config_file(
+    Path((instance_id, _llid)): Path<(FKey<Instance>, ID)>,
+) -> Result<impl IntoApiResponse, (StatusCode, String)> {
+    let mut client = new_client().await.log_db_client_error()?;
+    let mut transaction = client.easy_transaction().await.log_db_client_error()?;
+
+    let instance = instance_id
+        .get(&mut transaction)
+        .await
+        .expect("Expected to get instance, most likely an invalid instance_id id was provided");
+
+    let aggregate = instance
+        .aggregate
+        .get(&mut transaction)
+        .await
+        .expect("Expected to get instance aggregate");
+
+
+    let host_ports = instance
+        .linked_host
+        .unwrap() // Kinda unsafe, prob good idea to redo
+        .get(&mut transaction)
+        .await
+        .expect("Expected to get host information")
+        .ports(&mut transaction)
+        .await
+        .expect("Expected to get host ports");
+
+
+    let network_assignment_map = aggregate.vlans.get(&mut transaction).await.expect("Failed to Get Network Assignment Map");
+    
+    let file_content = render_network_config(
+        host_ports,
+        create_network_manager_vlan_connections_from_bondgroups(
+            &network_assignment_map,
+            &instance.config.connections,
+            )
+            .await
+            .expect("Failed to generate vlan connections from bondgroups"),
+    );
+
+    match file_content {
+        Ok(content) => Ok(content.to_owned()),
+        Err(_) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Error in retrieving cloud init file".to_string()
+        )),
+    }
+}
+
+async fn get_meta_data_file(
+    Path((instance_id, _llid)): Path<(FKey<Instance>, ID)>,
+) -> Result<impl IntoApiResponse, (StatusCode, String)> {
+    let file_content = render_meta_data(instance_id.into_id().into_uuid());
+
+    match file_content {
+        Ok(content) => Ok(content.to_owned()),
+        Err(_) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Error in retrieving cloud init file".to_string()
+        )),
+    }
+}
+
 
 pub async fn entry(_rt: &'static Runtime) {
     let state = AppState::default();
@@ -449,9 +526,10 @@ pub async fn entry(_rt: &'static Runtime) {
         .route("/:instance/:unique/push", post(Mailbox::push))
         .route("/:instance/:unique/peek", post(Mailbox::peek))
         .route("/:instance/:unique/pop", post(Mailbox::pop))
-        //.route("/:instance/:aggregate/cloud_init.tar", get(get_ci_file))
-        .route("/:instance/user-data", get(get_ci_file))
-        .route("/cloud_init.py", get(get_ci_injector)) // DEPRECATED 
+        .route("/:instance/:unique/cloud-init/user-data", get(get_user_data_file))
+        .route("/:instance/:unique/cloud-init/vendor-data", get(get_vendor_data_file))
+        .route("/:instance/:unique/cloud-init/network-config", get(get_network_config_file))
+        .route("/:instance/:unique/cloud-init/meta-data", get(get_meta_data_file))
         .finish_api_with(&mut api, api_docs)
         .layer(Extension(Arc::new(api)))
         .with_state(state);

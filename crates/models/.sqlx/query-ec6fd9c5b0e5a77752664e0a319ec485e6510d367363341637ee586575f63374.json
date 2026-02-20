@@ -1,0 +1,110 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, name, deleted, flavors, distro as \"distro: Distro\", cobbler_name, version, arch as \"arch: Arch\", http_unattended_install_config_path as \"http_unattended_install_config_path?\", http_iso_path as \"http_iso_path?\", tftp_kernel_path, tftp_initrd_paths FROM images where $1=ANY(flavors)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "deleted",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "flavors",
+        "type_info": "UuidArray"
+      },
+      {
+        "ordinal": 4,
+        "name": "distro: Distro",
+        "type_info": {
+          "Custom": {
+            "name": "distro",
+            "kind": {
+              "Enum": [
+                "Ubuntu",
+                "Fedora",
+                "Alma",
+                "EVE"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "cobbler_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "version",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "arch: Arch",
+        "type_info": {
+          "Custom": {
+            "name": "arch",
+            "kind": {
+              "Enum": [
+                "x86_64",
+                "aarch64"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "http_unattended_install_config_path?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "http_iso_path?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "tftp_kernel_path",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "tftp_initrd_paths",
+        "type_info": "TextArray"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "ec6fd9c5b0e5a77752664e0a319ec485e6510d367363341637ee586575f63374"
+}

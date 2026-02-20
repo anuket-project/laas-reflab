@@ -26,3 +26,4 @@ workflows = { path = "../workflows/" }
 notifications = { path = "../notifications/" }
 users = { path = "../users/" }
 dal = { path = "../dal/" }
+comfy-table = { workspace = true }

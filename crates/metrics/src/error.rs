@@ -11,9 +11,8 @@ use axum::{
     Json,
 };
 use serde_json::json;
-use telegraf::Client;
 use thiserror::Error;
-use tokio::sync::mpsc::{self, error::SendError};
+use tokio::sync::mpsc::error::SendError;
 
 /// Represents errors that can occur during metric processing and communication.
 #[derive(Debug, Clone, Error)]

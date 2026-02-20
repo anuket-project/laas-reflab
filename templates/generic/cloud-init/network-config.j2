@@ -1,0 +1,18 @@
+# Network config written by tascii - matches autoinstall content
+network:
+  version: 2
+  ethernets:
+  {% for interface in ethernet_interfaces %}
+    {{ interface["device_name"] }}:
+      match:
+        macaddress: {{interface["mac_addr"] }}
+      dhcp4: true
+  {% endfor %}
+
+  vlans:
+    {% for vlan in vlans %}
+    {{ vlan["interface_name"] }}:
+      id: {{ vlan["vlan_id"] }}
+      link: {{ vlan["device_name"] }}
+      dhcp4: true
+    {% endfor %}

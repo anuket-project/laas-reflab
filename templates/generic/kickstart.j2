@@ -1,8 +1,11 @@
 %ksappend http://{{pxe_address}}{{base_config_uri}}
 
 {% for user in ipa_users %}
-user --name={{user["username"]}} --groups=wheel --lock 
+user --name={{user["username"]}} --groups=wheel --lock
+
+{% if user["ssh_keys"] | length > 0 %}
 sshkey --username={{user["username"]}} "{% for key in user["ssh_keys"] %} {{ key }} {% endfor %}"
+{% endif %}
 
 {% endfor %}
 
@@ -12,9 +15,17 @@ sshkey --username={{user["username"]}} "{% for key in user["ssh_keys"] %} {{ key
 {% endfor %}
 
 %pre
-curl -X POST -H "Content-Type: application/json" {{mailbox_endpoint.preimage_waiter}}/push -d '{"success": true}'
+curl -X POST -H "Content-Type: application/json" {{install_endpoints.preimage_waiter}}/push -d '{"success": true}'
 
 %end
+
+{% if cloud_init_endpoint is defined %}
+%packages
+cloud-init
+%end
+
+{% endif %}
+
 
 %post 
 
@@ -23,5 +34,27 @@ nmcli con del {{interface}}
 
 {% endfor %}
 
-curl -X POST -H "Content-Type: application/json" {{mailbox_endpoint.imaging_waiter}}/push -d '{"success": true}'
+
+{% if cloud_init_endpoint is defined %}
+
+mkdir /etc/cloud/laas-seed/
+wget -O /etc/cloud/laas-seed/user-data {{cloud_init_endpoint}}/cloud-init/user-data
+wget -O /etc/cloud/laas-seed/network-config {{cloud_init_endpoint}}/cloud-init/network-config
+wget -O /etc/cloud/laas-seed/vendor-data {{cloud_init_endpoint}}/cloud-init/vendor-data
+wget -O /etc/cloud/laas-seed/meta-data {{cloud_init_endpoint}}/cloud-init/meta-data
+
+cat <<EOF > /etc/cloud/cloud.cfg.d/99-seed.cfg
+datasource:
+  NoCloud:
+    seedfrom: file:///etc/cloud/laas-seed/
+
+datasource_list:
+- NoCloud
+
+EOF
+
+{% endif %}
+
+
+curl -X POST -H "Content-Type: application/json" {{install_endpoints.imaging_waiter}}/push -d '{"success": true}'
 %end
