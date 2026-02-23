@@ -75,7 +75,7 @@ tower = "0.4.13"
 tower-http = { version = "0.3.5", features = ["cors"] }
 
 # database
-tokio-postgres = { version = "0.7.8", features = [
+tokio-postgres = { version = "0.7.16", features = [
   "with-chrono-0_4",
   "with-uuid-1",
   "with-eui48-1",
