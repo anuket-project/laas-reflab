@@ -51,7 +51,7 @@ autoinstall:
   #}
   early-commands:
     - "apt-get update"
-    - "for i in $(lsblk | awk '/^sd?/{print $1}'); do sudo parted -s /dev/$i -- mklabel gpt; done"
+    - "for i in $(lsblk | awk '/^sd?/{print $1}'); do sudo parted -s /dev/$i -- mklabel gpt || true; done"
     - "curl -X POST -H \"Content-Type: application/json\" {{install_endpoints.preimage_waiter}}/push -d '{\"success\": true}'"
 
   {# /target is where the installing OS is mounted #}
