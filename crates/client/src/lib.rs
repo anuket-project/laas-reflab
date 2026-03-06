@@ -175,6 +175,15 @@ fn areyousure(session: &Server) -> Result<(), anyhow::Error> {
         YesNo::Yes => Ok(()),
     }
 }
+fn confirm(session: &Server, message: &str) -> bool {
+    match Select::new(message, YesNo::iter().collect())
+        .prompt(session)
+        .unwrap()
+    {
+        YesNo::No => false,
+        YesNo::Yes => true
+    }
+}
 
 async fn get_lab(
     session: &Server,

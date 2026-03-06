@@ -5,7 +5,7 @@ mod switch;
 pub(crate) mod types;
 mod vlan;
 
-pub use flavor::{CardType, ExtraFlavorInfo, Flavor, InterfaceFlavor};
+pub use flavor::{CardType, ExtraFlavorInfo, Flavor, InterfaceFlavor, FlavorCommands};
 pub use host::{Host, HostPort};
 pub use lab::Lab;
 pub use switch::{Switch, SwitchOS, SwitchPort};
