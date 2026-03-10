@@ -1,7 +1,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
-use strum_macros::{Display, EnumString};
+use strum_macros::{Display, EnumIter, EnumString};
 use tokio_postgres::types::{private::BytesMut, FromSql, ToSql, Type};
 
 #[derive(
@@ -12,6 +12,7 @@ use tokio_postgres::types::{private::BytesMut, FromSql, ToSql, Type};
     Hash,
     Copy,
     EnumString,
+    EnumIter,
     Display,
     Eq,
     PartialEq,

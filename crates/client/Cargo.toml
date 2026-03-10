@@ -21,6 +21,7 @@ thiserror = { workspace = true }
 common = { path = "../common" }
 config = { path = "../config" }
 tascii = { path = "../tascii/" }
+metrics = { path = "../metrics" }
 models = { path = "../models/" }
 workflows = { path = "../workflows/" }
 notifications = { path = "../notifications/" }

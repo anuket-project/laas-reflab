@@ -606,6 +606,14 @@ async fn send_provision_metric(
             .unwrap()
             .distro
             .to_string(),
+        image: instance
+            .config
+            .image
+            .get(&mut transaction)
+            .await
+            .unwrap()
+            .name
+            .clone(),
         ..Default::default()
     };
 

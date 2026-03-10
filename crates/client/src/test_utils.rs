@@ -1,10 +1,13 @@
-use crate::remote::{Select, Server};
+use crate::remote::{Select, Server, Text};
 use common::prelude::anyhow;
 use dal::{FKey, ID};
 
 use models::inventory::HostPort;
 
-use crate::switch_test;
+use models::dashboard::types::Distro;
+use crate::{switch_test, get_lab};
+use metrics::{ProvisionMetric, MetricHandler};
+use dal::{new_client, AsEasyTransaction};
 use std::io::Write;
 use strum::IntoEnumIterator;
 use strum_macros::{Display, EnumIter, EnumString};
@@ -21,6 +24,8 @@ pub enum TestUtils {
     TestSwitch,
     #[strum(serialize = "Test NXOS VLAN Configuration")]
     TestVlanConfig,
+    #[strum(serialize = "Send a Mock Provision Metric")]
+    TestSendProvisionMetric,
 }
 
 pub async fn test_utils(session: &Server) -> Result<(), anyhow::Error> {
@@ -33,6 +38,7 @@ pub async fn test_utils(session: &Server) -> Result<(), anyhow::Error> {
         }
         TestUtils::TestSwitch => switch_test::test_switch(session).await,
         TestUtils::TestVlanConfig => switch_test::test_vlan_configuration(session).await,
+        TestUtils::TestSendProvisionMetric => test_send_provision_metric(session).await,
     }
 }
 
@@ -169,3 +175,67 @@ async fn handle_test_render_autoinstall_and_ks_template(
 
     Ok(())
 }
+
+
+async fn test_send_provision_metric(
+    mut session: &Server,
+) -> Result<(), anyhow::Error> {
+
+    let mut client = new_client().await.expect("Expected to connect to db");
+    let mut transaction = client
+        .easy_transaction()
+        .await
+        .expect("Transaction creation error");
+
+    let provision_metric  = ProvisionMetric {
+        hostname: Some("CLI Test Host".to_string()),
+        success: true,
+        retries: 1,
+        provisioning_time_seconds: 30 * 60,
+        owner: "Test Owner".to_string(),
+        lab: get_lab(session, &mut transaction).await?.get(&mut transaction).await?.name.clone(),
+        project: Some("Test Project".to_string()),
+        distro: Select::new("What distro would you like to use", Distro::iter().collect()).prompt(session).unwrap().to_string(),
+        image: Text::new("What image would you like to use").prompt(session).unwrap().to_string(),
+        mock: true,
+        ..Default::default()
+    };
+
+    transaction.commit().await.unwrap();
+
+    if let Err(e) = MetricHandler::send(provision_metric) {
+        writeln!(session, "Failed to send provision metric: {:?}", e)?;
+    } else {
+        writeln!(session, "Provision metric sent successfully")?;
+    }
+
+    Ok(())
+}
+
+// async fn test_send_booking_metric(
+// mut session: &Server,
+// ) -> Result<(), anyhow::Error> {
+
+//     let mut client = new_client().await.expect("Expected to connect to db");
+//     let mut transaction = client
+//         .easy_transaction()
+//         .await
+//         .expect("Transaction creation error");
+
+
+//     transaction.commit().await.unwrap();
+
+
+
+//     Ok(())
+// }
+
+
+// async fn test_send_booking_expired_metric(
+// mut session: &Server,
+// ) -> Result<(), anyhow::Error> {
+
+
+
+//     Ok(())
+// }
