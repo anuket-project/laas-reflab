@@ -84,13 +84,3 @@ impl std::fmt::Display for FlavorCommands {
         write!(f, "{}", self.commands.join("\n"))
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_todo() {
-        todo!()
-    }
-}
