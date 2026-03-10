@@ -3,6 +3,7 @@
 pub mod mgmt_workflows;
 pub mod remote;
 
+mod configuration;
 mod ipa;
 mod notifications;
 mod overrides;
@@ -11,12 +12,12 @@ mod switch_test;
 mod test_utils;
 
 use common::prelude::{anyhow, itertools::Itertools};
-use dal::{AsEasyTransaction, DBTable, EasyTransaction, FKey, ID, get_db_pool, new_client};
+use dal::{DBTable, EasyTransaction, FKey, ID};
 use mgmt_workflows::BootBookedHosts;
 
 use models::{
     dashboard::{Aggregate, Image, Instance, LifeCycleState, Template},
-    inventory::{Flavor, FlavorCommands, Host, Lab},
+    inventory::{Flavor, Host, Lab},
 };
 use remote::{Select, Server, Text};
 use std::fmt::Write as FmtWrite;
@@ -45,8 +46,8 @@ pub enum Command {
     ManualCleanup,
     #[strum(serialize = "Manual Host Deploy")]
     ManualDeploy,
-    #[strum(serialize = "Manage User Templates")]
-    ManageTemplates,
+    #[strum(serialize = "Provisioning Configuration Management")]
+    ConfigureProvisioning,
     #[strum(serialize = "Recovery")]
     Recovery,
     #[strum(serialize = "Testing Utilities")]
@@ -98,7 +99,7 @@ pub async fn cli_entry(
                 let _ = writeln!(session, "Successfully started cleanup");
             }
 
-            Command::ManageTemplates => modify_templates(session).await,
+            Command::ConfigureProvisioning => configuration::submenu(session).await?,
 
             Command::ManualDeploy => {
                 let id = Text::new("Enter UUID for aggregate to rerun: ").prompt(session)?;
@@ -124,146 +125,6 @@ pub async fn cli_entry(
             Command::Exit => return Ok(LiblaasStateInstruction::Exit),
         }
     }
-}
-
-async fn manage_flavor_image_commands(mut session: &Server) {
-    let mut client = new_client().await.expect("Expected to connect to db");
-    let mut transaction = client
-        .easy_transaction()
-        .await
-        .expect("Transaction creation error");
-
-    let flavor = select_flavor(session, &mut transaction).await.unwrap();
-
-    let image = select_image(session, &mut transaction).await.unwrap();
-
-    transaction.commit().await.unwrap();
-
-    let pool = get_db_pool().await.unwrap();
-
-    let existing_flavor_commands = FlavorCommands::get_for_flavor_image_ids(
-        &flavor.into_id().into_uuid(),
-        &image.into_id().into_uuid(),
-        &pool,
-    )
-    .await
-    .unwrap();
-
-    let _ = writeln!(
-        session,
-        "Currently configured Flavor/Image Commands - {existing_flavor_commands:?}"
-    );
-
-    match Select::new(
-        "Select an operation",
-        ManageFlavorImageCommandChoice::iter().collect(),
-    )
-    .prompt(session)
-    .unwrap()
-    {
-        ManageFlavorImageCommandChoice::Set => {
-            set_flavor_image_command(session, flavor, image).await
-        }
-        ManageFlavorImageCommandChoice::Delete => {
-            delete_flavor_image_command(session, flavor, image).await
-        }
-        ManageFlavorImageCommandChoice::Cancel => {}
-    }
-}
-
-async fn set_flavor_image_command(mut session: &Server, flavor: FKey<Flavor>, image: FKey<Image>) {
-    let mut selecting = true;
-
-    let mut commands: Vec<String> = vec![];
-
-    while selecting {
-        commands.push(Text::new("Enter command:").prompt(session).unwrap());
-        selecting = confirm(session, "Enter another?");
-    }
-
-    let _ = writeln!(session, "Entered Commands: {commands:?}");
-
-    if let Err(_) = areyousure(session) {
-        let _ = writeln!(session, "Operation cancelled.");
-        return;
-    }
-
-    let pool = get_db_pool().await.unwrap();
-
-    let res = FlavorCommands::set_for_flavor_image_ids(
-        &flavor.into_id().into_uuid(),
-        &image.into_id().into_uuid(),
-        commands,
-        &pool,
-    )
-    .await
-    .unwrap();
-    let _ = writeln!(session, "Successfully set Flavor / Image command {res:?}");
-}
-
-async fn delete_flavor_image_command(
-    mut session: &Server,
-    flavor: FKey<Flavor>,
-    image: FKey<Image>,
-) {
-    if let Err(_) = areyousure(session) {
-        let _ = writeln!(session, "Operation cancelled.");
-        return;
-    }
-
-    let pool = get_db_pool().await.unwrap();
-
-    FlavorCommands::delete_for_flavor_image_ids(
-        &flavor.into_id().into_uuid(),
-        &image.into_id().into_uuid(),
-        &pool,
-    )
-    .await
-    .unwrap();
-    let _ = writeln!(session, "Successfully deleted Flavor / Image command.");
-}
-
-#[derive(Clone, Debug, Display, EnumString, EnumIter)]
-enum ManageFlavorImageCommandChoice {
-    Set,
-    Delete,
-    Cancel,
-}
-
-async fn modify_templates(session: &Server) {
-    let mut client = new_client().await.expect("Expected to connect to db");
-    let mut transaction = client
-        .easy_transaction()
-        .await
-        .expect("Transaction creation error");
-
-    let action = Select::new("select an action: ", vec!["set template public/private"])
-        .prompt(session)
-        .unwrap();
-
-    match action {
-        "set template public/private" => {
-            let template = select_template(session, &mut transaction).await.unwrap();
-            let status = Select::new("set template to: ", vec!["public", "private"])
-                .prompt(session)
-                .unwrap();
-
-            let public = match status {
-                "public" => true,
-                "private" => false,
-                _ => unreachable!(),
-            };
-
-            let mut template = template.get(&mut transaction).await.unwrap();
-
-            template.public = public;
-
-            template.update(&mut transaction).await.unwrap();
-        }
-        _ => unreachable!(),
-    }
-
-    transaction.commit().await.unwrap();
 }
 
 #[derive(Debug, Clone, EnumIter, EnumString, Display)]
@@ -566,7 +427,7 @@ async fn select_instance(
         .id)
 }
 
-async fn select_flavor(
+pub(crate) async fn select_flavor(
     session: &Server,
     transaction: &mut EasyTransaction<'_>,
 ) -> Result<FKey<Flavor>, anyhow::Error> {
@@ -582,7 +443,7 @@ async fn select_flavor(
         .id)
 }
 
-async fn select_image(
+pub(crate) async fn select_image(
     session: &Server,
     transaction: &mut EasyTransaction<'_>,
 ) -> Result<FKey<Image>, anyhow::Error> {
