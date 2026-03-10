@@ -11,12 +11,12 @@ mod switch_test;
 mod test_utils;
 
 use common::prelude::{anyhow, itertools::Itertools};
-use dal::{AsEasyTransaction, DBTable, EasyTransaction, FKey, ID, new_client};
+use dal::{AsEasyTransaction, DBTable, EasyTransaction, FKey, ID, get_db_pool, new_client};
 use mgmt_workflows::BootBookedHosts;
 
 use models::{
-    dashboard::{Aggregate, Instance, LifeCycleState, Template},
-    inventory::{Host, Lab},
+    dashboard::{Aggregate, Image, Instance, LifeCycleState, Template},
+    inventory::{Flavor, FlavorCommands, Host, Lab},
 };
 use remote::{Select, Server, Text};
 use std::fmt::Write as FmtWrite;
@@ -118,10 +118,116 @@ pub async fn cli_entry(
                 notifications::notification_actions(session, tascii_rt).await?;
             }
             Command::Query => queries::query(session).await.unwrap(),
-            Command::TestingUtils => {test_utils::test_utils(session).await?;}
+            Command::TestingUtils => {
+                test_utils::test_utils(session).await?;
+            }
             Command::Exit => return Ok(LiblaasStateInstruction::Exit),
         }
     }
+}
+
+async fn manage_flavor_image_commands(mut session: &Server) {
+    let mut client = new_client().await.expect("Expected to connect to db");
+    let mut transaction = client
+        .easy_transaction()
+        .await
+        .expect("Transaction creation error");
+
+    let flavor = select_flavor(session, &mut transaction).await.unwrap();
+
+    let image = select_image(session, &mut transaction).await.unwrap();
+
+    transaction.commit().await.unwrap();
+
+    let pool = get_db_pool().await.unwrap();
+
+    let existing_flavor_commands = FlavorCommands::get_for_flavor_image_ids(
+        &flavor.into_id().into_uuid(),
+        &image.into_id().into_uuid(),
+        &pool,
+    )
+    .await
+    .unwrap();
+
+    let _ = writeln!(
+        session,
+        "Currently configured Flavor/Image Commands - {existing_flavor_commands:?}"
+    );
+
+    match Select::new(
+        "Select an operation",
+        ManageFlavorImageCommandChoice::iter().collect(),
+    )
+    .prompt(session)
+    .unwrap()
+    {
+        ManageFlavorImageCommandChoice::Set => {
+            set_flavor_image_command(session, flavor, image).await
+        }
+        ManageFlavorImageCommandChoice::Delete => {
+            delete_flavor_image_command(session, flavor, image).await
+        }
+        ManageFlavorImageCommandChoice::Cancel => {}
+    }
+}
+
+async fn set_flavor_image_command(mut session: &Server, flavor: FKey<Flavor>, image: FKey<Image>) {
+    let mut selecting = true;
+
+    let mut commands: Vec<String> = vec![];
+
+    while selecting {
+        commands.push(Text::new("Enter command:").prompt(session).unwrap());
+        selecting = confirm(session, "Enter another?");
+    }
+
+    let _ = writeln!(session, "Entered Commands: {commands:?}");
+
+    if let Err(_) = areyousure(session) {
+        let _ = writeln!(session, "Operation cancelled.");
+        return;
+    }
+
+    let pool = get_db_pool().await.unwrap();
+
+    let res = FlavorCommands::set_for_flavor_image_ids(
+        &flavor.into_id().into_uuid(),
+        &image.into_id().into_uuid(),
+        commands,
+        &pool,
+    )
+    .await
+    .unwrap();
+    let _ = writeln!(session, "Successfully set Flavor / Image command {res:?}");
+}
+
+async fn delete_flavor_image_command(
+    mut session: &Server,
+    flavor: FKey<Flavor>,
+    image: FKey<Image>,
+) {
+    if let Err(_) = areyousure(session) {
+        let _ = writeln!(session, "Operation cancelled.");
+        return;
+    }
+
+    let pool = get_db_pool().await.unwrap();
+
+    FlavorCommands::delete_for_flavor_image_ids(
+        &flavor.into_id().into_uuid(),
+        &image.into_id().into_uuid(),
+        &pool,
+    )
+    .await
+    .unwrap();
+    let _ = writeln!(session, "Successfully deleted Flavor / Image command.");
+}
+
+#[derive(Clone, Debug, Display, EnumString, EnumIter)]
+enum ManageFlavorImageCommandChoice {
+    Set,
+    Delete,
+    Cancel,
 }
 
 async fn modify_templates(session: &Server) {
@@ -181,7 +287,7 @@ fn confirm(session: &Server, message: &str) -> bool {
         .unwrap()
     {
         YesNo::No => false,
-        YesNo::Yes => true
+        YesNo::Yes => true,
     }
 }
 
@@ -355,6 +461,18 @@ struct DispInst {
     host: String,
 }
 
+#[derive(Clone, Debug)]
+struct DispFlavor {
+    id: FKey<Flavor>,
+    name: String,
+}
+
+#[derive(Clone, Debug)]
+struct DispImage {
+    id: FKey<Image>,
+    name: String,
+}
+
 #[derive(Clone)]
 struct DispAgg {
     id: FKey<Aggregate>,
@@ -393,6 +511,36 @@ impl std::fmt::Display for DispInst {
     }
 }
 
+impl DispFlavor {
+    pub fn from_flavor(flavor: Flavor) -> Self {
+        DispFlavor {
+            id: flavor.id,
+            name: flavor.name,
+        }
+    }
+}
+
+impl std::fmt::Display for DispFlavor {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} ({})", self.name, self.id.into_id())
+    }
+}
+
+impl DispImage {
+    pub fn from_image(image: Image) -> Self {
+        DispImage {
+            id: image.id,
+            name: image.name,
+        }
+    }
+}
+
+impl std::fmt::Display for DispImage {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} ({})", self.name, self.id.into_id())
+    }
+}
+
 async fn select_instance(
     session: &Server,
     within_agg: FKey<Aggregate>,
@@ -414,6 +562,38 @@ async fn select_instance(
     }
 
     Ok(Select::new("select an instance:", disps)
+        .prompt(session)?
+        .id)
+}
+
+async fn select_flavor(
+    session: &Server,
+    transaction: &mut EasyTransaction<'_>,
+) -> Result<FKey<Flavor>, anyhow::Error> {
+    let flavor_choices = Flavor::select()
+        .run(transaction)
+        .await?
+        .into_iter()
+        .map(|f| DispFlavor::from_flavor(f.into_inner()))
+        .collect();
+
+    Ok(Select::new("Select a flavor:", flavor_choices)
+        .prompt(session)?
+        .id)
+}
+
+async fn select_image(
+    session: &Server,
+    transaction: &mut EasyTransaction<'_>,
+) -> Result<FKey<Image>, anyhow::Error> {
+    let image_choices = Image::select()
+        .run(transaction)
+        .await?
+        .into_iter()
+        .map(|f| DispImage::from_image(f.into_inner()))
+        .collect();
+
+    Ok(Select::new("Select an image:", image_choices)
         .prompt(session)?
         .id)
 }

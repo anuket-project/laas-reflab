@@ -755,11 +755,15 @@ impl DeployHost {
             Distro::Ubuntu => {
                 let network_assignment_map = self.fetch_network_assignment_map().await?;
                 let host_config = self.fetch_instance_config().await?;
-                let extra_runcmds = FlavorCommands::get_for_flavor_id(
+
+                let extra_runcmds = match FlavorCommands::get_for_flavor_image_ids(
                     &self.fetch_instance().await.unwrap().config.flavor.into_id().into_uuid(),
                     &self.fetch_instance().await.unwrap().config.image.into_id().into_uuid(),
                     &get_db_pool().await.unwrap()
-                ).await.unwrap().commands;
+                ).await.unwrap() {
+                    Some(flavor_command) => flavor_command.commands,
+                    None => vec![],
+                };
 
                 let autoinstall_content = render_autoinstall_template(
                     self.fetch_users().await.unwrap(),
