@@ -130,8 +130,6 @@ async fn handle_test_render_autoinstall_and_ks_template(
         "\nRendering autoinstall template\n-----------------------\n"
     )?;
 
-    // TODO - test on host
-    // TODO - cli function to add / remove these rules
     let rendered_template = render_autoinstall_template(
         ipa_users.clone(),
         preimage_endpoint,

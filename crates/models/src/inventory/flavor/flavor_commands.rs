@@ -44,6 +44,9 @@ impl FlavorCommands {
             r#"
             INSERT INTO flavor_commands (for_flavor, for_image, commands)
             VALUES ($1, $2, $3)
+            ON CONFLICT (for_flavor, for_image) 
+            DO UPDATE SET 
+                commands = EXCLUDED.commands
             RETURNING for_flavor, for_image, commands
             "#,
             for_flavor_id,
