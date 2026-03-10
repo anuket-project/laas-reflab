@@ -1,6 +1,4 @@
-use std::
-    time::Duration
-;
+use std::time::Duration;
 
 use common::prelude::*;
 
@@ -323,6 +321,7 @@ impl AsyncRunnable for SingleHostDeploy {
                     send_provision_metric(
                         &inst.config.hostname,
                         &self.for_aggregate,
+                        &self.instance,
                         provisioning_time_seconds,
                         deploy_host_result.is_ok(),
                     )
@@ -571,10 +570,10 @@ async fn mark_not_working(hosts: Vec<ResourceHandle>, original_agg: FKey<Aggrega
     }
 }
 
-
 async fn send_provision_metric(
     host_name: &str,
     aggregate: &FKey<Aggregate>,
+    instance: &FKey<Instance>,
     duration: u64,
     success: bool,
 ) {
@@ -582,6 +581,7 @@ async fn send_provision_metric(
     let mut transaction = client.easy_transaction().await.unwrap();
 
     let aggregate = aggregate.get(&mut transaction).await.unwrap();
+    let instance = instance.get(&mut transaction).await.unwrap();
 
     let provision_metric = ProvisionMetric {
         hostname: Some(host_name.to_string()).filter(|s| !s.is_empty()),
@@ -598,6 +598,14 @@ async fn send_provision_metric(
         project: aggregate.metadata.project.clone().filter(|s| !s.is_empty()),
         provisioning_time_seconds: duration,
         success,
+        distro: instance
+            .config
+            .image
+            .get(&mut transaction)
+            .await
+            .unwrap()
+            .distro
+            .to_string(),
         ..Default::default()
     };
 

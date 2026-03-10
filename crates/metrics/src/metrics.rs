@@ -288,6 +288,11 @@ pub struct ProvisionMetric {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project: Option<String>,
 
+    /// **Tag:** Distro used during attempted provision.
+    #[telegraf(tag)]
+    #[serde(default)]
+    pub distro: String,
+
     /// **Tag:** Metadata tag to differentiate between fake/mock data and real data in the
     /// dashboard.
     #[telegraf(tag)]
