@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM flavor_commands WHERE for_flavor = $1 and for_image = $2\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cafa6890e5f29777e5caaa3a56e2056aa5df6f75b0148e6fef45b6db2baeb4de"
+}

@@ -3,6 +3,7 @@
 pub mod mgmt_workflows;
 pub mod remote;
 
+mod configuration;
 mod ipa;
 mod notifications;
 mod overrides;
@@ -11,12 +12,12 @@ mod switch_test;
 mod test_utils;
 
 use common::prelude::{anyhow, itertools::Itertools};
-use dal::{AsEasyTransaction, DBTable, EasyTransaction, FKey, ID, new_client};
+use dal::{DBTable, EasyTransaction, FKey, ID};
 use mgmt_workflows::BootBookedHosts;
 
 use models::{
-    dashboard::{Aggregate, Instance, LifeCycleState, Template},
-    inventory::{Host, Lab},
+    dashboard::{Aggregate, Image, Instance, LifeCycleState, Template},
+    inventory::{Flavor, Host, Lab},
 };
 use remote::{Select, Server, Text};
 use std::fmt::Write as FmtWrite;
@@ -45,8 +46,8 @@ pub enum Command {
     ManualCleanup,
     #[strum(serialize = "Manual Host Deploy")]
     ManualDeploy,
-    #[strum(serialize = "Manage User Templates")]
-    ManageTemplates,
+    #[strum(serialize = "Provisioning Configuration Management")]
+    ConfigureProvisioning,
     #[strum(serialize = "Recovery")]
     Recovery,
     #[strum(serialize = "Testing Utilities")]
@@ -98,7 +99,7 @@ pub async fn cli_entry(
                 let _ = writeln!(session, "Successfully started cleanup");
             }
 
-            Command::ManageTemplates => modify_templates(session).await,
+            Command::ConfigureProvisioning => configuration::submenu(session).await?,
 
             Command::ManualDeploy => {
                 let id = Text::new("Enter UUID for aggregate to rerun: ").prompt(session)?;
@@ -118,46 +119,12 @@ pub async fn cli_entry(
                 notifications::notification_actions(session, tascii_rt).await?;
             }
             Command::Query => queries::query(session).await.unwrap(),
-            Command::TestingUtils => {test_utils::test_utils(session).await?;}
+            Command::TestingUtils => {
+                test_utils::test_utils(session).await?;
+            }
             Command::Exit => return Ok(LiblaasStateInstruction::Exit),
         }
     }
-}
-
-async fn modify_templates(session: &Server) {
-    let mut client = new_client().await.expect("Expected to connect to db");
-    let mut transaction = client
-        .easy_transaction()
-        .await
-        .expect("Transaction creation error");
-
-    let action = Select::new("select an action: ", vec!["set template public/private"])
-        .prompt(session)
-        .unwrap();
-
-    match action {
-        "set template public/private" => {
-            let template = select_template(session, &mut transaction).await.unwrap();
-            let status = Select::new("set template to: ", vec!["public", "private"])
-                .prompt(session)
-                .unwrap();
-
-            let public = match status {
-                "public" => true,
-                "private" => false,
-                _ => unreachable!(),
-            };
-
-            let mut template = template.get(&mut transaction).await.unwrap();
-
-            template.public = public;
-
-            template.update(&mut transaction).await.unwrap();
-        }
-        _ => unreachable!(),
-    }
-
-    transaction.commit().await.unwrap();
 }
 
 #[derive(Debug, Clone, EnumIter, EnumString, Display)]
@@ -173,6 +140,15 @@ fn areyousure(session: &Server) -> Result<(), anyhow::Error> {
     {
         YesNo::No => Err(anyhow::Error::msg("user was not sure")),
         YesNo::Yes => Ok(()),
+    }
+}
+fn confirm(session: &Server, message: &str) -> bool {
+    match Select::new(message, YesNo::iter().collect())
+        .prompt(session)
+        .unwrap()
+    {
+        YesNo::No => false,
+        YesNo::Yes => true,
     }
 }
 
@@ -346,6 +322,18 @@ struct DispInst {
     host: String,
 }
 
+#[derive(Clone, Debug)]
+struct DispFlavor {
+    id: FKey<Flavor>,
+    name: String,
+}
+
+#[derive(Clone, Debug)]
+struct DispImage {
+    id: FKey<Image>,
+    name: String,
+}
+
 #[derive(Clone)]
 struct DispAgg {
     id: FKey<Aggregate>,
@@ -384,6 +372,36 @@ impl std::fmt::Display for DispInst {
     }
 }
 
+impl DispFlavor {
+    pub fn from_flavor(flavor: Flavor) -> Self {
+        DispFlavor {
+            id: flavor.id,
+            name: flavor.name,
+        }
+    }
+}
+
+impl std::fmt::Display for DispFlavor {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} ({})", self.name, self.id.into_id())
+    }
+}
+
+impl DispImage {
+    pub fn from_image(image: Image) -> Self {
+        DispImage {
+            id: image.id,
+            name: image.name,
+        }
+    }
+}
+
+impl std::fmt::Display for DispImage {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} ({})", self.name, self.id.into_id())
+    }
+}
+
 async fn select_instance(
     session: &Server,
     within_agg: FKey<Aggregate>,
@@ -405,6 +423,38 @@ async fn select_instance(
     }
 
     Ok(Select::new("select an instance:", disps)
+        .prompt(session)?
+        .id)
+}
+
+pub(crate) async fn select_flavor(
+    session: &Server,
+    transaction: &mut EasyTransaction<'_>,
+) -> Result<FKey<Flavor>, anyhow::Error> {
+    let flavor_choices = Flavor::select()
+        .run(transaction)
+        .await?
+        .into_iter()
+        .map(|f| DispFlavor::from_flavor(f.into_inner()))
+        .collect();
+
+    Ok(Select::new("Select a flavor:", flavor_choices)
+        .prompt(session)?
+        .id)
+}
+
+pub(crate) async fn select_image(
+    session: &Server,
+    transaction: &mut EasyTransaction<'_>,
+) -> Result<FKey<Image>, anyhow::Error> {
+    let image_choices = Image::select()
+        .run(transaction)
+        .await?
+        .into_iter()
+        .map(|f| DispImage::from_image(f.into_inner()))
+        .collect();
+
+    Ok(Select::new("Select an image:", image_choices)
         .prompt(session)?
         .id)
 }

@@ -213,6 +213,7 @@ pub fn render_autoinstall_template(
     hostname: String,
     ports: Vec<HostPort>,
     nm_connections: Vec<NetworkManagerVlanConnection>,
+    run_commands: Vec<String>
 ) -> Result<String, tera::Error> {
     info!("Rendering Cloud-init Template for Ubuntu");
 
@@ -234,6 +235,11 @@ pub fn render_autoinstall_template(
     template_context.insert(
         "vlans",
         &VlanConnectionFormatted::from_nm_connections(nm_connections),
+    );
+
+    template_context.insert(
+        "run_commands",
+        &run_commands
     );
 
     if let Some(cloud_init_endpoint) = cloud_init_endpoint {
@@ -450,9 +456,24 @@ mod tests {
             postimage_endpoint,
             postprovision_endpoint,
             None,
+            hostname.clone(),
+            ports.clone(),
+            nm_connections.clone(),
+            vec![]
+        )
+        .unwrap();
+
+
+        render_autoinstall_template(
+            ipa_users.clone(),
+            preimage_endpoint,
+            postimage_endpoint,
+            postprovision_endpoint,
+            None,
             hostname,
             ports.clone(),
             nm_connections.clone(),
+            vec!["apt-get update -y".to_string()]
         )
         .unwrap();
     }

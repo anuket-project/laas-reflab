@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\nWITH latest_host_allocations AS (\n    SELECT\n        DISTINCT ON (h.server_name) \n        h.server_name AS server_name,\n        a.started,\n        a.ended,\n        ag.metadata ->> 'owner' AS booking_owner,\n        ag.metadata ->> 'booking_id' AS booking_id,\n        ag.metadata ->> 'project' AS project,\n        ag.metadata ->> 'purpose' AS purpose,\n        ag.metadata ->> 'details' AS details,\n        ag.id as aggregate_id,\n        l.name AS lab_name\n    FROM\n        hosts h\n        JOIN resource_handles rh ON rh.tracks_resource = h.id\n        LEFT JOIN allocations a ON a.for_resource = rh.id\n        JOIN aggregates ag ON a.for_aggregate = ag.id\n        JOIN labs l ON rh.lab = l.id\n    ORDER BY\n        h.server_name,\n        a.started DESC\n)\nSELECT\n    lha.server_name,\n    lha.started,\n    lha.booking_owner,\n    lha.booking_id,\n    lha.project,\n    lha.purpose,\n    lha.details,\n    COALESCE(v_aggs.vlan_ids, '{}') AS \"related_booking_vlans: Vec<i16>\"\nFROM\n    latest_host_allocations lha\nLEFT JOIN LATERAL (\n    SELECT\n        array_agg(v.vlan_id) as vlan_ids\n    FROM\n        allocations a\n        JOIN resource_handles rh ON a.for_resource = rh.id\n        JOIN vlans v ON rh.tracks_resource = v.id\n    WHERE\n        a.for_aggregate = lha.aggregate_id\n) v_aggs ON true\nWHERE\n    lha.lab_name = $1\n    AND lha.ended IS NULL\nORDER BY\n    lha.booking_id\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "server_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "started",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "booking_owner",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "booking_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "project",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "purpose",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "details",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "related_booking_vlans: Vec<i16>",
+        "type_info": "Int2Array"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "26021e6f1080f967964df5ab1ddf99c0ccc9a94909fa6f2dc17906a01bd3c65a"
+}
