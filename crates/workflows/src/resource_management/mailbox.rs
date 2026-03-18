@@ -16,8 +16,8 @@ use common::prelude::{
     tracing::{self},
 };
 use crossbeam_channel::{Receiver, Sender};
-use dal::{new_client, web::*, AsEasyTransaction, FKey, ID};
-use models::dashboard::Instance;
+use dal::{get_db_pool, new_client, web::*, AsEasyTransaction, FKey, ID};
+use models::{dashboard::Instance, inventory::FlavorCommands};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -396,11 +396,10 @@ async fn get_user_data_file(
             tracing::info!("Cloud init file for host {host_name} not found");
             Err((
                 StatusCode::NOT_FOUND,
-                "Cloud init user-data file not found".to_string()
+                "Cloud init user-data file not found".to_string(),
             ))
         }
     }
-
 }
 
 async fn get_vendor_data_file(
@@ -424,13 +423,25 @@ async fn get_vendor_data_file(
 
     transaction.commit().await.unwrap();
 
-
     // Get post_provision mailbox so host can inform backend about state of cloud-init
     let mailbox_blob = instance.metadata.get("post_provision").unwrap();
 
-    let mailbox_uuid: Uuid = serde_json::from_str(&mailbox_blob.get("unique").unwrap().to_string()).unwrap(); 
+    let mailbox_uuid: Uuid =
+        serde_json::from_str(&mailbox_blob.get("unique").unwrap().to_string()).unwrap();
 
     let mailbox_unique = ID::from_str(&mailbox_uuid.to_string()).unwrap();
+
+    let runcmds = match FlavorCommands::get_for_flavor_image_ids(
+        &instance.config.flavor.into_id().into_uuid(),
+        &instance.config.image.into_id().into_uuid(),
+        &get_db_pool().await.unwrap(),
+    )
+    .await
+    .unwrap()
+    {
+        Some(flavor_command) => flavor_command.commands,
+        None => vec![],
+    };
 
     let file_content = render_vendor_data(
         ipa_users,
@@ -439,13 +450,14 @@ async fn get_vendor_data_file(
             instance_id, // Mailbox instance should always be this instance
             mailbox_unique,
         ),
+        runcmds,
     );
 
     match file_content {
         Ok(content) => Ok(content.to_owned()),
         Err(_) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
-            "Error in retrieving cloud init file".to_string()
+            "Error in retrieving cloud init file".to_string(),
         )),
     }
 }
@@ -467,7 +479,6 @@ async fn get_network_config_file(
         .await
         .expect("Expected to get instance aggregate");
 
-
     let host_ports = instance
         .linked_host
         .unwrap() // Kinda unsafe, prob good idea to redo
@@ -478,24 +489,27 @@ async fn get_network_config_file(
         .await
         .expect("Expected to get host ports");
 
+    let network_assignment_map = aggregate
+        .vlans
+        .get(&mut transaction)
+        .await
+        .expect("Failed to Get Network Assignment Map");
 
-    let network_assignment_map = aggregate.vlans.get(&mut transaction).await.expect("Failed to Get Network Assignment Map");
-    
     let file_content = render_network_config(
         host_ports,
         create_network_manager_vlan_connections_from_bondgroups(
             &network_assignment_map,
             &instance.config.connections,
-            )
-            .await
-            .expect("Failed to generate vlan connections from bondgroups"),
+        )
+        .await
+        .expect("Failed to generate vlan connections from bondgroups"),
     );
 
     match file_content {
         Ok(content) => Ok(content.to_owned()),
         Err(_) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
-            "Error in retrieving cloud init file".to_string()
+            "Error in retrieving cloud init file".to_string(),
         )),
     }
 }
@@ -509,11 +523,10 @@ async fn get_meta_data_file(
         Ok(content) => Ok(content.to_owned()),
         Err(_) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
-            "Error in retrieving cloud init file".to_string()
+            "Error in retrieving cloud init file".to_string(),
         )),
     }
 }
-
 
 pub async fn entry(_rt: &'static Runtime) {
     let state = AppState::default();
@@ -526,10 +539,22 @@ pub async fn entry(_rt: &'static Runtime) {
         .route("/:instance/:unique/push", post(Mailbox::push))
         .route("/:instance/:unique/peek", post(Mailbox::peek))
         .route("/:instance/:unique/pop", post(Mailbox::pop))
-        .route("/:instance/:unique/cloud-init/user-data", get(get_user_data_file))
-        .route("/:instance/:unique/cloud-init/vendor-data", get(get_vendor_data_file))
-        .route("/:instance/:unique/cloud-init/network-config", get(get_network_config_file))
-        .route("/:instance/:unique/cloud-init/meta-data", get(get_meta_data_file))
+        .route(
+            "/:instance/:unique/cloud-init/user-data",
+            get(get_user_data_file),
+        )
+        .route(
+            "/:instance/:unique/cloud-init/vendor-data",
+            get(get_vendor_data_file),
+        )
+        .route(
+            "/:instance/:unique/cloud-init/network-config",
+            get(get_network_config_file),
+        )
+        .route(
+            "/:instance/:unique/cloud-init/meta-data",
+            get(get_meta_data_file),
+        )
         .finish_api_with(&mut api, api_docs)
         .layer(Extension(Arc::new(api)))
         .with_state(state);

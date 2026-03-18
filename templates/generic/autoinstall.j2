@@ -20,6 +20,14 @@ autoinstall:
       {% endif %}
     {% endfor %}
 
+    {% if run_commands|length > 0 %}
+    runcmd:
+
+    {% for command in run_commands %}
+    - {{ command }}
+    {% endfor %}
+
+    {% endif %}
   network:
     version: 2
     ethernets:
@@ -48,10 +56,12 @@ autoinstall:
       and reset the partition tables manually
     - This is the only step of the provision that is intended to "fail" as parted will report if updated partitions cannot be reported to the kernel,
       so we have the error-commands section restart the server to inform the kernel of the new partition tables 
+      - We use a "|| true" to prevent unintentional crashes on certain profiles, the actual autoinstall "fail" happens during the disk_probe checks 
+      	  which causes the related error and the host to restart so Ubuntu can successfully install
   #}
   early-commands:
     - "apt-get update"
-    - "for i in $(lsblk | awk '/^sd?/{print $1}'); do sudo parted -s /dev/$i -- mklabel gpt; done"
+    - "for i in $(lsblk | awk '/^sd?/{print $1}'); do sudo parted -s /dev/$i -- mklabel gpt || true; done"
     - "curl -X POST -H \"Content-Type: application/json\" {{install_endpoints.preimage_waiter}}/push -d '{\"success\": true}'"
 
   {# /target is where the installing OS is mounted #}

@@ -4,7 +4,7 @@ use dal::{FKey, ID};
 
 use models::inventory::HostPort;
 
-use crate::switch_test;
+use crate::{confirm, switch_test};
 use std::io::Write;
 use strum::IntoEnumIterator;
 use strum_macros::{Display, EnumIter, EnumString};
@@ -139,6 +139,11 @@ async fn handle_test_render_autoinstall_and_ks_template(
         hostname,
         ports.clone(),
         nm_connections.clone(),
+        if confirm(session, "Include run commands (Ubuntu)?") {
+            vec!["apt-get update -y".to_string()]
+        } else {
+            vec![]
+        }
     )?;
 
     writeln!(session, "{rendered_template}")?;

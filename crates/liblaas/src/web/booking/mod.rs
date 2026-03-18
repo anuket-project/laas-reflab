@@ -1,5 +1,5 @@
 use common::prelude::{aide::axum::routing::post, itertools::Itertools, *};
-use models::dashboard::{AggregateConfiguration, Instance, StatusSentiment, Template};
+use models::{EasyLog, dashboard::{AggregateConfiguration, Instance, StatusSentiment, Template}};
 
 use self::host::fetch_ipmi_fqdn;
 use super::{api, AppState, WebError};
@@ -121,9 +121,12 @@ struct BookingStatus {
     template: Template,
 }
 
+/// image_id: UUID of image to reimage the host with
+/// by_user: IPA username of host that initalized the reimage request
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 struct ReimageBlob {
     image_id: FKey<Image>,
+    by_user: String
 }
 
 #[axum::debug_handler]
@@ -145,6 +148,13 @@ async fn reimage_host(
                 "Error accessing image from database.".to_string(),
             )
         })?;
+
+        inst.id.log(
+            "Re-Deploy Host", 
+            format!("{} has requested a redeployment of {}", request.by_user, inst.config.hostname),
+            StatusSentiment::InProgress
+        ).await;
+
     inst.config.image = image_id;
     inst.update(&mut transaction).await.map_err(|_| {
         (
@@ -152,12 +162,26 @@ async fn reimage_host(
             "Error updating instance image.".to_string(),
         )
     })?;
+
+    let image_name = &image_id.get(&mut transaction).await.map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Error updating instance image.".to_string(),
+        )
+    })?.name;
+
     transaction.commit().await.map_err(|_| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             "Error committing instance changes.".to_string(),
         )
     })?;
+
+        inst.id.log(
+            "Updating Image Configuration", 
+            format!("setting the selected image to {}", image_name),
+            StatusSentiment::InProgress
+        ).await;
 
     let res = DISPATCH
         .get()

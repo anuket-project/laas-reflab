@@ -44,6 +44,10 @@ TODO:
 
     {# echo cloud-init finished > /etc/cloud/logged.txt #}
 
+    {% for command in run_commands %}
+    {{ command }}
+    {% endfor %}
+
     curl -X POST -H "Content-Type: application/json" {{mailbox_endpoint}}/push -d "{\"success\": true}"
 
     EOF

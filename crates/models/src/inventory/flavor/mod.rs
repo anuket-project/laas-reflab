@@ -11,9 +11,11 @@ use crate::{
 
 mod extra_info;
 mod interface;
+mod flavor_commands;
 
 pub use extra_info::ExtraFlavorInfo;
 pub use interface::{CardType, InterfaceFlavor};
+pub use flavor_commands::FlavorCommands;
 
 // Flavor io used to create an instance
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Default, sqlx::FromRow)]
