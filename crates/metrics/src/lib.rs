@@ -125,8 +125,9 @@ impl MetricHandler {
     /// MetricHandler::send(metric).unwrap();
     /// ```
     pub fn send(message: impl Into<MetricMessage>) -> Result<(), MetricError> {
-        Self::global_sender()
-            .send(message.into())
+        let a = Self::global_sender();
+        
+        a.send(message.into())
             .map_err(|e| MetricError::SendError(Box::new(e)))?;
         Ok(())
     }
@@ -207,6 +208,7 @@ impl MetricConsumer {
     pub async fn run(mut self) -> Result<(), MetricError> {
         while !self.cancel.is_cancelled() {
             if let Some(message) = self.rx.recv().await {
+                warn!("Got message!!!");
                 self.process_message(message).await;
             }
         }

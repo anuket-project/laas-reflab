@@ -148,7 +148,10 @@ impl AsyncRunnable for BookingTask {
 
     fn timeout() -> std::time::Duration {
         let estimated_overhead = Duration::from_secs(5 * 60);
-        SingleHostDeploy::overall_timeout() + SyncVPN::overall_timeout() + Notify::overall_timeout() + estimated_overhead
+        SingleHostDeploy::overall_timeout()
+            + SyncVPN::overall_timeout()
+            + Notify::overall_timeout()
+            + estimated_overhead
     }
 
     fn retry_count() -> usize {
@@ -250,10 +253,11 @@ impl AsyncRunnable for SingleHostDeploy {
     type Output = String;
 
     fn timeout() -> Duration {
-
         let estimated_overhead = Duration::from_secs(5 * 60);
 
-        (DeployHost::overall_timeout() * 3) + (AllocateHostTask::overall_timeout() * 3) + estimated_overhead
+        (DeployHost::overall_timeout() * 3)
+            + (AllocateHostTask::overall_timeout() * 3)
+            + estimated_overhead
     }
 
     fn summarize(&self, id: ID) -> String {

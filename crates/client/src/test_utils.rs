@@ -1,8 +1,9 @@
 use crate::remote::{Select, Server, Text};
 use crate::{get_lab, switch_test};
 use common::prelude::anyhow;
+use common::prelude::rand::random;
 use dal::{AsEasyTransaction, FKey, ID, new_client};
-use metrics::{MetricHandler, ProvisionMetric};
+use metrics::{BookingExpiredMetric, BookingMetric, MetricHandler, ProvisionMetric};
 use models::dashboard::types::Distro;
 use models::inventory::HostPort;
 use std::io::Write;
@@ -23,6 +24,10 @@ pub enum TestUtils {
     TestVlanConfig,
     #[strum(serialize = "Send a Mock Provision Metric")]
     TestSendProvisionMetric,
+    #[strum(serialize = "Send a Mock Booking Metric")]
+    TestSendBookingMetric,
+    #[strum(serialize = "Send a Mock Booking Expired Metric")]
+    TestSendBookingExpiredMetric,
 }
 
 pub async fn test_utils(session: &Server) -> Result<(), anyhow::Error> {
@@ -36,6 +41,8 @@ pub async fn test_utils(session: &Server) -> Result<(), anyhow::Error> {
         TestUtils::TestSwitch => switch_test::test_switch(session).await,
         TestUtils::TestVlanConfig => switch_test::test_vlan_configuration(session).await,
         TestUtils::TestSendProvisionMetric => test_send_provision_metric(session).await,
+        TestUtils::TestSendBookingMetric => test_send_booking_metric(session).await,
+        TestUtils::TestSendBookingExpiredMetric => test_send_booking_expired_metric(session).await,
     }
 }
 
@@ -194,13 +201,13 @@ async fn test_send_provision_metric(mut session: &Server) -> Result<(), anyhow::
             .clone(),
         project: Some("Test Project".to_string()),
         distro: Select::new(
-            "What distro would you like to use",
+            "What distro would you like to use:",
             Distro::iter().collect(),
         )
         .prompt(session)
         .unwrap()
         .to_string(),
-        image: Text::new("What image would you like to use")
+        image: Text::new("What image would you like to use:")
             .prompt(session)
             .unwrap()
             .to_string(),
@@ -219,21 +226,83 @@ async fn test_send_provision_metric(mut session: &Server) -> Result<(), anyhow::
     Ok(())
 }
 
-// async fn test_send_booking_metric(
-// mut session: &Server,
-// ) -> Result<(), anyhow::Error> {
-//     let mut client = new_client().await.expect("Expected to connect to db");
-//     let mut transaction = client
-//         .easy_transaction()
-//         .await
-//         .expect("Transaction creation error");
-//
-//     transaction.commit().await.unwrap();
-//
-//     Ok(())
-// }
-// async fn test_send_booking_expired_metric(
-// mut session: &Server,
-// ) -> Result<(), anyhow::Error> {
-//     Ok(())
-// }
+async fn test_send_booking_metric(mut session: &Server) -> Result<(), anyhow::Error> {
+    let mut client = new_client().await.expect("Expected to connect to db");
+    let mut transaction = client
+        .easy_transaction()
+        .await
+        .expect("Transaction creation error");
+
+    let booking_metric = BookingMetric {
+        booking_id: random(),
+        booking_length_days: Select::new("Select the length of the booking", (0..=21).collect())
+            .prompt(session)
+            .unwrap(),
+        num_hosts: Select::new("Select the number of hosts", (0..=6).collect())
+            .prompt(session)
+            .unwrap(),
+        num_collaborators: Select::new("Select the number of collaborators", (0..=5).collect())
+            .prompt(session)
+            .unwrap(),
+        owner: "Test Owner".to_string(),
+        lab: get_lab(session, &mut transaction)
+            .await?
+            .get(&mut transaction)
+            .await?
+            .name
+            .clone(),
+        project: "Test Project".to_string(),
+        purpose: Some("Test Purpose".to_string()),
+        details: Some("Test Details".to_string()),
+        mock: true,
+        ..Default::default()
+    };
+
+    transaction.commit().await.unwrap();
+
+    if let Err(e) = MetricHandler::send(booking_metric) {
+        writeln!(session, "Failed to send provision metric: {:?}", e)?;
+    } else {
+        writeln!(session, "Provision metric sent successfully")?;
+    }
+
+    Ok(())
+}
+
+async fn test_send_booking_expired_metric(mut session: &Server) -> Result<(), anyhow::Error> {
+    let mut client = new_client().await.expect("Expected to connect to db");
+    let mut transaction = client
+        .easy_transaction()
+        .await
+        .expect("Transaction creation error");
+
+    let booking_expired_metric = BookingExpiredMetric {
+        owner: "Test Owner".to_string(),
+        booking_id: random(),
+        total_booking_length_days: Select::new(
+            "Select the booking total length",
+            (1..=9999).collect(),
+        )
+        .prompt(session)
+        .unwrap(),
+        project: "Test Project".to_string(),
+        lab: get_lab(session, &mut transaction)
+            .await?
+            .get(&mut transaction)
+            .await?
+            .name
+            .clone(),
+        mock: true,
+        ..Default::default()
+    };
+
+    transaction.commit().await.unwrap();
+
+    if let Err(e) = MetricHandler::send(booking_expired_metric) {
+        writeln!(session, "Failed to send provision metric: {:?}", e)?;
+    } else {
+        writeln!(session, "Provision metric sent successfully")?;
+    }
+
+    Ok(())
+}

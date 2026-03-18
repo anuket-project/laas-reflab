@@ -288,8 +288,8 @@ pub struct ProvisionMetric {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project: Option<String>,
 
-    /// **Tag:** Distro used during attempted provision. ex. Ubuntu, Fedora
-    #[telegraf(tag)]
+    /// **Field:** Distro used during attempted provision. ex. Ubuntu, Fedora
+    #[telegraf(field)]
     #[serde(default)]
     pub distro: String,
 
