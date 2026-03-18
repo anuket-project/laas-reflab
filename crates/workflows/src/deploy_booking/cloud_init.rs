@@ -13,12 +13,14 @@ pub fn render_vendor_data(
     ipa_users: Vec<ipa::User>,
     hostname: String,
     post_provision_endpoint: Endpoint,
+    run_commands: Vec<String>
 ) -> Result<String, tera::Error> {
     let mut template_context = tera::Context::new();
 
     template_context.insert("ipa_users", &IpaUserFormatted::from_users(ipa_users));
     template_context.insert("hostname", &hostname);
     template_context.insert("mailbox_endpoint", &post_provision_endpoint.to_url());
+    template_context.insert("run_commands", &run_commands);
 
     render_template("generic/cloud-init/vendor-data.j2", &template_context)
 }

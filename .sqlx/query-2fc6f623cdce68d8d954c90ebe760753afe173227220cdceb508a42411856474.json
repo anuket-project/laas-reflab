@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT * FROM flavor_commands WHERE for_flavor = $1 and for_image = $2 LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "for_flavor",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "for_image",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "commands",
+        "type_info": "TextArray"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "2fc6f623cdce68d8d954c90ebe760753afe173227220cdceb508a42411856474"
+}

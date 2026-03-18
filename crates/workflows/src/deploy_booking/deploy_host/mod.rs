@@ -5,11 +5,11 @@ use common::prelude::{
 };
 
 use config::settings;
-use dal::{new_client, AsEasyTransaction, FKey, ID};
+use dal::{AsEasyTransaction, FKey, ID, get_db_pool, new_client};
 
 use models::{
     dashboard::{types::Distro, Aggregate, Image, Instance, NetworkAssignmentMap, StatusSentiment},
-    inventory::{BootTo, Host, Lab},
+    inventory::{BootTo, Host, Lab, FlavorCommands},
     EasyLog,
 };
 use notifications::email::send_to_admins;
@@ -756,6 +756,14 @@ impl DeployHost {
                 let network_assignment_map = self.fetch_network_assignment_map().await?;
                 let host_config = self.fetch_instance_config().await?;
 
+                let extra_runcmds = match FlavorCommands::get_for_flavor_image_ids(
+                    &self.fetch_instance().await.unwrap().config.flavor.into_id().into_uuid(),
+                    &self.fetch_instance().await.unwrap().config.image.into_id().into_uuid(),
+                    &get_db_pool().await.unwrap()
+                ).await.unwrap() {
+                    Some(flavor_command) => flavor_command.commands,
+                    None => vec![],
+                };
 
                 let autoinstall_content = render_autoinstall_template(
                     self.fetch_users().await.unwrap(),
@@ -773,6 +781,7 @@ impl DeployHost {
                         &host_config.connections,
                     )
                     .await?,
+                    extra_runcmds
                 )
                 .unwrap();
 

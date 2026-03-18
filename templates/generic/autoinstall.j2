@@ -20,6 +20,14 @@ autoinstall:
       {% endif %}
     {% endfor %}
 
+    {% if run_commands|length > 0 %}
+    runcmd:
+
+    {% for command in run_commands %}
+    - {{ command }}
+    {% endfor %}
+
+    {% endif %}
   network:
     version: 2
     ethernets:

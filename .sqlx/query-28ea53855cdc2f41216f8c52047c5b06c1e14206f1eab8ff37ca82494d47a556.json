@@ -1,0 +1,36 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO flavor_commands (for_flavor, for_image, commands)\n            VALUES ($1, $2, $3)\n            ON CONFLICT (for_flavor, for_image) \n            DO UPDATE SET \n                commands = EXCLUDED.commands\n            RETURNING for_flavor, for_image, commands\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "for_flavor",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "for_image",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "commands",
+        "type_info": "TextArray"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "28ea53855cdc2f41216f8c52047c5b06c1e14206f1eab8ff37ca82494d47a556"
+}
