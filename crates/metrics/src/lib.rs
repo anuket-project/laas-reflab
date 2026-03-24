@@ -125,9 +125,8 @@ impl MetricHandler {
     /// MetricHandler::send(metric).unwrap();
     /// ```
     pub fn send(message: impl Into<MetricMessage>) -> Result<(), MetricError> {
-        let a = Self::global_sender();
-        
-        a.send(message.into())
+        Self::global_sender()
+            .send(message.into())
             .map_err(|e| MetricError::SendError(Box::new(e)))?;
         Ok(())
     }
@@ -281,7 +280,10 @@ pub async fn get_client(config: &MetricsConfig) -> Result<Client, MetricError> {
     }
 
     if let Some(e) = last_error {
-        warn!("All {} connection attempts failed. Last error: {}", max_retries, e);
+        warn!(
+            "All {} connection attempts failed. Last error: {}",
+            max_retries, e
+        );
     }
     Err(MetricError::ClientError(connection_str.to_string()))
 }
