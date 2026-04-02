@@ -279,7 +279,10 @@ pub async fn get_client(config: &MetricsConfig) -> Result<Client, MetricError> {
     }
 
     if let Some(e) = last_error {
-        warn!("All {} connection attempts failed. Last error: {}", max_retries, e);
+        warn!(
+            "All {} connection attempts failed. Last error: {}",
+            max_retries, e
+        );
     }
     Err(MetricError::ClientError(connection_str.to_string()))
 }
