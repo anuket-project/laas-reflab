@@ -207,7 +207,6 @@ impl MetricConsumer {
     pub async fn run(mut self) -> Result<(), MetricError> {
         while !self.cancel.is_cancelled() {
             if let Some(message) = self.rx.recv().await {
-                warn!("Got message!!!");
                 self.process_message(message).await;
             }
         }
