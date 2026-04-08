@@ -288,6 +288,16 @@ pub struct ProvisionMetric {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project: Option<String>,
 
+    /// **Field:** Distro used during attempted provision. ex. Ubuntu, Fedora
+    #[telegraf(field)]
+    #[serde(default)]
+    pub distro: String,
+
+    /// **Tag:** Image used during attempted provision. ex. "Ubuntu 20.04 LTS (aarch64)", "Fedora 42 (x86_64)"
+    #[telegraf(tag)]
+    #[serde(default)]
+    pub image: String,
+
     /// **Tag:** Metadata tag to differentiate between fake/mock data and real data in the
     /// dashboard.
     #[telegraf(tag)]
