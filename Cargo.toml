@@ -122,7 +122,7 @@ mac_address = { version = "1.1.8", features = ["serde"] }
 http-body = "*"
 # misc utils
 dotenv = "0.15.0"                                    # environment variables
-derive_more = "0.99.11"                              # useful derive macros
+derive_more = "2.1.1"                              # useful derive macros
 enum_dispatch = "0.3.12"                             # enum dispatch
 inquire = { version = "0.6.2", features = ['date'] } # TUI library
 inventory = "0.3.15"                                 # type registration
