@@ -1154,7 +1154,10 @@ impl DeployHost {
         let workflow_distro = self.get_distro().await?;
 
         match workflow_distro {
-            Distro::Eve => {} // EVE does not put up an SSH server
+            Distro::Eve => {
+                // EVE does not put up an SSH server
+                warn!("Skipping SSH Server Check For EVE host {:?}", self.host_id);
+            }
             _ => {
                 self.log(
                     "Verify Host Provisioned",
