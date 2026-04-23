@@ -5,11 +5,11 @@ use common::prelude::{
 };
 
 use config::settings;
-use dal::{AsEasyTransaction, FKey, ID, get_db_pool, new_client};
+use dal::{get_db_pool, new_client, AsEasyTransaction, FKey, ID};
 
 use models::{
     dashboard::{types::Distro, Aggregate, Image, Instance, NetworkAssignmentMap, StatusSentiment},
-    inventory::{BootTo, Host, Lab, FlavorCommands},
+    inventory::{BootTo, FlavorCommands, Host, Lab},
     EasyLog,
 };
 use notifications::email::send_to_admins;
@@ -464,7 +464,7 @@ impl DeployHost {
         // get image struct for above str with purely just a string
 
         let host = self.fetch_instance_host().await?;
-                
+
         let grub_content = GenericGrubConfig::wipefs(wipefs_image, host_name.to_string())
             .await
             .render()
@@ -480,13 +480,13 @@ impl DeployHost {
             writable_directory: pxe.ssh.writable_directory,
         };
 
-
         write_system_grub_to_external(
             &host,
             pxe.managed_directories.grub_menuentry,
             grub_content,
             ssh_client,
-        ).await
+        )
+        .await
         .unwrap();
 
         // Set device to PXE boot
@@ -496,7 +496,6 @@ impl DeployHost {
             StatusSentiment::InProgress,
         )
         .await;
-
 
         context
             .spawn(SetBoot {
@@ -612,17 +611,19 @@ impl DeployHost {
         let grub_config: String = match workflow_distro {
             Distro::Ubuntu => GenericGrubConfig::ubuntu(
                 self.fetch_instance_image().await.unwrap(),
-                host.server_name.clone(), 
-            ).await
+                host.server_name.clone(),
+            )
+            .await
             .render()
             .unwrap(),
             Distro::Fedora | Distro::Alma => GenericGrubConfig::rhel(
-                self.fetch_instance_image().await.unwrap(), 
+                self.fetch_instance_image().await.unwrap(),
                 host.ports(&mut transaction)
                     .await
-                    .expect("didn't get ports?"), 
+                    .expect("didn't get ports?"),
                 host.server_name.clone(),
-            ).await
+            )
+            .await
             .render()
             .unwrap(),
             Distro::Eve => {
@@ -712,7 +713,6 @@ impl DeployHost {
                     .map(|nm_conn| nm_conn.render_kickstart_network_config())
                     .collect();
 
-
                 let kickstart_template = render_kickstart_template(
                     pxe_config.address,
                     self.fetch_instance_image()
@@ -757,10 +757,27 @@ impl DeployHost {
                 let host_config = self.fetch_instance_config().await?;
 
                 let extra_runcmds = match FlavorCommands::get_for_flavor_image_ids(
-                    &self.fetch_instance().await.unwrap().config.flavor.into_id().into_uuid(),
-                    &self.fetch_instance().await.unwrap().config.image.into_id().into_uuid(),
-                    &get_db_pool().await.unwrap()
-                ).await.unwrap() {
+                    &self
+                        .fetch_instance()
+                        .await
+                        .unwrap()
+                        .config
+                        .flavor
+                        .into_id()
+                        .into_uuid(),
+                    &self
+                        .fetch_instance()
+                        .await
+                        .unwrap()
+                        .config
+                        .image
+                        .into_id()
+                        .into_uuid(),
+                    &get_db_pool().await.unwrap(),
+                )
+                .await
+                .unwrap()
+                {
                     Some(flavor_command) => flavor_command.commands,
                     None => vec![],
                 };
@@ -781,10 +798,9 @@ impl DeployHost {
                         &host_config.connections,
                     )
                     .await?,
-                    extra_runcmds
+                    extra_runcmds,
                 )
                 .unwrap();
-
 
                 let settings_clone = settings().clone();
                 let directory = settings_clone
@@ -1072,14 +1088,12 @@ impl DeployHost {
             return Ok(());
         };
 
-
         self.log(
             "Cloud init",
             "Applying custom user-data file",
             StatusSentiment::InProgress,
         )
         .await;
-
 
         // Wait for a host to finish cloud init and report status,
         //      the host failing to hit the mailbox does cause a panic since this implies something is wrong (cloud init did not run?)
@@ -1137,19 +1151,28 @@ impl DeployHost {
             })
             .join()?;
 
-        self.log(
-            "Verify Host Provisioned",
-            &format!("check ssh server is reachable on {}", host_public_fqdn),
-            StatusSentiment::InProgress,
-        )
-        .await;
+        let workflow_distro = self.get_distro().await?;
 
-        context
-            .spawn(WaitSshReachable {
-                endpoint: host_public_fqdn.clone(),
-            })
-            .join()?;
+        match workflow_distro {
+            Distro::Eve => {
+                // EVE does not put up an SSH server
+                warn!("Skipping SSH Server Check For EVE host {:?}", self.host_id);
+            }
+            _ => {
+                self.log(
+                    "Verify Host Provisioned",
+                    &format!("check ssh server is reachable on {}", host_public_fqdn),
+                    StatusSentiment::InProgress,
+                )
+                .await;
 
+                context
+                    .spawn(WaitSshReachable {
+                        endpoint: host_public_fqdn.clone(),
+                    })
+                    .join()?;
+            }
+        }
         warn!("Host {:?} provisioned successfully", self.host_id);
 
         Ok(())
@@ -1211,7 +1234,7 @@ impl DeployHost {
         self.using_instance.log(msg, desc, sentiment).await;
     }
 
-    async fn cleanup_external_server(&mut self) -> Result<(), anyhow::Error>{
+    async fn cleanup_external_server(&mut self) -> Result<(), anyhow::Error> {
         info!("Cleaning up generated files in PXE server");
 
         let workflow_config = settings().workflow_config.clone();
@@ -1250,17 +1273,12 @@ impl DeployHost {
         let config_file_directories: Vec<_> = vec![
             pxe_directories_config.rhel_kickstart,
             pxe_directories_config.ubuntu_cloudinit,
-            pxe_directories_config.grub_menuentry
+            pxe_directories_config.grub_menuentry,
         ];
 
-        cleanup_generated_hostname_files(
-            &host,
-            config_file_directories,
-            ssh_client.clone(),
-        )
-        .await
-        .unwrap();
-
+        cleanup_generated_hostname_files(&host, config_file_directories, ssh_client.clone())
+            .await
+            .unwrap();
 
         Ok(())
     }
