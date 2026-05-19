@@ -309,9 +309,12 @@ pub async fn fetch_ipmi_fqdn(
     Path(instance_id): Path<Uuid>,
 ) -> Result<Json<IPMIFQDNResponse>, ApiPowerStateError> {
     let host = fetch_host(&fetch_instance(&instance_id).await?)
-        .await?
+        .await
         .unwrap();
-    Ok(Json(IPMIFQDNResponse {
-        ipmi_fqdn: host.ipmi_fqdn,
-    }))
+    match host {
+        None => return Err(ApiPowerStateError::InvalidInstanceId),
+        Some(x) => Ok(Json(IPMIFQDNResponse {
+            ipmi_fqdn: x.ipmi_fqdn,
+        })),
+    }
 }
