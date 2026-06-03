@@ -66,6 +66,8 @@ autoinstall:
 
   {# /target is where the installing OS is mounted #}
   late-commands:
+    {# Clears the apt cache so it cannot be corrupted on first boot, will be recreated once apt-get update or sim is run by user #}
+    - "rm -r /target/var/lib/apt/lists/*" 
     {% if cloud_init_endpoint is defined %}
     - "mkdir /target/etc/cloud/laas-seed/"
     - "wget -O /target/etc/cloud/laas-seed/user-data {{cloud_init_endpoint}}/cloud-init/user-data"
