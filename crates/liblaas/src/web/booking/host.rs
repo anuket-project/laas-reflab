@@ -4,7 +4,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use common::prelude::serde_json;
+use common::prelude::{anyhow::Error, serde_json};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -125,7 +125,11 @@ pub async fn instance_power_state(
 
     let instance = fetch_instance(&instance_llid).await?;
 
-    if !is_instance_active(&instance).await? {
+    if !is_instance_active(&instance)
+        .await
+        .map_err(|_| ApiPowerStateError::InactiveHost)
+        .unwrap()
+    {
         error!("Cannot perform operation on an inactive host");
         return Err(ApiPowerStateError::InactiveHost);
     }
@@ -168,7 +172,11 @@ pub async fn instance_power_control(
     // Fetch the instance from the database
     let instance = fetch_instance(&instance_llid).await?;
 
-    if !is_instance_active(&instance).await? {
+    if !is_instance_active(&instance)
+        .await
+        .map_err(|_| ApiPowerStateError::InactiveHost)
+        .unwrap()
+    {
         error!("Cannot perform operation on an inactive host");
         return Err(ApiPowerStateError::InactiveHost);
     }
@@ -280,26 +288,14 @@ pub async fn fetch_host(instance: &Instance) -> Result<Option<Host>, ApiPowerSta
 ///
 /// This function returns a [`Result`] that wraps a `bool` indicating if the linked aggregate
 /// is in the `Active` state, or an [`ApiPowerStateError`] in the case of an error.
-async fn is_instance_active(instance: &Instance) -> Result<bool, ApiPowerStateError> {
-    let mut client = new_client()
-        .await
-        .map_err(|_| ApiPowerStateError::DatabaseClient)?;
-    let mut transaction = client
-        .easy_transaction()
-        .await
-        .map_err(|_| ApiPowerStateError::DatabaseTransaction)?;
+pub async fn is_instance_active(instance: &Instance) -> Result<bool, Error> {
+    let mut client = new_client().await?;
+    let mut transaction = client.easy_transaction().await?;
 
     // fetch the linked Aggregate based on the foreign key from the instance
-    let aggregate: ExistingRow<Aggregate> = instance
-        .aggregate
-        .get(&mut transaction)
-        .await
-        .map_err(|_| ApiPowerStateError::DatabaseTransaction)?;
+    let aggregate: ExistingRow<Aggregate> = instance.aggregate.get(&mut transaction).await?;
 
-    transaction
-        .commit()
-        .await
-        .map_err(|_| ApiPowerStateError::DatabaseTransaction)?;
+    transaction.commit().await?;
 
     // check if the aggregate's life cycle state is `Active`
     Ok(aggregate.into_inner().state == LifeCycleState::Active)
