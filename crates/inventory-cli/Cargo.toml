@@ -31,4 +31,3 @@ indicatif = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
-tempdir = { workspace = true }
