@@ -25,14 +25,3 @@ dal = { path = "../dal/" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 linux-futex = "0.1.2"
-
-# This compiling this into the binary auto-initializes the PyO3 runtime, 
-# which is needed to interface with cobbler.
-# depending on the side effect of an otherwise unused crate in this case is not great, 
-# TODO: initialize the PyO3 runtime manually in our FFI code
-[dependencies.pyo3]
-version = "0.18.1"
-features = ["auto-initialize"]
-
-[package.metadata.cargo-machete]
-ignored = ["pyo3"]
