@@ -1,5 +1,9 @@
 use common::prelude::{aide::axum::routing::post, itertools::Itertools, *};
-use models::{EasyLog, dashboard::{AggregateConfiguration, Instance, StatusSentiment, Template}};
+use models::{
+    dashboard::{AggregateConfiguration, Instance, StatusSentiment, Template},
+    EasyLog,
+};
+use tracing::error;
 
 use self::host::fetch_ipmi_fqdn;
 use super::{api, AppState, WebError};
@@ -20,7 +24,7 @@ use axum::{
 };
 use config::Situation;
 use dal::{get_db_pool, new_client, web::*, AsEasyTransaction, DBTable, ExistingRow, FKey};
-use host::{instance_power_control, instance_power_state};
+use host::{instance_power_control, instance_power_state, is_instance_active};
 use models::dashboard::Image;
 
 use models::dashboard::{self, Aggregate, ProvisionLogEvent};
@@ -126,7 +130,7 @@ struct BookingStatus {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 struct ReimageBlob {
     image_id: FKey<Image>,
-    by_user: String
+    by_user: String,
 }
 
 #[axum::debug_handler]
@@ -149,11 +153,33 @@ async fn reimage_host(
             )
         })?;
 
-        inst.id.log(
-            "Re-Deploy Host", 
-            format!("{} has requested a redeployment of {}", request.by_user, inst.config.hostname),
-            StatusSentiment::InProgress
-        ).await;
+    if !is_instance_active(&inst)
+        .await
+        .map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Error accessing image from database.".to_string(),
+            )
+        })
+        .unwrap()
+    {
+        error!("Cannot perform operation on an inactive host");
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            "Cannot redeploy inactive host.".to_string(),
+        ));
+    }
+
+    inst.id
+        .log(
+            "Re-Deploy Host",
+            format!(
+                "{} has requested a redeployment of {}",
+                request.by_user, inst.config.hostname
+            ),
+            StatusSentiment::InProgress,
+        )
+        .await;
 
     inst.config.image = image_id;
     inst.update(&mut transaction).await.map_err(|_| {
@@ -163,12 +189,16 @@ async fn reimage_host(
         )
     })?;
 
-    let image_name = &image_id.get(&mut transaction).await.map_err(|_| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Error updating instance image.".to_string(),
-        )
-    })?.name;
+    let image_name = &image_id
+        .get(&mut transaction)
+        .await
+        .map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Error updating instance image.".to_string(),
+            )
+        })?
+        .name;
 
     transaction.commit().await.map_err(|_| {
         (
@@ -177,11 +207,13 @@ async fn reimage_host(
         )
     })?;
 
-        inst.id.log(
-            "Updating Image Configuration", 
+    inst.id
+        .log(
+            "Updating Image Configuration",
             format!("setting the selected image to {}", image_name),
-            StatusSentiment::InProgress
-        ).await;
+            StatusSentiment::InProgress,
+        )
+        .await;
 
     let res = DISPATCH
         .get()
